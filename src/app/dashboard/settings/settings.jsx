@@ -11,6 +11,7 @@ function Settings() {
 
   const [ticketForms, setTicketForms] = useState([]);
   const [newTicketForm, setNewTicketForm] = useState("");
+  const [newTicketFormPrice, setNewTicketFormPrice] = useState("");
 
   const [denominations, setDenominations] = useState([]);
   const [newDenomLabel, setNewDenomLabel] = useState("");
@@ -69,9 +70,10 @@ function Settings() {
   const handleAddTicketForm = async () => {
     if (!newTicketForm.trim()) return;
     try {
-      const created = await apiService.createTicketForm({ name: newTicketForm });
+      const created = await apiService.createTicketForm({ name: newTicketForm, price: parseFloat(newTicketFormPrice) || 0 });
       setTicketForms([...ticketForms, created]);
       setNewTicketForm("");
+      setNewTicketFormPrice("");
     } catch (err) {
       console.error("Failed to create ticket form:", err);
     }
@@ -235,7 +237,10 @@ function Settings() {
               <ul className="set-list">
                 {ticketForms.map(tf => (
                   <li key={tf.id} className="set-list-item">
-                    <span className="set-item-label">{tf.name}</span>
+                    <div>
+                      <span className="set-item-label">{tf.name}</span>
+                      <span className="set-item-meta">₱{Number(tf.price || 0).toFixed(2)}</span>
+                    </div>
                     <button className="set-delete-btn" onClick={() => handleDeleteTicketForm(tf.id)}>
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                         <polyline points="3 6 5 6 21 6" />
@@ -254,6 +259,14 @@ function Settings() {
                 value={newTicketForm}
                 onChange={(e) => setNewTicketForm(e.target.value)}
                 placeholder="e.g. Cash Ticket @2"
+              />
+              <input
+                type="number"
+                className="set-input"
+                value={newTicketFormPrice}
+                onChange={(e) => setNewTicketFormPrice(e.target.value)}
+                placeholder="Price"
+                style={{ maxWidth: 120 }}
               />
               <button className="set-add-btn" onClick={handleAddTicketForm}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

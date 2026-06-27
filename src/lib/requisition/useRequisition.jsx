@@ -89,13 +89,30 @@ export function useRequisition() {
       byDenomination[key].series.push(s);
     }
 
-    return { totalStock, totalValue, activeSeries, hasStock, allStock: enriched, byDenomination };
+    const stockLevel =
+      totalStock >= 10000 ? "high" : totalStock >= 5000 ? "normal" : "low";
+
+    return { totalStock, totalValue, activeSeries, hasStock, stockLevel, allStock: enriched, byDenomination };
   }, [allSeries]);
 
   const updateSeriesItem = (index, field, value) => {
     setSeriesItems((prev) => {
       const copy = [...prev];
-      copy[index] = { ...copy[index], [field]: value };
+      const updated = { ...copy[index], [field]: value };
+
+      if (field === "ticket_form" || field === "qty" || field === "start_no") {
+        const form = ticketForms.find((tf) => String(tf.id) === String(updated.ticket_form));
+        const price = form ? parseFloat(form.price) || 0 : 0;
+        const qty = parseInt(updated.qty) || 0;
+        const pcs = qty * 1000;
+        const startNo = parseInt(updated.start_no) || 0;
+        if (qty > 0 && startNo > 0) {
+          updated.end_no = String(startNo + pcs);
+        }
+        updated.total_value = (price * pcs).toFixed(2);
+      }
+
+      copy[index] = updated;
       return copy;
     });
   };

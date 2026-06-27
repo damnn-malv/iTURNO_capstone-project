@@ -127,11 +127,28 @@ function Requisition() {
                 </div>
               );
             })}
-            {!inventory.hasStock && (
-              <div className="req-inv-card req-inv-card--alert">
+            {inventory.stockLevel !== "normal" && (
+              <div className={`req-inv-card ${inventory.stockLevel === "low" ? "req-inv-card--alert" : "req-inv-card--ok"}`}>
                 <span className="req-inv-card-label">Stock Alert</span>
-                <span className="req-inv-card-value req-inv-card-value--warn">OUT OF STOCK</span>
-                <span className="req-inv-card-sub">New requisition required to resume transactions</span>
+                {inventory.stockLevel === "low" ? (
+                  <>
+                    <span className="req-inv-card-value req-inv-card-value--warn">
+                      {inventory.hasStock ? "LOW STOCK" : "OUT OF STOCK"}
+                    </span>
+                    <span className="req-inv-card-sub">
+                      {inventory.hasStock
+                        ? `Only ${inventory.totalStock.toLocaleString()} tickets remaining — below 5,000 threshold`
+                        : "New requisition required to resume transactions"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="req-inv-card-value req-inv-card-value--high">HIGH STOCK</span>
+                    <span className="req-inv-card-sub">
+                      {inventory.totalStock.toLocaleString()} tickets — above 50,000 threshold
+                    </span>
+                  </>
+                )}
               </div>
             )}
           </div>

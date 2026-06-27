@@ -289,6 +289,10 @@ export const apiService = {
     return this.post("/ticket-forms/", data);
   },
 
+  updateTicketForm(id, data) {
+    return this.patch(`/ticket-forms/${id}/`, data);
+  },
+
   deleteTicketForm(id) {
     return this.delete(`/ticket-forms/${id}/`);
   },

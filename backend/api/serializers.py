@@ -89,10 +89,11 @@ class VehicleSerializer(serializers.ModelSerializer):
 
 class TicketSeriesBriefSerializer(serializers.ModelSerializer):
     ticket_form_label = serializers.CharField(source='ticket_form.name', read_only=True, allow_null=True)
+    ticket_form_price = serializers.DecimalField(source='ticket_form.price', read_only=True, allow_null=True, max_digits=10, decimal_places=2)
 
     class Meta:
         model = TicketSeries
-        fields = ['id', 'series_no', 'ticket_form', 'ticket_form_label', 'start_no', 'end_no']
+        fields = ['id', 'series_no', 'ticket_form', 'ticket_form_label', 'ticket_form_price', 'start_no', 'end_no']
 
 
 class TicketSerializer(serializers.ModelSerializer):
@@ -165,7 +166,7 @@ class RouteSerializer(serializers.ModelSerializer):
 class TicketFormSerializer(serializers.ModelSerializer):
     class Meta:
         model = TicketForm
-        fields = ['id', 'name']
+        fields = ['id', 'name', 'price']
 
 class DenominationSerializer(serializers.ModelSerializer):
     class Meta:
@@ -184,12 +185,13 @@ class CollectionSerializer(serializers.ModelSerializer):
 
 class TicketSeriesSerializer(serializers.ModelSerializer):
     ticket_form_label = serializers.CharField(source='ticket_form.name', read_only=True, allow_null=True)
+    ticket_form_price = serializers.DecimalField(source='ticket_form.price', read_only=True, allow_null=True, max_digits=10, decimal_places=2)
     issued_to_name = serializers.CharField(source='issued_to.username', read_only=True, allow_null=True)
 
     class Meta:
         model = TicketSeries
         fields = [
-            'id', 'series_no', 'ticket_form', 'ticket_form_label',
+            'id', 'series_no', 'ticket_form', 'ticket_form_label', 'ticket_form_price',
             'pad_no', 'box_no', 'start_no', 'end_no', 'qty',
             'unit_value', 'total_value', 'requisition',
             'issued_to', 'issued_to_name', 'date_issued',
