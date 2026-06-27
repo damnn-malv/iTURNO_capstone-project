@@ -1,0 +1,789 @@
+/* Remittance.css — mirrors Vehicle.css style, inherits CSS vars from mainIndex.css */
+
+.rem-page {
+  padding: 28px 32px;
+  background: var(--bg-page);
+  min-height: 100vh;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  transition: background 0.25s;
+}
+
+/* ── Header ── */
+.rem-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.rem-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rem-header-accent {
+  width: 4px;
+  height: 36px;
+  border-radius: 4px;
+  background: var(--navy);
+  flex-shrink: 0;
+}
+
+.dark .rem-header-accent {
+  background: var(--gold);
+}
+
+.rem-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 3px;
+  letter-spacing: -0.02em;
+}
+
+.rem-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* ── Header right ── */
+.rem-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rem-search-wrap {
+  position: relative;
+  width: 240px;
+}
+
+.rem-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.rem-search {
+  width: 100%;
+  padding: 7px 12px 7px 32px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 13px;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.rem-search:focus {
+  border-color: var(--navy);
+  box-shadow: 0 0 0 3px rgba(26,39,68,0.08);
+}
+
+.dark .rem-search:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(201,168,76,0.12);
+}
+
+/* ── Add button ── */
+.rem-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 3px 10px rgba(26,39,68,0.25);
+  white-space: nowrap;
+}
+
+.rem-add-btn:hover {
+  opacity: 0.88;
+  transform: translateY(-1px);
+  box-shadow: 0 5px 16px rgba(26,39,68,0.3);
+}
+
+.rem-add-btn:active { transform: translateY(0); }
+
+/* ── Alert ── */
+.rem-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 20px;
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.25);
+  border-left: 4px solid #ef4444;
+  color: #b91c1c;
+}
+
+/* ── Table card ── */
+.rem-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.25s, border-color 0.25s;
+}
+
+.rem-table-wrap { overflow-x: auto; }
+
+.rem-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.rem-table thead tr {
+  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
+}
+
+.rem-table th {
+  padding: 13px 16px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: rgba(255,255,255,0.85);
+  white-space: nowrap;
+}
+
+.rem-row {
+  border-bottom: 1px solid var(--border-soft);
+  transition: background 0.12s;
+}
+
+.rem-row:last-child { border-bottom: none; }
+.rem-row:hover { background: var(--bg-hover); }
+
+.rem-table td {
+  padding: 13px 16px;
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.rem-table-state {
+  padding: 56px 16px !important;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.rem-table-state > * {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── Cell variants ── */
+.rem-batch-id {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--bg-page);
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.rem-amount {
+  display: inline-block;
+  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
+  color: var(--gold);
+  padding: 4px 11px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.rem-td-meta { color: var(--text-secondary); font-size: 13px; }
+.rem-na { color: var(--text-secondary); font-style: italic; font-size: 12.5px; }
+
+/* Status badges */
+.rem-status {
+  display: inline-block;
+  padding: 4px 11px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.rem-status--open   { background: rgba(34,197,94,0.12);  color: #15803d; }
+.rem-status--closed { background: rgba(107,114,128,0.12); color: #4b5563; }
+
+/* Action buttons */
+.rem-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rem-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.15s;
+  white-space: nowrap;
+}
+
+.rem-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+.rem-btn:active { transform: translateY(0); }
+
+.rem-btn--view {
+  background: linear-gradient(135deg, var(--gold) 0%, #e2be6e 100%);
+  color: #1a2744;
+  box-shadow: 0 2px 8px rgba(201,168,76,0.25);
+}
+
+/* ── Loading dots ── */
+.rem-loading-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px 0;
+}
+
+.rem-loading-dots div {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: rem-pulse 1.2s ease-in-out infinite;
+}
+
+.rem-loading-dots div:nth-child(2) { animation-delay: 0.2s; }
+.rem-loading-dots div:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes rem-pulse {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
+  40%            { opacity: 1;    transform: scale(1); }
+}
+
+/* ============================================================
+   MODAL
+   ============================================================ */
+
+.rem-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(10,16,35,0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: rem-fade 0.2s ease;
+}
+
+@keyframes rem-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.rem-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 860px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.3);
+  animation: rem-rise 0.28s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+@keyframes rem-rise {
+  from { opacity: 0; transform: translateY(32px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.rem-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-soft);
+  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.rem-modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rem-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.rem-modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(255,255,255,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.rem-modal-close:hover {
+  color: #fff;
+  background: rgba(255,255,255,0.1);
+}
+
+.rem-modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ── Form elements ── */
+.rem-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rem-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-label);
+}
+
+.rem-input,
+.rem-select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-family: inherit;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.rem-input:focus,
+.rem-select:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(201,168,76,0.12);
+}
+
+.rem-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.rem-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a2744' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  padding-right: 34px;
+  cursor: pointer;
+}
+
+/* ── Info grid (batch info row) ── */
+.rem-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+/* ── Section tables inside modal ── */
+.rem-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-primary);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rem-section-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.rem-section-table thead tr {
+  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
+}
+
+.rem-section-table th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: rgba(255,255,255,0.85);
+  white-space: nowrap;
+}
+
+.rem-section-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  vertical-align: middle;
+}
+
+.rem-section-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.rem-section-table tfoot tr {
+  background: var(--bg-hover);
+}
+
+.rem-section-table tfoot td {
+  padding: 10px 14px;
+  font-weight: 700;
+  font-size: 13px;
+  border-top: 2px solid var(--border);
+}
+
+.rem-section-table .rem-input,
+.rem-section-table .rem-select {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+/* ── Add row button ── */
+.rem-add-row-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rem-add-row-btn:hover {
+  border-color: var(--gold);
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* ── Summary grid ── */
+.rem-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.rem-summary-card {
+  background: var(--bg-page);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+}
+
+.rem-summary-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.rem-summary-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* ── Certification ── */
+.rem-cert {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rem-cert-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.rem-cert-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--navy);
+}
+
+/* ── Modal footer ── */
+.rem-modal-footer {
+  display: flex;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.rem-modal-btn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.15s;
+  border: none;
+}
+
+.rem-modal-btn:hover { opacity: 0.87; transform: translateY(-1px); }
+.rem-modal-btn:active { transform: translateY(0); }
+
+.rem-modal-btn--cancel {
+  background: var(--bg-page);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.rem-modal-btn--cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.rem-modal-btn--submit {
+  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(26,39,68,0.25);
+}
+
+/* ── Export button ── */
+.rem-btn--export {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.rem-btn--export:hover { background: rgba(255,255,255,0.2); }
+
+/* ============================================================
+   REPORT PREVIEW
+   ============================================================ */
+.rem-report { gap: 14px !important; }
+
+.rem-report-title {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  color: var(--text-primary);
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--text-primary);
+}
+.rem-report-title span { font-size: 12px; color: var(--text-secondary); }
+
+.rem-report-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.rem-report-info-row {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rem-report-section {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-primary);
+  margin: 6px 0 0;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.rem-report-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 0;
+  font-style: italic;
+}
+
+.rem-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  border: 1px solid var(--border);
+}
+.rem-report-table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.rem-report-table td {
+  padding: 7px 10px;
+  border: 1px solid var(--border-soft);
+  color: var(--text-primary);
+}
+.rem-report-table tfoot td {
+  background: var(--bg-hover);
+  font-weight: 700;
+  border-top: 2px solid var(--border);
+}
+.rem-report-table--dense th,
+.rem-report-table--dense td {
+  padding: 5px 6px;
+  font-size: 11px;
+}
+.rem-report-table--summary { max-width: 500px; }
+.rem-report-table--summary td:first-child { font-size: 12px; }
+.rem-report-row--bold td { font-weight: 700; border-top: 2px solid var(--border); }
+
+/* Certification */
+.rem-report-cert {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 2px solid var(--text-primary);
+}
+.rem-report-cert-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rem-report-cert-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.rem-report-cert-text {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+.rem-report-sig {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: 24px;
+  text-align: center;
+}
+.rem-report-sig strong { font-size: 13px; color: var(--text-primary); }
+.rem-report-sig span { font-size: 10px; color: var(--text-secondary); border-top: 1px solid var(--border); padding-top: 4px; }
+
+@media (max-width: 640px) {
+  .rem-report-cert { grid-template-columns: 1fr; }
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .rem-page { padding: 20px 16px; }
+
+  .rem-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .rem-add-btn { width: 100%; justify-content: center; }
+  .rem-info-grid, .rem-summary-grid { grid-template-columns: 1fr; }
+  .rem-actions { flex-wrap: wrap; }
+}
+
+@media (max-width: 560px) {
+  .rem-header-right { flex-wrap: wrap; width: 100%; }
+  .rem-search-wrap { width: 100%; }
+  .rem-add-btn { width: 100%; justify-content: center; }
+}
+
+@media (max-width: 480px) {
+  .rem-modal { margin: 12px; }
+  .rem-modal-body { padding: 16px; }
+}
