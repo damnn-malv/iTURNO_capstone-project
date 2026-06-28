@@ -27,9 +27,13 @@ function Requisition() {
   } = useRequisition();
 
   const [expandedId, setExpandedId] = useState(null);
+  const [expandedDenom, setExpandedDenom] = useState(null);
 
   const toggleExpand = (id) =>
     setExpandedId((prev) => (prev === id ? null : id));
+
+  const toggleDenom = (denom) =>
+    setExpandedDenom((prev) => (prev === denom ? null : denom));
 
   const denomOptions = Object.keys(inventory.byDenomination);
 
@@ -129,70 +133,11 @@ function Requisition() {
             )}
           </div>
 
-          {/* Section A – Collections / Ticket Stock */}
+          {/* Collections & Deposits by Denomination */}
           <div className="req-table-wrap">
             <div className="req-report-section-header">
-              <h3 className="req-report-section-label">A. COLLECTIONS</h3>
-              <span className="req-report-section-sub">1. For Collectors</span>
-            </div>
-            <table className="req-table">
-              <thead>
-                <tr>
-                  <th>Type (Form No.)</th>
-                  <th className="text-right">From</th>
-                  <th className="text-right">To</th>
-                  <th className="text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {inventory.allStock.length > 0 ? (
-                  inventory.allStock.map((ts) => (
-                    <tr key={ts.id}>
-                      <td>{ts.ticket_form_label || "—"}</td>
-                      <td className="text-right">{Number(ts.start_no || 0).toLocaleString()}</td>
-                      <td className="text-right">{Number(ts.end_no || 0).toLocaleString()}</td>
-                      <td className="text-right">{formatCurrency(ts.current_value)}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={4} style={{ textAlign: "center", color: "var(--text-secondary)", padding: "30px 16px" }}>
-                      No ticket stock — click "+ New Requisition" to add stock
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              {inventory.allStock.length > 0 && (
-                <tfoot>
-                  <tr className="req-table-footer">
-                    <td><strong>TOTAL</strong></td>
-                    <td className="text-right">
-                      <strong>
-                        {inventory.allStock.length > 0
-                          ? Number(inventory.allStock[0].start_no || 0).toLocaleString()
-                          : "—"}
-                      </strong>
-                    </td>
-                    <td className="text-right">
-                      <strong>
-                        {inventory.allStock.length > 0
-                          ? Number(inventory.allStock[inventory.allStock.length - 1].end_no || 0).toLocaleString()
-                          : "—"}
-                      </strong>
-                    </td>
-                    <td className="text-right">
-                      <strong>{formatCurrency(inventory.totalValue)}</strong>
-                    </td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
-
-          {/* Section B – Remittances / Deposits by Denomination */}
-          <div className="req-table-wrap" style={{ marginTop: 20 }}>
-            <div className="req-report-section-header">
-              <h3 className="req-report-section-label">B. REMITTANCES / DEPOSITS</h3>
+              <h3 className="req-report-section-label">COLLECTIONS & DEPOSITS</h3>
+              <span className="req-report-section-sub">Click a denomination to view ticket stock details</span>
             </div>
             <table className="req-table">
               <thead>
@@ -206,18 +151,54 @@ function Requisition() {
                 {denomOptions.length > 0 ? (
                   denomOptions.map((denom) => {
                     const d = inventory.byDenomination[denom];
+                    const isExpanded = expandedDenom === denom;
                     return (
-                      <tr key={denom}>
-                        <td>{denom}</td>
-                        <td className="text-right">{d.totalQty.toLocaleString()}</td>
-                        <td className="text-right">{formatCurrency(d.totalValue)}</td>
-                      </tr>
+                      <React.Fragment key={denom}>
+                        <tr
+                          onClick={() => toggleDenom(denom)}
+                          style={{ cursor: "pointer" }}
+                          className={isExpanded ? "req-row--active" : ""}
+                        >
+                          <td>
+                            <span className={`req-expand-icon ${isExpanded ? "req-expand-icon--open" : ""}`}>&#9654;</span>
+                            {denom}
+                          </td>
+                          <td className="text-right">{d.totalQty.toLocaleString()}</td>
+                          <td className="text-right">{formatCurrency(d.totalValue)}</td>
+                        </tr>
+                        {isExpanded && d.series.length > 0 && (
+                          <tr className="req-series-row">
+                            <td colSpan={3}>
+                              <table className="req-series-table">
+                                <thead>
+                                  <tr>
+                                    <th>Type (Form No.)</th>
+                                    <th className="text-right">From</th>
+                                    <th className="text-right">To</th>
+                                    <th className="text-right">Amount</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {d.series.map((ts) => (
+                                    <tr key={ts.id}>
+                                      <td>{ts.ticket_form_label || "—"}</td>
+                                      <td className="text-right">{Number(ts.start_no || 0).toLocaleString()}</td>
+                                      <td className="text-right">{Number(ts.end_no || 0).toLocaleString()}</td>
+                                      <td className="text-right">{formatCurrency(ts.current_value)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })
                 ) : (
                   <tr>
                     <td colSpan={3} style={{ textAlign: "center", color: "var(--text-secondary)", padding: "30px 16px" }}>
-                      No denominations in stock
+                      No ticket stock — click "+ New Requisition" to add stock
                     </td>
                   </tr>
                 )}

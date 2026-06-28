@@ -121,7 +121,17 @@ export default function Remittance() {
                       <span className="rem-batch-id">{b.id}</span>
                     </td>
                     <td className="rem-td-meta">{b.issued_by_name}</td>
-                    <td className="rem-td-meta">{b.issued_at}</td>
+                    <td className="rem-td-meta">
+                      {new Date(b.issued_at).toLocaleDateString("en-US", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}{" "}
+                      {new Date(b.issued_at).toLocaleTimeString("en-US", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </td>
                     <td>
                       <span className="rem-amount">
                         ₱{Number(b.total_amount).toLocaleString()}
