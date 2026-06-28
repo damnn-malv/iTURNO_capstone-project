@@ -16,7 +16,10 @@ import {
   DashboardIcon,
   DispatchIcon,
   DriverIcon,
+  RemittanceIcon,
   ReportIcon,
+  RequisitionIcon,
+  SettingsIcon,
   TicketIcon,
   UserIcon,
   VehicleIcon,
@@ -28,16 +31,16 @@ import sfcLogo from "../../pictures/sfc-nobg-logo.png";
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Dashboard", Icon: DashboardIcon },
-  { to: "/dashboard/Requisition", label: "Requisition", Icon: TicketIcon },
+  { to: "/dashboard/Requisition", label: "Requisition", Icon: RequisitionIcon },
   { to: "/dashboard/Ticket", label: "Ticket", Icon: TicketIcon },
   { to: "/dashboard/Dispatch", label: "Dispatch", Icon: DispatchIcon },
   { to: "/dashboard/Collections", label: "Transaction", Icon: CollectionsIcon },
-  { to: "/dashboard/Remittance", label: "Remittance", Icon: CollectionsIcon },
+  { to: "/dashboard/Remittance", label: "Remittance", Icon: RemittanceIcon },
   { to: "/dashboard/Vehicles", label: "Vehicles Registry", Icon: VehicleIcon },
   { to: "/dashboard/Drivers", label: "Drivers Registry", Icon: DriverIcon },
   { to: "/dashboard/StaffRegistry", label: "Staff Registry", Icon: UserIcon },
   { to: "/dashboard/Reports", label: "Reports", Icon: ReportIcon },
-  { to: "/dashboard/Settings", label: "Settings", Icon: DispatchIcon },
+  { to: "/dashboard/Settings", label: "Settings", Icon: SettingsIcon },
 ];
 
 const ROLE_NAV = {
