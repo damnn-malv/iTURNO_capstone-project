@@ -192,6 +192,37 @@ class TicketSeriesSerializer(serializers.ModelSerializer):
     ticket_form_label = serializers.CharField(source='ticket_form.name', read_only=True, allow_null=True)
     ticket_form_price = serializers.DecimalField(source='ticket_form.price', read_only=True, allow_null=True, max_digits=10, decimal_places=2)
     issued_to_name = serializers.CharField(source='issued_to.username', read_only=True, allow_null=True)
+    beginning = serializers.SerializerMethodField()
+    remaining = serializers.SerializerMethodField()
+
+    def _get_original_pcs(self, obj):
+        start = int(obj.start_no or 0)
+        end = int(obj.end_no or 0)
+        return max(end - start + 1, 0)
+
+    def _get_tickets_issued(self, obj, before_date=None):
+        qs = obj.tickets.all()
+        if before_date:
+            qs = qs.filter(issued_at__date__lt=before_date)
+        return qs.count()
+
+    def get_beginning(self, obj):
+        from datetime import date
+        today = date.today()
+        if obj.beginning_balance is not None and obj.beginning_balance_date == today:
+            return obj.beginning_balance
+        original = self._get_original_pcs(obj)
+        tickets_before_today = self._get_tickets_issued(obj, before_date=today)
+        beginning = max(original - tickets_before_today, 0)
+        obj.beginning_balance = beginning
+        obj.beginning_balance_date = today
+        obj.save(update_fields=['beginning_balance', 'beginning_balance_date'])
+        return beginning
+
+    def get_remaining(self, obj):
+        original = self._get_original_pcs(obj)
+        total_issued = self._get_tickets_issued(obj)
+        return max(original - total_issued, 0)
 
     class Meta:
         model = TicketSeries
@@ -200,6 +231,7 @@ class TicketSeriesSerializer(serializers.ModelSerializer):
             'pad_no', 'box_no', 'start_no', 'end_no', 'qty',
             'unit_value', 'total_value', 'requisition',
             'issued_to', 'issued_to_name', 'date_issued',
+            'beginning', 'remaining',
             'created_at', 'updated_at',
         ]
 

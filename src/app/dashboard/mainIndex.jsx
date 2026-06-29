@@ -6,8 +6,7 @@ import Requisition from "./requisition/requisition"
 import Ticket from "./ticket/ticket";
 import Collections from "./collection/collection";
 import Remittance from "./remittance/remittance"
-import Vehicles from "./vehicle/vehicle";
-import Drivers from "./driver/driver";
+import Registry from "./registry/registry";
 import StaffRegistry from "./user/user";
 import Reports from "./report/report";
 import Rewards from "./rewards/rewards";
@@ -16,7 +15,6 @@ import {
   CollectionsIcon,
   DashboardIcon,
   DispatchIcon,
-  DriverIcon,
   RemittanceIcon,
   ReportIcon,
   RequisitionIcon,
@@ -38,8 +36,7 @@ const NAV_ITEMS = [
   { to: "/dashboard/Dispatch", label: "Dispatch", Icon: DispatchIcon },
   { to: "/dashboard/Collections", label: "Transaction", Icon: CollectionsIcon },
   { to: "/dashboard/Remittance", label: "Remittance", Icon: RemittanceIcon },
-  { to: "/dashboard/Vehicles", label: "Vehicles Registry", Icon: VehicleIcon },
-  { to: "/dashboard/Drivers", label: "Drivers Registry", Icon: DriverIcon },
+  { to: "/dashboard/Registry", label: "Fleet & Personnel", Icon: VehicleIcon },
   { to: "/dashboard/StaffRegistry", label: "Staff Registry", Icon: UserIcon },
   { to: "/dashboard/Reports", label: "Reports", Icon: ReportIcon },
   { to: "/dashboard/Rewards", label: "Rewards", Icon: RewardsIcon },
@@ -54,8 +51,7 @@ const ROLE_NAV = {
     "/dashboard/Dispatch",
     "/dashboard/Collections",
     "/dashboard/Remittance",
-    "/dashboard/Vehicles",
-    "/dashboard/Drivers",
+    "/dashboard/Registry",
     "/dashboard/StaffRegistry",
     "/dashboard/Reports",
     "/dashboard/Rewards",
@@ -64,8 +60,7 @@ const ROLE_NAV = {
   MANAGER: [
     "/dashboard",
     "/dashboard/Collections",
-    "/dashboard/Vehicles",
-    "/dashboard/Drivers",
+    "/dashboard/Registry",
     "/dashboard/StaffRegistry",
     "/dashboard/Reports",
     "/dashboard/Rewards",
@@ -75,8 +70,7 @@ const ROLE_NAV = {
     "/dashboard/Ticket",
     "/dashboard/Dispatch",
     "/dashboard/Collections",
-    "/dashboard/Vehicles",
-    "/dashboard/Drivers",
+    "/dashboard/Registry",
     "/dashboard/Reports",
   ],
   PERSONNEL: [
@@ -269,8 +263,7 @@ function mainIndex() {
             path="Remittance"
             element={<Remittance />}
           />
-          <Route path="Vehicles" element={<Vehicles />} />
-          <Route path="Drivers" element={<Drivers />} />
+          <Route path="Registry" element={<Registry />} />
           <Route path="StaffRegistry" element={<StaffRegistry />} />
           <Route path="Reports" element={<Reports />} />
           <Route path="Rewards" element={<Rewards />} />

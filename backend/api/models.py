@@ -184,6 +184,8 @@ class TicketSeries(models.Model):
     requisition = models.ForeignKey(Requisition, on_delete=models.CASCADE, related_name='ticket_series')
     issued_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='issued_ticket_series')
     date_issued = models.DateTimeField(null=True, blank=True)
+    beginning_balance = models.PositiveIntegerField(null=True, blank=True)
+    beginning_balance_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
