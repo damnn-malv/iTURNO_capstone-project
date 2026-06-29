@@ -10,6 +10,7 @@ import Vehicles from "./vehicle/vehicle";
 import Drivers from "./driver/driver";
 import StaffRegistry from "./user/user";
 import Reports from "./report/report";
+import Rewards from "./rewards/rewards";
 import Settings from "./settings/settings"
 import {
   CollectionsIcon,
@@ -19,6 +20,7 @@ import {
   RemittanceIcon,
   ReportIcon,
   RequisitionIcon,
+  RewardsIcon,
   SettingsIcon,
   TicketIcon,
   UserIcon,
@@ -40,6 +42,7 @@ const NAV_ITEMS = [
   { to: "/dashboard/Drivers", label: "Drivers Registry", Icon: DriverIcon },
   { to: "/dashboard/StaffRegistry", label: "Staff Registry", Icon: UserIcon },
   { to: "/dashboard/Reports", label: "Reports", Icon: ReportIcon },
+  { to: "/dashboard/Rewards", label: "Rewards", Icon: RewardsIcon },
   { to: "/dashboard/Settings", label: "Settings", Icon: SettingsIcon },
 ];
 
@@ -55,6 +58,7 @@ const ROLE_NAV = {
     "/dashboard/Drivers",
     "/dashboard/StaffRegistry",
     "/dashboard/Reports",
+    "/dashboard/Rewards",
     "/dashboard/Settings",
   ],
   MANAGER: [
@@ -64,6 +68,7 @@ const ROLE_NAV = {
     "/dashboard/Drivers",
     "/dashboard/StaffRegistry",
     "/dashboard/Reports",
+    "/dashboard/Rewards",
   ],
   SUPERVISOR: [
     "/dashboard",
@@ -268,6 +273,7 @@ function mainIndex() {
           <Route path="Drivers" element={<Drivers />} />
           <Route path="StaffRegistry" element={<StaffRegistry />} />
           <Route path="Reports" element={<Reports />} />
+          <Route path="Rewards" element={<Rewards />} />
           <Route path="Settings" element={<Settings />} />
         </Routes>
       </main>

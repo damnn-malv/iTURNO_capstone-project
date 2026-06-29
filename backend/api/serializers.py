@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Denomination, Requisition, TicketSeries, RoamingLog
+from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Denomination, Requisition, TicketSeries, RoamingLog, DriverRewardProfile, PointsTransaction, Redemption
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -255,6 +255,55 @@ class RoamingLogSerializer(serializers.ModelSerializer):
         if obj.driver:
             return f"{obj.driver.last_name}, {obj.driver.first_name}".strip()
         return None
+
+class PointsTransactionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PointsTransaction
+        fields = ['id', 'type', 'points', 'description', 'created_at']
+
+
+class RedemptionSerializer(serializers.ModelSerializer):
+    approved_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Redemption
+        fields = ['id', 'points_redeemed', 'peso_value', 'status', 'approved_by', 'approved_by_name', 'created_at']
+
+    def get_approved_by_name(self, obj):
+        if obj.approved_by:
+            full = f"{obj.approved_by.first_name} {obj.approved_by.last_name}".strip()
+            return full or obj.approved_by.username
+        return None
+
+
+class DriverRewardProfileSerializer(serializers.ModelSerializer):
+    driver_name = serializers.SerializerMethodField()
+    can_redeem = serializers.SerializerMethodField()
+    redeem_message = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DriverRewardProfile
+        fields = [
+            'id', 'driver', 'driver_name', 'total_points',
+            'current_streak', 'last_queue_date',
+            'redemptions_this_year', 'last_redemption_date',
+            'can_redeem', 'redeem_message',
+            'created_at', 'updated_at',
+        ]
+
+    def get_driver_name(self, obj):
+        return f"{obj.driver.last_name}, {obj.driver.first_name}".strip()
+
+    def get_can_redeem(self, obj):
+        from .rewards import can_redeem
+        eligible, _ = can_redeem(obj)
+        return eligible
+
+    def get_redeem_message(self, obj):
+        from .rewards import can_redeem
+        _, msg = can_redeem(obj)
+        return msg
+
 
 class RemittanceBatchSerializer(serializers.ModelSerializer):
     collections = CollectionSerializer(many=True)
