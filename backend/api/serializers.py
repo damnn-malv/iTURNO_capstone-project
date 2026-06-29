@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Denomination, Requisition, TicketSeries
+from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Denomination, Requisition, TicketSeries, RoamingLog
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -89,10 +89,11 @@ class VehicleSerializer(serializers.ModelSerializer):
 
 class TicketSeriesBriefSerializer(serializers.ModelSerializer):
     ticket_form_label = serializers.CharField(source='ticket_form.name', read_only=True, allow_null=True)
+    ticket_form_price = serializers.DecimalField(source='ticket_form.price', read_only=True, allow_null=True, max_digits=10, decimal_places=2)
 
     class Meta:
         model = TicketSeries
-        fields = ['id', 'series_no', 'ticket_form', 'ticket_form_label', 'start_no', 'end_no']
+        fields = ['id', 'series_no', 'ticket_form', 'ticket_form_label', 'ticket_form_price', 'start_no', 'end_no']
 
 
 class TicketSerializer(serializers.ModelSerializer):
@@ -106,9 +107,14 @@ class TicketSerializer(serializers.ModelSerializer):
     series = TicketSeriesBriefSerializer(read_only=True)
     series_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     active_user = serializers.StringRelatedField(read_only=True)
-    active_user_name = serializers.CharField(
-        source='active_user.username', read_only=True, required=False, allow_null=True
-    )
+    active_user_name = serializers.SerializerMethodField()
+
+    def get_active_user_name(self, obj):
+        user = obj.active_user
+        if not user:
+            return None
+        full = f"{user.first_name} {user.last_name}".strip()
+        return full or user.username
     route_name = serializers.ReadOnlyField()
 
     class Meta:
@@ -165,7 +171,7 @@ class RouteSerializer(serializers.ModelSerializer):
 class TicketFormSerializer(serializers.ModelSerializer):
     class Meta:
         model = TicketForm
-        fields = ['id', 'name']
+        fields = ['id', 'name', 'price']
 
 class DenominationSerializer(serializers.ModelSerializer):
     class Meta:
@@ -184,12 +190,13 @@ class CollectionSerializer(serializers.ModelSerializer):
 
 class TicketSeriesSerializer(serializers.ModelSerializer):
     ticket_form_label = serializers.CharField(source='ticket_form.name', read_only=True, allow_null=True)
+    ticket_form_price = serializers.DecimalField(source='ticket_form.price', read_only=True, allow_null=True, max_digits=10, decimal_places=2)
     issued_to_name = serializers.CharField(source='issued_to.username', read_only=True, allow_null=True)
 
     class Meta:
         model = TicketSeries
         fields = [
-            'id', 'series_no', 'ticket_form', 'ticket_form_label',
+            'id', 'series_no', 'ticket_form', 'ticket_form_label', 'ticket_form_price',
             'pad_no', 'box_no', 'start_no', 'end_no', 'qty',
             'unit_value', 'total_value', 'requisition',
             'issued_to', 'issued_to_name', 'date_issued',
@@ -199,8 +206,22 @@ class TicketSeriesSerializer(serializers.ModelSerializer):
 
 class RequisitionSerializer(serializers.ModelSerializer):
     ticket_series = TicketSeriesSerializer(many=True, read_only=True)
-    requested_by_name = serializers.CharField(source='requested_by.username', read_only=True)
-    approved_by_name = serializers.CharField(source='approved_by.username', read_only=True, allow_null=True)
+    requested_by_name = serializers.SerializerMethodField()
+    approved_by_name = serializers.SerializerMethodField()
+
+    def get_requested_by_name(self, obj):
+        user = obj.requested_by
+        if user:
+            full = f"{user.first_name} {user.last_name}".strip()
+            return full if full else user.username
+        return None
+
+    def get_approved_by_name(self, obj):
+        user = obj.approved_by
+        if user:
+            full = f"{user.first_name} {user.last_name}".strip()
+            return full if full else user.username
+        return None
 
     class Meta:
         model = Requisition
@@ -211,10 +232,41 @@ class RequisitionSerializer(serializers.ModelSerializer):
         ]
 
 
+class RoamingLogSerializer(serializers.ModelSerializer):
+    vehicle_plate = serializers.CharField(source='vehicle.plate_number', read_only=True)
+    driver_name = serializers.SerializerMethodField()
+    recorded_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RoamingLog
+        fields = ['id', 'vehicle', 'vehicle_plate', 'driver', 'driver_name', 'recorded_by', 'recorded_by_name', 'notes', 'recorded_at']
+        extra_kwargs = {
+            'recorded_by': {'read_only': True},
+        }
+
+    def get_recorded_by_name(self, obj):
+        user = obj.recorded_by
+        if not user:
+            return None
+        full = f"{user.first_name} {user.last_name}".strip()
+        return full or user.username
+
+    def get_driver_name(self, obj):
+        if obj.driver:
+            return f"{obj.driver.last_name}, {obj.driver.first_name}".strip()
+        return None
+
 class RemittanceBatchSerializer(serializers.ModelSerializer):
     collections = CollectionSerializer(many=True)
     deposits = DepositSerializer(many=True)
+    issued_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = RemittanceBatch
         fields = "__all__"
+
+    def get_issued_by_name(self, obj):
+        if obj.issued_by:
+            full = f"{obj.issued_by.first_name} {obj.issued_by.last_name}".strip()
+            return full or obj.issued_by.username
+        return ""

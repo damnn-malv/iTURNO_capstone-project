@@ -2,7 +2,11 @@
  * API Service - Centralized API request handling with error logging
  */
 
-const API_BASE_URL = "http://localhost:8000/api";
+const API_BASE_URL =
+  window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:8000/api"
+    : `http://${window.location.hostname}:8000/api`;
+// Backend stays HTTP — only frontend needs HTTPS for camera access
 
 export const apiService = {
   async request(endpoint, options = {}) {
@@ -289,6 +293,10 @@ export const apiService = {
     return this.post("/ticket-forms/", data);
   },
 
+  updateTicketForm(id, data) {
+    return this.patch(`/ticket-forms/${id}/`, data);
+  },
+
   deleteTicketForm(id) {
     return this.delete(`/ticket-forms/${id}/`);
   },
@@ -303,6 +311,14 @@ export const apiService = {
 
   deleteDenomination(id) {
     return this.delete(`/denominations/${id}/`);
+  },
+
+  getRoamingLogs() {
+    return this.get("/roaming-logs/");
+  },
+
+  createRoamingLog(data) {
+    return this.post("/roaming-logs/", data);
   },
 
 };

@@ -127,8 +127,8 @@ class Ticket(models.Model):
     nullified_at = models.DateTimeField(null=True, blank=True)
     reason = models.TextField(blank=True)
     
-    is_late = models.BooleanField(default=False, db_index=True)  # True = issued late (missed intended batch)
-    intended_batch = models.CharField(max_length=20, blank=True)  # e.g. "Batch 1" — the batch it should have been in
+    is_late = models.BooleanField(default=False, db_index=True)
+    intended_batch = models.CharField(max_length=20, blank=True)  
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -171,13 +171,16 @@ class Requisition(models.Model):
 class TicketSeries(models.Model):
     series_no = models.CharField(max_length=50, unique=True, db_index=True)
     ticket_form = models.ForeignKey('TicketForm', on_delete=models.SET_NULL, null=True, blank=True)
+
     pad_no = models.CharField(max_length=50, blank=True)
     box_no = models.CharField(max_length=50, blank=True)
+
     start_no = models.CharField(max_length=20)
     end_no = models.CharField(max_length=20)
     qty = models.PositiveIntegerField(default=0)
     unit_value = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total_value = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
     requisition = models.ForeignKey(Requisition, on_delete=models.CASCADE, related_name='ticket_series')
     issued_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='issued_ticket_series')
     date_issued = models.DateTimeField(null=True, blank=True)
@@ -209,6 +212,7 @@ class PUVType(models.Model):
 
 class TicketForm(models.Model):
     name = models.CharField(max_length=100, unique=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     def __str__(self):
         return self.name
@@ -227,6 +231,13 @@ class RemittanceBatch(models.Model):
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     status = models.CharField(max_length=20, default="OPEN")
 
+class Deposit(models.Model):
+    batch = models.ForeignKey(RemittanceBatch, related_name="deposits", on_delete=models.CASCADE)
+    type = models.CharField(max_length=10, choices=[("bill","Bill"),("coin","Coin")])
+    denomination = models.IntegerField(default=0)
+    quantity = models.IntegerField(default=0)
+    deposit_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
 class Collection(models.Model):
     batch = models.ForeignKey(RemittanceBatch, related_name="collections", on_delete=models.CASCADE)
     ticket_form_no = models.CharField(max_length=50, blank=True, null=True)
@@ -234,9 +245,15 @@ class Collection(models.Model):
     to_no = models.CharField(max_length=20, blank=True, null=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
-class Deposit(models.Model):
-    batch = models.ForeignKey(RemittanceBatch, related_name="deposits", on_delete=models.CASCADE)
-    type = models.CharField(max_length=10, choices=[("bill","Bill"),("coin","Coin")])
-    denomination = models.IntegerField(default=0)
-    quantity = models.IntegerField(default=0)
-    deposit_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+class RoamingLog(models.Model):
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='roaming_logs')
+    driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name='roaming_logs')
+    recorded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='roaming_logs')
+    notes = models.TextField(blank=True)
+    recorded_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-recorded_at']
+
+    def __str__(self):
+        return f"{self.vehicle} - Roaming at {self.recorded_at}"

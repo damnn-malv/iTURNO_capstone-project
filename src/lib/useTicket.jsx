@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { OperationsService } from "./operations-service";
 import { SHIFTS } from "./constants";
 import { apiService } from "./api-service";
-import { useTicketPrice } from "./useTicketPrice";
 import { useShifts } from "./useShifts";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -83,18 +82,6 @@ export function useTicket(userRole = "") {
       return {};
     }
   });
-
-  const {
-    ticketFee,
-    ticketPriceError,
-    ticketPriceLoading,
-    isTicketPriceModalOpen,
-    setIsTicketPriceModalOpen,
-    newTicketPrice,
-    setNewTicketPrice,
-    saveTicketPrice,
-    isSavingTicketPrice,
-  } = useTicketPrice();
 
   const { shifts: scheduleShifts } = useShifts();
 
@@ -306,11 +293,16 @@ export function useTicket(userRole = "") {
     return ticketSeries
       .map((s) => ({
         ...s,
-        pcs: (parseInt(s.end_no) || 0) - (parseInt(s.start_no) || 0),
+        pcs: (parseInt(s.end_no) || 0) - (parseInt(s.start_no) || 0) + 1,
       }))
       .filter((s) => s.pcs > 0)
       .sort((a, b) => (parseInt(a.start_no) || 0) - (parseInt(b.start_no) || 0));
   }, [ticketSeries]);
+
+  const ticketFee = useMemo(() => {
+    const series = availableSeries.find((s) => String(s.id) === String(selectedSeriesId));
+    return Number(series?.ticket_form_price || 0);
+  }, [availableSeries, selectedSeriesId]);
 
   return {
     // State
@@ -344,13 +336,5 @@ export function useTicket(userRole = "") {
     handleDriverChange,
     handleIssueTicket,
     ticketFee,
-    ticketPriceLoading,
-    ticketPriceError,
-    isTicketPriceModalOpen,
-    setIsTicketPriceModalOpen,
-    newTicketPrice,
-    setNewTicketPrice,
-    saveTicketPrice,
-    isSavingTicketPrice,
   };
 }

@@ -142,10 +142,8 @@ const RequisitionFormModal = ({
                   <input
                     className="req-input"
                     value={item.end_no}
-                    onChange={(e) =>
-                      updateSeriesItem(i, "end_no", e.target.value)
-                    }
-                    placeholder="e.g. 18985000"
+                    readOnly
+                    placeholder="Auto-calculated"
                   />
                 </div>
               </div>
@@ -169,9 +167,7 @@ const RequisitionFormModal = ({
                     type="number"
                     step="0.01"
                     value={item.total_value}
-                    onChange={(e) =>
-                      updateSeriesItem(i, "total_value", e.target.value)
-                    }
+                    readOnly
                   />
                 </div>
               </div>
