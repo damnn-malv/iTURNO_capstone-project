@@ -21,8 +21,7 @@ import {
 
 import CollectionRecords from "../../../lib/report/tables/CollectionRecords";
 import TransactionLogs from "../../../lib/report/tables/TransactionLogs";
-import VehicleRecords from "../../../lib/report/tables/VehicleRecords";
-import DriverRecords from "../../../lib/report/tables/DriverRecords";
+import FleetRecords from "../../../lib/report/tables/FleetRecords";
 import "../../../styles/Report.css";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
@@ -321,41 +320,26 @@ export default function Report() {
       <CollectionRecords
         filters={filters}
         setFilters={setFilters}
-        showAllCollections={showAllCollections}
-        setShowAllCollections={setShowAllCollections}
         filteredCollections={filteredCollections}
-        visibleCollections={
-          showAllCollections
-            ? filteredCollections
-            : filteredCollections.slice(0, 5)
-        }
         handleExportCSV={handleExportCSV}
         handleExportPDF={handleExportPDF}
         peso={peso}
       />
 
       <TransactionLogs
-        logsTotal={logsTotal}
-        showAllLogs={showAllLogs}
         filteredLogs={logs}
-        setShowAllLogs={setShowAllLogs}
-        visibleLogs={showAllLogs ? logs : logs.slice(0, 5)}
         handleExportLogsCSV={handleExportLogsCSV}
         STATUS_COLORS={STATUS_COLORS}
         roaming={roaming}
-        roamingTotal={roamingTotal}
         handleExportRoamingCSV={handleExportRoamingCSV}
       />
 
-      <VehicleRecords
+      <FleetRecords
         vehiclesTotal={vehiclesTotal}
         showAllVehicles={showAllVehicles}
         setShowAllVehicles={setShowAllVehicles}
         visibleVehicles={showAllVehicles ? vehicles : vehicles.slice(0, 5)}
         handleExportVehiclesCSV={handleExportVehiclesCSV}
-      />
-
-      <DriverRecords
         driversTotal={driversTotal}
         showAllDrivers={showAllDrivers}
         setShowAllDrivers={setShowAllDrivers}

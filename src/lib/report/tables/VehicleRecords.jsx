@@ -1,5 +1,8 @@
 import { DataTable } from "../../../components/ui/dataTable";
 import { useState } from "react";
+import ReportTableModal from "./ReportTableModal";
+
+const COLUMNS = ["Vehicle Code", "Plate Number", "Route", "Driver"];
 
 export default function VehicleRecords({
   vehiclesTotal,
@@ -7,13 +10,10 @@ export default function VehicleRecords({
   setShowAllVehicles,
   visibleVehicles,
   handleExportVehiclesCSV,
-  cardStyle,
-  cardHeaderStyle,
-  cardTitleStyle,
-  btnExport,
-  btnSecondary,
 }) {
   const [search, setSearch] = useState("");
+  const [showModal, setShowModal] = useState(false);
+
   const searched = visibleVehicles.filter((v) => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -22,13 +22,40 @@ export default function VehicleRecords({
       .some((val) => val && val.toLowerCase().includes(q));
   });
 
+  const preview = showAllVehicles ? searched.slice(0, 5) : searched;
+
+  const renderRow = (v, idx, { rowClass, cellClass }) => (
+    <tr key={v.code} className={rowClass}>
+      <td className={`${cellClass} rpt-mono`}>{v.code}</td>
+      <td className={cellClass}>
+        <span className="rpt-plate">{v.plate_number}</span>
+      </td>
+      <td className={cellClass}>
+        {v.route_detail ? `${v.route_detail.origin} - San Fernando` : v.route}
+      </td>
+      <td className={cellClass}>
+        {v.active_driver_name || <span className="rpt-na">Unassigned</span>}
+      </td>
+    </tr>
+  );
+
+  const handleViewAll = () => {
+    setShowAllVehicles(true);
+    setShowModal(true);
+  };
+
+  const handleCloseModal = () => {
+    setShowModal(false);
+    setShowAllVehicles(false);
+  };
+
   return (
     <div className="rpt-card rpt-section">
       <div className="rpt-card-header">
         <div className="rpt-card-header-left">
           <span className="rpt-card-title">Vehicle Records</span>
           <span className="rpt-record-count">
-            {searched.length} of {vehiclesTotal} records
+            {preview.length} of {vehiclesTotal} records
           </span>
         </div>
         <div className="rpt-card-header-actions">
@@ -40,8 +67,8 @@ export default function VehicleRecords({
             onChange={(e) => setSearch(e.target.value)}
           />
           {vehiclesTotal > 5 && (
-            <button className="rpt-btn rpt-btn--secondary" onClick={() => setShowAllVehicles((v) => !v)}>
-              {showAllVehicles ? "Show Less" : "View All"}
+            <button className="rpt-btn rpt-btn--secondary" onClick={handleViewAll}>
+              View All
             </button>
           )}
           <button className="rpt-btn-export rpt-btn-export--green" onClick={handleExportVehiclesCSV}>
@@ -54,24 +81,18 @@ export default function VehicleRecords({
         </div>
       </div>
 
-      <DataTable
-        columns={["Vehicle Code", "Plate Number", "Route", "Driver"]}
-        data={searched}
-        rowRenderer={(v, idx, { rowClass, cellClass }) => (
-          <tr key={v.code} className={rowClass}>
-            <td className={`${cellClass} rpt-mono`}>{v.code}</td>
-            <td className={cellClass}>
-              <span className="rpt-plate">{v.plate_number}</span>
-            </td>
-            <td className={cellClass}>
-              {v.route_detail ? `${v.route_detail.origin} - San Fernando` : v.route}
-            </td>
-            <td className={cellClass}>
-              {v.active_driver_name || <span className="rpt-na">Unassigned</span>}
-            </td>
-          </tr>
-        )}
-      />
+      <DataTable columns={COLUMNS} data={preview} rowRenderer={renderRow} />
+
+      {showModal && (
+        <ReportTableModal
+          title="Vehicle Records"
+          subtitle="Complete registered vehicle fleet"
+          count={searched.length}
+          onClose={handleCloseModal}
+        >
+          <DataTable columns={COLUMNS} data={searched} rowRenderer={renderRow} />
+        </ReportTableModal>
+      )}
     </div>
   );
 }

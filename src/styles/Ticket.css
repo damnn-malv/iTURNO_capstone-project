@@ -123,8 +123,8 @@
 }
 
 .ticket-tab--active {
-  color: var(--accent, #c9a84c);
-  border-bottom-color: var(--accent, #c9a84c);
+  color: var(--navy);
+  border-bottom-color: var(--navy);
 }
 
 .ticket-tab-count {
@@ -139,7 +139,7 @@
 }
 
 .ticket-tab--active .ticket-tab-count {
-  background: var(--accent, #c9a84c);
+  background: var(--navy);
   color: #fff;
 }
 
