@@ -96,7 +96,7 @@ export const OperationsService = {
       if (vehicle) {
         matrix[t.route].push({
           id: t.id,
-          unit: vehicle.code,
+          unit: vehicle.plate_number,
           plate: vehicle.plate_number,
           time: format(new Date(t.issued_at), "h:mm a"),
         });

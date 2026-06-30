@@ -9,27 +9,26 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { exportPDF } from "../../../lib/report/exportPDF";
 import { DataTable } from "../../../components/ui/dataTable";
 import {
-  peso,
   STATUS_COLORS,
   today,
   exportCSV,
   SummaryCard,
 } from "../../../lib/report/reportHook";
+import { exportTablePDF } from "../../../lib/report/exportPDF";
 
-import CollectionRecords from "../../../lib/report/tables/CollectionRecords";
 import TransactionLogs from "../../../lib/report/tables/TransactionLogs";
 import FleetRecords from "../../../lib/report/tables/FleetRecords";
+import { getDriverCode } from "../../../lib/driver-utils";
 import "../../../styles/Report.css";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
 export default function Report() {
   const [filters, setFilters] = useState({
-    startDate: today,
-    endDate: today,
+    startDate: "",
+    endDate: "",
     batch: "all",
   });
   const [summary, setSummary] = useState(null);
@@ -133,9 +132,18 @@ export default function Report() {
     fetchRoaming();
   }, []);
 
-  const filteredCollections = collections.filter((r) => {
-    if (filters.batch === "batch1") return r.batch === "Batch 1";
-    if (filters.batch === "batch2") return r.batch === "Batch 2";
+  const filteredLogs = logs.filter((l) => {
+    const d = l.timestamp ? l.timestamp.slice(0, 10) : "";
+    if (filters.startDate && d < filters.startDate) return false;
+    if (filters.endDate && d > filters.endDate) return false;
+    return true;
+  });
+
+  const filteredRoaming = roaming.filter((r) => {
+    if (!r.recorded_at) return true;
+    const d = r.recorded_at.slice(0, 10);
+    if (filters.startDate && d < filters.startDate) return false;
+    if (filters.endDate && d > filters.endDate) return false;
     return true;
   });
 
@@ -155,72 +163,50 @@ export default function Report() {
     setTimeout(() => fetchData(), 0);
   };
 
-  const handleExportCSV = () =>
-    exportCSV(
-      filteredCollections.map((r) => ({
-        Date: r.issued_at,
-        Batch: r.batch,
-        "Ticket ID": r.id,
-        Driver: r.driver,
-        Vehicle: r.vehicle,
-        Route: r.route,
-        "Amount (PHP)": r.collection_amount || 0,
-      })),
-      `collection_report_${Date.now()}.csv`,
-    );
+  const buildVehicleExportRow = (v) => ({
+    "Plate Number": v.plate_number,
+    Route: v.route_detail
+      ? `${v.route_detail.origin} - San Fernando`
+      : v.route || "—",
+    Transportation: v.transportation_name || v.transportation_id || "—",
+    "Franchise #": v.franchise_number || "—",
+    "QR Code": v.qr_code || "—",
+    "Active Driver": v.active_driver_name || "Unassigned",
+    Status: v.status,
+  });
 
-  const handleExportLogsCSV = () =>
-    exportCSV(
-      logs.map((l) => ({
-        Timestamp: l.timestamp,
-        "Ticket ID": l.ticket_id,
-        Action: l.action,
-        Driver: l.driver,
-        Vehicle: l.vehicle,
-        Route: l.route,
-        Batch: l.batch,
-        "Amount (PHP)": l.amount,
-        User: l.user,
-      })),
-      `transaction_logs_${Date.now()}.csv`,
-    );
+  const buildDriverExportRow = (d) => ({
+    IWP: getDriverCode(d),
+    "First Name": d.first_name || "—",
+    "Middle Name": d.middle_name || "—",
+    "Last Name": d.last_name || "—",
+    Gender: d.gender || "—",
+    Birthdate: d.birthdate || "—",
+    Province: d.province || "—",
+    City: d.city || "—",
+    Barangay: d.barangay || "—",
+    Street: d.street || "—",
+    "Contact No.": d.contact || "—",
+    Status: d.status === "ACTIVE" ? "Active" : "Inactive",
+  });
 
   const handleExportVehiclesCSV = () =>
     exportCSV(
-      vehicles.map((v) => ({
-        Code: v.code,
-        "Plate Number": v.plate_number,
-        Route: v.route_detail
-          ? `${v.route_detail.origin} - San Fernando`
-          : v.route,
-        Driver: v.active_driver_name || "—",
-      })),
+      vehicles.map(buildVehicleExportRow),
       `vehicle_records_${Date.now()}.csv`,
     );
 
   const handleExportDriversCSV = () =>
     exportCSV(
-      drivers.map((d) => ({
-        Code: d.code,
-        Name: d.name,
-        "Contact Number": d.contact_number,
-      })),
+      drivers.map(buildDriverExportRow),
       `driver_records_${Date.now()}.csv`,
     );
 
-  const handleExportRoamingCSV = () =>
-    exportCSV(
-      roaming.map((r) => ({
-        "Vehicle Plate": r.vehicle_plate,
-        Driver: r.driver_name || "",
-        "Recorded By": r.recorded_by_name || "",
-        Notes: r.notes || "",
-        "Recorded At": r.recorded_at,
-      })),
-      `roaming_logs_${Date.now()}.csv`,
-    );
+  const handleExportVehiclesPDF = () =>
+    exportTablePDF(vehicles.map(buildVehicleExportRow), "Vehicle Records");
 
-  const handleExportPDF = () => exportPDF(filteredCollections, filters);
+  const handleExportDriversPDF = () =>
+    exportTablePDF(drivers.map(buildDriverExportRow), "Driver Records");
 
   return (
     <div className="rpt-page">
@@ -315,23 +301,10 @@ export default function Report() {
         </div>
       </div>
 
-      
-      {/* Child table sections — style props kept for backward compat but unused */}
-      <CollectionRecords
-        filters={filters}
-        setFilters={setFilters}
-        filteredCollections={filteredCollections}
-        handleExportCSV={handleExportCSV}
-        handleExportPDF={handleExportPDF}
-        peso={peso}
-      />
-
       <TransactionLogs
-        filteredLogs={logs}
-        handleExportLogsCSV={handleExportLogsCSV}
+        filteredLogs={filteredLogs}
         STATUS_COLORS={STATUS_COLORS}
-        roaming={roaming}
-        handleExportRoamingCSV={handleExportRoamingCSV}
+        roaming={filteredRoaming}
       />
 
       <FleetRecords
@@ -340,11 +313,13 @@ export default function Report() {
         setShowAllVehicles={setShowAllVehicles}
         visibleVehicles={showAllVehicles ? vehicles : vehicles.slice(0, 5)}
         handleExportVehiclesCSV={handleExportVehiclesCSV}
+        handleExportVehiclesPDF={handleExportVehiclesPDF}
         driversTotal={driversTotal}
         showAllDrivers={showAllDrivers}
         setShowAllDrivers={setShowAllDrivers}
         visibleDrivers={showAllDrivers ? drivers : drivers.slice(0, 5)}
         handleExportDriversCSV={handleExportDriversCSV}
+        handleExportDriversPDF={handleExportDriversPDF}
       />
     </div>
   );

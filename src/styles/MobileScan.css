@@ -316,12 +316,13 @@
   background: #2563eb;
 }
 
-/* ── Driver Badge ── */
-.ms-driver-badge {
+/* ── Driver Card ── */
+.ms-driver-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 16px;
   background: #f0fdf4;
   border: 1px solid #bbf7d0;
   border-radius: 10px;
@@ -331,16 +332,64 @@
 }
 
 .ms-driver-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
+  width: 160px;
+  height: 160px;
+  border-radius: 12px;
   background: #166534;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 3rem;
+}
+
+.ms-driver-photo {
+  width: 160px;
+  height: 160px;
+  border-radius: 12px;
+  object-fit: cover;
+  flex-shrink: 0;
+  cursor: zoom-in;
+  transition: transform 0.15s ease;
+}
+
+.ms-driver-photo:active {
+  transform: scale(0.96);
+}
+
+/* ── Photo Lightbox ── */
+.ms-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.ms-lightbox-img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 12px;
+  object-fit: contain;
+}
+
+.ms-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
 }
 
 /* ── Dark mode ── */

@@ -1,16 +1,16 @@
 import { DataTable } from "../../../components/ui/dataTable";
 import { useState } from "react";
 import ReportTableModal from "./ReportTableModal";
+import { exportCSV } from "../reportHook";
+import { exportTablePDF } from "../exportPDF";
 
 const LOG_COLUMNS = ["Timestamp", "Ticket ID", "Action", "Batch", "Driver", "Vehicle", "Route", "User"];
 const ROAMING_COLUMNS = ["Vehicle Plate", "Driver", "Recorded By", "Notes", "Recorded At"];
 
 export default function TransactionLogs({
   filteredLogs,
-  handleExportLogsCSV,
   STATUS_COLORS,
   roaming = [],
-  handleExportRoamingCSV,
 }) {
   const [activeTab, setActiveTab] = useState("logs");
   const [search, setSearch] = useState("");
@@ -33,6 +33,60 @@ export default function TransactionLogs({
   const isLogs = activeTab === "logs";
   const searched = isLogs ? searchedLogs : searchedRoaming;
   const preview = searched.slice(0, 5);
+
+  const handleExportLogsCSV = () =>
+    exportCSV(
+      searchedLogs.map((l) => ({
+        Timestamp: l.timestamp,
+        "Ticket ID": l.ticket_id,
+        Action: l.action,
+        Driver: l.driver,
+        Vehicle: l.vehicle,
+        Route: l.route,
+        "Amount (PHP)": l.amount,
+        User: l.user,
+      })),
+      `transaction_logs_${Date.now()}.csv`,
+    );
+
+  const handleExportRoamingCSV = () =>
+    exportCSV(
+      searchedRoaming.map((r) => ({
+        "Vehicle Plate": r.vehicle_plate,
+        Driver: r.driver_name || "",
+        "Recorded By": r.recorded_by_name || "",
+        Notes: r.notes || "",
+        "Recorded At": r.recorded_at,
+      })),
+      `roaming_logs_${Date.now()}.csv`,
+    );
+
+  const handleExportLogsPDF = () =>
+    exportTablePDF(
+      searchedLogs.map((l) => ({
+        Timestamp: l.timestamp,
+        "Ticket ID": l.ticket_id,
+        Action: l.action,
+        Driver: l.driver,
+        Vehicle: l.vehicle,
+        Route: l.route,
+        "Amount (PHP)": l.amount,
+        User: l.user,
+      })),
+      "Transaction Logs",
+    );
+
+  const handleExportRoamingPDF = () =>
+    exportTablePDF(
+      searchedRoaming.map((r) => ({
+        "Vehicle Plate": r.vehicle_plate,
+        Driver: r.driver_name || "",
+        "Recorded By": r.recorded_by_name || "",
+        Notes: r.notes || "",
+        "Recorded At": r.recorded_at,
+      })),
+      "Roaming Logs",
+    );
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -129,6 +183,16 @@ export default function TransactionLogs({
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
             Export CSV
+          </button>
+          <button
+            className="rpt-btn-export rpt-btn-export--red"
+            onClick={isLogs ? handleExportLogsPDF : handleExportRoamingPDF}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            Export PDF
           </button>
         </div>
       </div>

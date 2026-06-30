@@ -241,7 +241,7 @@ export function useTicket(userRole = "") {
     try {
       setIssuingTicket(true);
       const series = availableSeries.find((s) => String(s.id) === String(selectedSeriesId));
-      const ticketId = `Ticket-${series.start_no}`;
+      const ticketId = `${series.start_no}`;
 
       const ticketPayload = {
         id: ticketId,

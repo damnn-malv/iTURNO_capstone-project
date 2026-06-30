@@ -17,8 +17,8 @@ function Registry() {
   const searchTerm = activeTab === "vehicles" ? vehSearch : drvSearch;
   const setSearchTerm = activeTab === "vehicles" ? setVehSearch : setDrvSearch;
   const placeholder = activeTab === "vehicles"
-    ? "Search by code, plate, or route…"
-    : "Search by code or name…";
+    ? "Search by plate or route…"
+    : "Search by IWP or name…";
   const addLabel = activeTab === "vehicles" ? "Register Vehicle" : "Register Driver";
 
   const handleAdd = () => {

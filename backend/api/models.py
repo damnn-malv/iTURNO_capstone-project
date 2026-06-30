@@ -77,7 +77,6 @@ class Vehicle(models.Model):
     ]
 
     id = models.AutoField(primary_key=True)
-    code = models.CharField(max_length=20, unique=True, editable=False)
     plate_number = models.CharField(unique=True, max_length=20, db_index=True)
     transportation_id = models.ForeignKey('PUVType', null=True, blank=True, on_delete=models.SET_NULL, related_name='vehicles', db_index=True)
     franchise_number = models.CharField(max_length=100, blank=True, db_index=True)
@@ -97,13 +96,6 @@ class Vehicle(models.Model):
             models.Index(fields=['status', 'is_archived']),
             models.Index(fields=['route', 'is_archived']),
         ]
-
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        if not self.code:
-            self.code = f"VHC{str(self.id).zfill(3)}"
-            super().save(update_fields=['code'])
-
 
 class Ticket(models.Model):
     STATUS_CHOICES = [('ISSUED', 'Issued'), ('DISPATCHED', 'Dispatched'), ('COLLECTED', 'Collected'), ('CANCELLED', 'Cancelled'), ('RETURNED', 'Returned')]

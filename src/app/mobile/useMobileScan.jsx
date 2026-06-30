@@ -148,7 +148,7 @@ export function useMobileScan() {
         const series = availableSeries.find((s) => String(s.id) === String(selectedSeriesId));
         if (!series) throw new Error("Selected series not found or depleted.");
 
-        const ticketId = `Ticket-${series.start_no}`;
+        const ticketId = `${series.start_no}`;
         const payload = {
           id: ticketId,
           vehicle_id: scannedVehicle.id,

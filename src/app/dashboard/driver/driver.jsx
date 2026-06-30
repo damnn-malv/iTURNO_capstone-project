@@ -131,7 +131,7 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
           <table className="drv-table">
             <thead>
               <tr>
-                {["Code", "Full Name", "Contact No.", "Status", "Actions"].map(
+                {["IWP", "Full Name", "Contact No.", "Address", "Status", "Actions"].map(
                   (h) => (
                     <th key={h}>{h}</th>
                   ),
@@ -141,7 +141,7 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="5" className="drv-table-state">
+                  <td colSpan="6" className="drv-table-state">
                     <div className="drv-loading-dots">
                       <div />
                       <div />
@@ -151,7 +151,7 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                 </tr>
               ) : filteredDrivers.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="drv-table-state">
+                  <td colSpan="6" className="drv-table-state">
                     <svg
                       width="32"
                       height="32"
@@ -179,6 +179,11 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                     </td>
                     <td className="drv-td-name">{getDriverDisplayName(driver)}</td>
                     <td className="drv-td-contact">{driver.contact || "—"}</td>
+                    <td className="drv-td-contact">
+                      {[driver.barangay, driver.city, driver.province]
+                        .filter(Boolean)
+                        .join(", ") || "—"}
+                    </td>
                     <td>
                       <div className="drv-status-group">
                         <span

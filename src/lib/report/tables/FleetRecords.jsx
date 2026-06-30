@@ -2,8 +2,16 @@ import { DataTable } from "../../../components/ui/dataTable";
 import { useState } from "react";
 import ReportTableModal from "./ReportTableModal";
 
-const VEHICLE_COLUMNS = ["Vehicle Code", "Plate Number", "Route", "Driver"];
-const DRIVER_COLUMNS = ["IWP Number", "Name", "Contact Number"];
+const VEHICLE_COLUMNS = [
+  "Plate Number",
+  "Route",
+  "Transportation",
+  "Franchise #",
+  "QR Code",
+  "Active Driver",
+  "Status",
+];
+const DRIVER_COLUMNS = ["IWP", "Full Name", "Contact No.", "Address", "Status"];
 
 export default function FleetRecords({
   vehiclesTotal,
@@ -11,12 +19,14 @@ export default function FleetRecords({
   setShowAllVehicles,
   visibleVehicles,
   handleExportVehiclesCSV,
+  handleExportVehiclesPDF,
 
   driversTotal,
   showAllDrivers,
   setShowAllDrivers,
   visibleDrivers,
   handleExportDriversCSV,
+  handleExportDriversPDF,
 }) {
   const [activeTab, setActiveTab] = useState("vehicles");
   const [search, setSearch] = useState("");
@@ -28,7 +38,7 @@ export default function FleetRecords({
     if (!search) return true;
     const q = search.toLowerCase();
     const route = v.route_detail ? `${v.route_detail.origin} - San Fernando` : v.route || "";
-    return [v.code, v.plate_number, route, v.active_driver_name]
+    return [v.plate_number, route, v.active_driver_name]
       .some((val) => val && val.toLowerCase().includes(q));
   });
 
@@ -45,17 +55,26 @@ export default function FleetRecords({
   const preview = showAll ? searched.slice(0, 5) : searched;
 
   const renderVehicleRow = (v, idx, { rowClass, cellClass }) => (
-    <tr key={v.code} className={rowClass}>
-      <td className={`${cellClass} rpt-mono`}>{v.code}</td>
+    <tr key={v.id} className={rowClass}>
       <td className={cellClass}>
         <span className="rpt-plate">{v.plate_number}</span>
       </td>
       <td className={cellClass}>
-        {v.route_detail ? `${v.route_detail.origin} - San Fernando` : v.route}
+        {v.route_detail ? `${v.route_detail.origin} - San Fernando` : v.route || <span className="rpt-na">No route</span>}
+      </td>
+      <td className={cellClass}>
+        {v.transportation_name || v.transportation_id || <span className="rpt-na">—</span>}
+      </td>
+      <td className={cellClass}>
+        {v.franchise_number || <span className="rpt-na">—</span>}
+      </td>
+      <td className={cellClass}>
+        {v.qr_code || <span className="rpt-na">—</span>}
       </td>
       <td className={cellClass}>
         {v.active_driver_name || <span className="rpt-na">Unassigned</span>}
       </td>
+      <td className={cellClass}>{v.status}</td>
     </tr>
   );
 
@@ -64,6 +83,10 @@ export default function FleetRecords({
       <td className={`${cellClass} rpt-mono`}>{d.iwp_number || d.id}</td>
       <td className={`${cellClass} rpt-bold`}>{d.name}</td>
       <td className={cellClass}>{d.contact}</td>
+      <td className={cellClass}>
+        {[d.barangay, d.city, d.province].filter(Boolean).join(", ") || "—"}
+      </td>
+      <td className={cellClass}>{d.status === "ACTIVE" ? "Active" : "Inactive"}</td>
     </tr>
   );
 
@@ -129,6 +152,16 @@ export default function FleetRecords({
               <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
             Export CSV
+          </button>
+          <button
+            className="rpt-btn-export rpt-btn-export--red"
+            onClick={isVehicles ? handleExportVehiclesPDF : handleExportDriversPDF}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            Export PDF
           </button>
         </div>
       </div>

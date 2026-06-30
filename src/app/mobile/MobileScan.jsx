@@ -28,10 +28,23 @@ function MobileScan() {
   const navigate = useNavigate();
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState(null);
+  const [photoZoomOpen, setPhotoZoomOpen] = useState(false);
+  const [photoBroken, setPhotoBroken] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const rafRef = useRef(null);
+
+  const BACKEND_URL =
+    window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+      ? "http://localhost:8000"
+      : `http://${window.location.hostname}:8000`;
+
+  const driverPhotoUrl = selectedDriver?.photo
+    ? selectedDriver.photo.startsWith("http")
+      ? selectedDriver.photo
+      : `${BACKEND_URL}${selectedDriver.photo}`
+    : null;
 
   const stopScanner = useCallback(() => {
     if (rafRef.current) {
@@ -115,6 +128,10 @@ function MobileScan() {
   useEffect(() => {
     return () => stopScanner();
   }, [stopScanner]);
+
+  useEffect(() => {
+    setPhotoBroken(false);
+  }, [selectedDriver]);
 
   if (loading) {
     return (
@@ -270,11 +287,20 @@ function MobileScan() {
           <div className="ms-field">
             <span className="ms-label">Driver</span>
             {selectedDriver && (
-              <div className="ms-driver-badge">
-                <span className="ms-driver-avatar">
-                  {selectedDriver.name.charAt(0)}
-                </span>
-                <span>{selectedDriver.name}</span>
+              <div className="ms-driver-card">
+                {driverPhotoUrl && !photoBroken ? (
+                  <img
+                    className="ms-driver-photo"
+                    src={driverPhotoUrl}
+                    alt={selectedDriver.name}
+                    onClick={() => setPhotoZoomOpen(true)}
+                    onError={() => setPhotoBroken(true)}
+                  />
+                ) : (
+                  <span className="ms-driver-avatar">
+                    {selectedDriver.name.charAt(0)}
+                  </span>
+                )}
               </div>
             )}
             <select
@@ -303,6 +329,22 @@ function MobileScan() {
                 ? "Issue Ticket"
                 : "Log Roaming"}
           </button>
+        </div>
+      )}
+
+      {photoZoomOpen && driverPhotoUrl && !photoBroken && (
+        <div className="ms-lightbox" onClick={() => setPhotoZoomOpen(false)}>
+          <button
+            className="ms-lightbox-close"
+            onClick={() => setPhotoZoomOpen(false)}
+          >
+            ×
+          </button>
+          <img
+            className="ms-lightbox-img"
+            src={driverPhotoUrl}
+            alt={selectedDriver?.name}
+          />
         </div>
       )}
     </div>

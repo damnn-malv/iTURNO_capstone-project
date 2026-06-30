@@ -50,7 +50,6 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
     const q = searchTerm.toLowerCase().trim();
     if (!q) return true;
     return (
-      (v.code || "").toLowerCase().includes(q) ||
       (v.plate_number || "").toLowerCase().includes(q) ||
       (v.franchise_number || "").toLowerCase().includes(q) ||
       (v.qr_code || "").toLowerCase().includes(q) ||
@@ -79,7 +78,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
             </svg>
             <input
               className="veh-search"
-              placeholder="Search by code, plate, or route…"
+              placeholder="Search by plate or route…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -126,7 +125,6 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
             <thead>
               <tr>
                 {[
-                  "Code",
                   "Plate Number",
                   "Route",
                   "Transportation",
@@ -178,9 +176,6 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
               ) : (
                 filteredVehicles.map((vehicle) => (
                   <tr key={vehicle.id} className="veh-row">
-                    <td>
-                      <span className="veh-code">{vehicle.code}</span>
-                    </td>
                     <td>
                       <span className="veh-plate">{vehicle.plate_number}</span>
                     </td>

@@ -280,7 +280,7 @@ function Ticket({ userRole }) {
                 <table className="ticket-table">
                   <thead>
                     <tr>
-                      {["Ticket ID", "Plate Number", "Driver", "Issued By", "Time", "Status"].map(
+                      {["Ticket ID", "Plate Number", "Driver", "Issued By", "Time", activeTab === "cancelled" ? "Reason" : "Status"].map(
                         (h) => (
                           <th key={h}>{h}</th>
                         ),
@@ -347,7 +347,11 @@ function Ticket({ userRole }) {
                             {formatTime(t.issued_at)}
                           </td>
                           <td>
-                            <TicketStatusBadge ticket={t} />
+                            {activeTab === "cancelled" ? (
+                              t.reason || <span className="ticket-na">N/A</span>
+                            ) : (
+                              <TicketStatusBadge ticket={t} />
+                            )}
                           </td>
                         </tr>
                       ))
