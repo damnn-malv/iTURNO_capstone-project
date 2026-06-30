@@ -624,6 +624,8 @@
   .drv-table td { padding: 10px 12px; }
 
   .drv-actions { flex-wrap: wrap; }
+
+  .drv-btn { padding: 9px 14px; font-size: 13px; min-height: 36px; }
 }
 
 @media (max-width: 480px) {

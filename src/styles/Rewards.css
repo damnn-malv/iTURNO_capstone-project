@@ -557,3 +557,9 @@
   .rw-layout { flex-direction: column; }
   .rw-sidebar { width: 100%; }
 }
+
+@media (max-width: 480px) {
+  .rw-page { padding: 16px; }
+  .rw-main { padding: 16px; }
+  .rw-stat-card { min-width: 110px; }
+}

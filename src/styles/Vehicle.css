@@ -524,6 +524,8 @@
   .veh-table td { padding: 10px 12px; }
 
   .veh-actions { flex-wrap: wrap; }
+
+  .veh-btn { padding: 9px 14px; font-size: 13px; min-height: 36px; }
 }
 
 @media (max-width: 480px) {
