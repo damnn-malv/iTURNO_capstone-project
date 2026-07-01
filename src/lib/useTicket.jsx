@@ -64,6 +64,7 @@ export function useTicket(userRole = "") {
   const [error, setError] = useState(null);
   const [vehicles, setVehicles] = useState([]);
   const [drivers, setDrivers] = useState([]);
+  const [selectedRouteId, setSelectedRouteId] = useState("");
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [showDriverModal, setShowDriverModal] = useState(false);
@@ -157,6 +158,14 @@ export function useTicket(userRole = "") {
       localStorage.setItem("vehicleDriverMap", JSON.stringify(next));
       return next;
     });
+  };
+
+  // Route change handler
+  const handleRouteChange = (e) => {
+    setSelectedRouteId(e.target.value);
+    setSelectedVehicle(null);
+    setSelectedDriver(null);
+    setIssueError("");
   };
 
   // Vehicle change handler
@@ -278,10 +287,26 @@ export function useTicket(userRole = "") {
   };
 
   // Computed values
+  const routes = useMemo(() => {
+    const map = new Map();
+    vehicles.forEach((v) => {
+      if (v.route_detail?.id != null && !map.has(v.route_detail.id)) {
+        map.set(v.route_detail.id, v.route_detail);
+      }
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      (a.full_name || "").localeCompare(b.full_name || ""),
+    );
+  }, [vehicles]);
+
   const availableVehicles = useMemo(
     () =>
-      vehicles.filter((v) => ["AVAILABLE", "DISPATCHED"].includes(v.status)),
-    [vehicles],
+      vehicles.filter(
+        (v) =>
+          ["AVAILABLE", "DISPATCHED"].includes(v.status) &&
+          (!selectedRouteId || String(v.route_detail?.id) === String(selectedRouteId)),
+      ),
+    [vehicles, selectedRouteId],
   );
 
   const activeDrivers = useMemo(
@@ -314,6 +339,8 @@ export function useTicket(userRole = "") {
     error,
     vehicles,
     drivers,
+    selectedRouteId,
+    setSelectedRouteId,
     selectedVehicle,
     setSelectedVehicle,
     selectedDriver,
@@ -325,6 +352,7 @@ export function useTicket(userRole = "") {
     issueError,
 
     // Computed
+    routes,
     availableVehicles,
     activeDrivers,
     availableSeries,
@@ -332,6 +360,7 @@ export function useTicket(userRole = "") {
     setSelectedSeriesId: updateSelectedSeriesId,
     // Actions
     fetchTickets,
+    handleRouteChange,
     handleVehicleChange,
     handleDriverChange,
     handleIssueTicket,

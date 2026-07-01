@@ -84,7 +84,7 @@ export default function Remittance() {
           <table className="rem-table">
             <thead>
               <tr>
-                {["Batch ID", "Issued By", "Issued At", "Total Amount", "Status", "Actions"].map((h) => (
+                {["Issued By", "Issued At", "Total Amount", "Actions"].map((h) => (
                   <th key={h}>{h}</th>
                 ))}
               </tr>
@@ -117,9 +117,7 @@ export default function Remittance() {
               ) : (
                 filteredBatches.map((b) => (
                   <tr key={b.id} className="rem-row">
-                    <td>
-                      <span className="rem-batch-id">{b.id}</span>
-                    </td>
+                    
                     <td className="rem-td-meta">{b.issued_by_name}</td>
                     <td className="rem-td-meta">
                       {new Date(b.issued_at).toLocaleDateString("en-US", {
@@ -137,11 +135,7 @@ export default function Remittance() {
                         ₱{Number(b.total_amount).toLocaleString()}
                       </span>
                     </td>
-                    <td>
-                      <span className={`rem-status ${STATUS_COLOR[b.status] || "rem-status--open"}`}>
-                        {b.status}
-                      </span>
-                    </td>
+                    
                     <td>
                       <div className="rem-actions">
                         <button className="rem-btn rem-btn--view" onClick={() => setViewBatch(b)}>

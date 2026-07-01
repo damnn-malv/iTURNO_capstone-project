@@ -195,8 +195,8 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                   "Route",
                   "Transportation",
                   "Franchise #",
-                  "QR Code",
-                  "Active Driver",
+                  
+                  "Active Operator",
                   "Status",
                   "Actions",
                 ].map((h) => (
@@ -262,11 +262,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                         <span className="veh-na">—</span>
                       )}
                     </td>
-                    <td className="veh-td-route">
-                      {vehicle.qr_code || (
-                        <span className="veh-na">—</span>
-                      )}
-                    </td>
+                    
                     <td className="veh-td-driver">
                       {vehicle.active_driver_name || (
                         <span className="veh-na">Unassigned</span>
@@ -480,7 +476,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                 </select>
               </Field>
 
-              <Field label="Active Driver (Optional)">
+              <Field label="Active Operator">
                 <select
                   className="veh-select"
                   value={form.active_driver || ""}

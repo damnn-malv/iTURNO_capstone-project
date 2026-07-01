@@ -28,11 +28,14 @@ function Ticket({ userRole }) {
     successMessage,
     issueError,
 
+    routes,
+    selectedRouteId,
     availableVehicles,
     activeDrivers,
     availableSeries,
     selectedSeriesId,
     setSelectedSeriesId,
+    handleRouteChange,
     handleVehicleChange,
     handleDriverChange,
     handleIssueTicket,
@@ -75,6 +78,23 @@ function Ticket({ userRole }) {
           </div>
 
           <div className="ticket-card-body">
+            {/* Route select */}
+            <div className="ticket-field">
+              <label className="ticket-label">Route</label>
+              <select
+                className="ticket-select"
+                value={selectedRouteId}
+                onChange={handleRouteChange}
+              >
+                <option value="">— Select a route —</option>
+                {routes.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.full_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Vehicle select */}
             <div className="ticket-field">
               <label className="ticket-label">Vehicle (Plate Number)</label>
