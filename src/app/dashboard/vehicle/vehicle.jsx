@@ -340,7 +340,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
       {/* Modal */}
       {isModalOpen && (
         <div className="veh-overlay" onClick={closeModal}>
-          <div className="veh-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="veh-modal veh-modal--profile" onClick={(e) => e.stopPropagation()}>
             <div className="veh-modal-header">
               <div className="veh-modal-header-left">
                 <svg
@@ -357,7 +357,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                   <circle cx="18.5" cy="18.5" r="2.5" />
                 </svg>
                 <h2 className="veh-modal-title">
-                  {editing ? "Edit Vehicle Record" : "Register New Vehicle"}
+                  {editing ? "Vehicle Profile" : "Register New Vehicle"}
                 </h2>
               </div>
               <button
@@ -380,85 +380,146 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
             </div>
 
             <form onSubmit={handleSubmit} className="veh-modal-body">
-              {!editing && (
-                <Field label="Plate Number">
-                  <input
-                    type="text"
-                    className="veh-input"
-                    placeholder="e.g. ABC-1234"
-                    value={form.plate_number}
-                    maxLength={8}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        plate_number: formatPlateNumber(e.target.value),
-                      })
-                    }
-                    required
-                  />
-                </Field>
-              )}
 
-              <RouteField
-                routes={routes}
-                form={form}
-                setForm={setForm}
-                routeMode={routeMode}
-                setRouteMode={setRouteMode}
-                newOrigin={newOrigin}
-                setNewOrigin={setNewOrigin}
-                routeError={routeError}
-                editing={editing}
-                selectedRoute={selectedRoute}
-                destination={DESTINATION}
-              />
+              {/* Vehicle Information */}
+              <div className="veh-profile-section">
+                
+                <div className="veh-profile-grid">
+                  {!editing && (
+                    <Field label="Plate Number">
+                      <input
+                        type="text"
+                        className="veh-input"
+                        placeholder="e.g. ABC-1234"
+                        value={form.plate_number}
+                        maxLength={8}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            plate_number: formatPlateNumber(e.target.value),
+                          })
+                        }
+                        required
+                      />
+                    </Field>
+                  )}
+                  <Field label="Transportation Type">
+                    <select
+                      className="veh-select"
+                      value={form.transportation_id || ""}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          transportation_id: e.target.value ? Number(e.target.value) : "",
+                        })
+                      }
+                    >
+                      <option value="">— Select type —</option>
+                      {transportationTypes.map((type) => (
+                        <option key={type.id} value={type.id}>
+                          {type.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Franchise Number">
+                    <input
+                      type="text"
+                      className="veh-input"
+                      placeholder="e.g. FR-001"
+                      value={form.franchise_number}
+                      onChange={(e) =>
+                        setForm({ ...form, franchise_number: e.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label="Status">
+                    <select
+                      className="veh-select"
+                      value={form.status}
+                      onChange={(e) => setForm({ ...form, status: e.target.value })}
+                    >
+                      <option value="AVAILABLE">Available</option>
+                      <option value="MAINTENANCE">Under Maintenance</option>
+                    </select>
+                  </Field>
+                </div>
+              </div>
 
-              <Field label="Transportation Type">
-                <select
-                  className="veh-select"
-                  value={form.transportation_id || ""}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      transportation_id: e.target.value ? Number(e.target.value) : "",
-                    })
-                  }
-                >
-                  <option value="">— Select type —</option>
-                  {transportationTypes.map((type) => (
-                    <option key={type.id} value={type.id}>
-                      {type.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Franchise Number">
-                <input
-                  type="text"
-                  className="veh-input"
-                  placeholder="e.g. FR-001"
-                  value={form.franchise_number}
-                  onChange={(e) =>
-                    setForm({ ...form, franchise_number: e.target.value })
-                  }
+              {/* Route & Assignment */}
+              <div className="veh-profile-section">
+                <h3 className="veh-profile-section-title">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                  Route & Assignment
+                </h3>
+                <RouteField
+                  routes={routes}
+                  form={form}
+                  setForm={setForm}
+                  routeMode={routeMode}
+                  setRouteMode={setRouteMode}
+                  newOrigin={newOrigin}
+                  setNewOrigin={setNewOrigin}
+                  routeError={routeError}
+                  editing={editing}
+                  selectedRoute={selectedRoute}
+                  destination={DESTINATION}
                 />
-              </Field>
-
-              <Field label="Operator Address">
-                <input
-                  type="text"
-                  className="veh-input"
-                  placeholder="e.g. Brgy. X, City"
-                  value={form.operator_address}
-                  onChange={(e) =>
-                    setForm({ ...form, operator_address: e.target.value })
-                  }
-                />
-              </Field>
+                <div className="veh-profile-grid">
+                  <Field label="Active Operator">
+                    <select
+                      className="veh-select"
+                      value={form.active_driver || ""}
+                      onChange={(e) => {
+                        const driverId = e.target.value
+                          ? parseInt(e.target.value)
+                          : null;
+                        const driver = activeDrivers.find((d) => d.id === driverId);
+                        setForm({
+                          ...form,
+                          active_driver: driverId,
+                          operator_address: driver
+                            ? buildDriverAddress(driver)
+                            : form.operator_address,
+                        });
+                      }}
+                    >
+                      <option value="">— None / Unassigned —</option>
+                      {activeDrivers.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="veh-field-hint">Only active drivers are shown.</p>
+                  </Field>
+                  <Field label="Operator Address">
+                    <input
+                      type="text"
+                      className="veh-input"
+                      placeholder="e.g. Brgy. X, City"
+                      value={form.operator_address}
+                      onChange={(e) =>
+                        setForm({ ...form, operator_address: e.target.value })
+                      }
+                    />
+                  </Field>
+                </div>
+              </div>
 
               {editing && form.qr_code && (
-                <Field label="Vehicle QR Code">
+                <div className="veh-profile-section">
+                  <h3 className="veh-profile-section-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="3" width="7" height="7" rx="1" />
+                      <rect x="14" y="3" width="7" height="7" rx="1" />
+                      <rect x="3" y="14" width="7" height="7" rx="1" />
+                    </svg>
+                    Vehicle QR Code
+                  </h3>
                   <div className="veh-qr-display">
                     <QRCodeSVG
                       value={form.qr_code}
@@ -468,47 +529,8 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                     />
                     <span className="veh-qr-label">{form.qr_code}</span>
                   </div>
-                </Field>
+                </div>
               )}
-
-              <Field label="Status">
-                <select
-                  className="veh-select"
-                  value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value })}
-                >
-                  <option value="AVAILABLE">Available</option>
-                  <option value="MAINTENANCE">Under Maintenance</option>
-                </select>
-              </Field>
-
-              <Field label="Active Operator">
-                <select
-                  className="veh-select"
-                  value={form.active_driver || ""}
-                  onChange={(e) => {
-                    const driverId = e.target.value
-                      ? parseInt(e.target.value)
-                      : null;
-                    const driver = activeDrivers.find((d) => d.id === driverId);
-                    setForm({
-                      ...form,
-                      active_driver: driverId,
-                      operator_address: driver
-                        ? buildDriverAddress(driver)
-                        : form.operator_address,
-                    });
-                  }}
-                >
-                  <option value="">— None / Unassigned —</option>
-                  {activeDrivers.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="veh-field-hint">Only active drivers are shown.</p>
-              </Field>
 
               <div className="veh-modal-footer">
                 <button
