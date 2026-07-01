@@ -565,7 +565,7 @@ function Collection({ userRole }) {
                   <table className="col-table">
                     <thead>
                       <tr>
-                        {["#", "Vehicle", "Driver", "Recorded By", "Time", "Notes"].map((h) => (
+                        {["Vehicle", "Driver", "Recorded By", "Time", "Notes"].map((h) => (
                           <th key={h}>{h}</th>
                         ))}
                       </tr>
@@ -590,7 +590,7 @@ function Collection({ userRole }) {
                       ) : (
                         currentRoaming.map((log) => (
                           <tr key={log.id} className="col-table-row">
-                            <td><span className="col-id-badge">#{log.id}</span></td>
+                            
                             <td>
                               {log.vehicle_plate ? (
                                 <span className="col-plate">{log.vehicle_plate}</span>

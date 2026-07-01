@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { useTicket, formatTime } from "../../../lib/useTicket";
-import TicketStatusBadge from "../../../lib/ticket/ticketStatusBadge";
 import "../../../styles/Ticket.css";
 import {
   HistoryIcon,
@@ -266,7 +265,7 @@ function Ticket({ userRole }) {
                 <table className="ticket-table">
                   <thead>
                     <tr>
-                      {["Ticket ID", "Plate Number", "Driver", "Issued By", "Time", activeTab === "cancelled" ? "Reason" : "Status"].map(
+                      {["Ticket ID", "Plate Number", "Driver", "Issued By", "Time", ...(activeTab === "cancelled" ? ["Reason"] : [])].map(
                         (h) => (
                           <th key={h}>{h}</th>
                         ),
@@ -276,7 +275,7 @@ function Ticket({ userRole }) {
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan="6" className="ticket-table-state">
+                        <td colSpan={activeTab === "cancelled" ? 6 : 5} className="ticket-table-state">
                           <div className="ticket-loading-dots">
                             <div />
                             <div />
@@ -287,7 +286,7 @@ function Ticket({ userRole }) {
                     ) : error ? (
                       <tr>
                         <td
-                          colSpan="6"
+                          colSpan={activeTab === "cancelled" ? 6 : 5}
                           className="ticket-table-state ticket-table-state--error"
                         >
                           Error: {error}
@@ -295,7 +294,7 @@ function Ticket({ userRole }) {
                       </tr>
                     ) : displayTickets.length === 0 ? (
                       <tr>
-                        <td colSpan="6" className="ticket-table-state">
+                        <td colSpan={activeTab === "cancelled" ? 6 : 5} className="ticket-table-state">
                           <EmptyStateIcon className="ticket-empty-icon" />
                           <span>
                             {activeTab === "cancelled"
@@ -332,13 +331,11 @@ function Ticket({ userRole }) {
                           <td className="ticket-td-time">
                             {formatTime(t.issued_at)}
                           </td>
-                          <td>
-                            {activeTab === "cancelled" ? (
-                              t.reason || <span className="ticket-na">N/A</span>
-                            ) : (
-                              <TicketStatusBadge ticket={t} />
-                            )}
-                          </td>
+                          {activeTab === "cancelled" && (
+                            <td>
+                              {t.reason || <span className="ticket-na">N/A</span>}
+                            </td>
+                          )}
                         </tr>
                       ))
                     )}
