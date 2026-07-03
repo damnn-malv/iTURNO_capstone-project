@@ -19,12 +19,17 @@ import {
 import { exportTablePDF } from "../../../lib/report/exportPDF";
 
 import TransactionLogs from "../../../lib/report/tables/TransactionLogs";
+import AuditTrail from "../../../lib/report/tables/AuditTrail";
 import FleetRecords from "../../../lib/report/tables/FleetRecords";
 import RewardRedemptions from "../../../lib/report/tables/RewardRedemptions";
 import { getDriverCode } from "../../../lib/driver-utils";
 import "../../../styles/Report.css";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:8000/api"
+    : `http://${window.location.hostname}:8000/api`);
 
 export default function Report() {
   const [filters, setFilters] = useState({
@@ -37,6 +42,8 @@ export default function Report() {
   const [chartData, setChartData] = useState([]);
   const [logs, setLogs] = useState([]);
   const [logsTotal, setLogsTotal] = useState(0);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditLogsTotal, setAuditLogsTotal] = useState(0);
   const [vehicles, setVehicles] = useState([]);
   const [vehiclesTotal, setVehiclesTotal] = useState(0);
   const [drivers, setDrivers] = useState([]);
@@ -61,6 +68,17 @@ export default function Report() {
       setLogsTotal(data.total || 0);
     } catch {
       console.error("Failed to load logs");
+    }
+  }, []);
+
+  const fetchAuditLogs = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/audit-logs/?all=true`);
+      const data = await res.json();
+      setAuditLogs(data.logs || []);
+      setAuditLogsTotal(data.total || 0);
+    } catch {
+      console.error("Failed to load audit trail");
     }
   }, []);
 
@@ -142,6 +160,7 @@ export default function Report() {
   useEffect(() => {
     fetchData();
     fetchLogs();
+    fetchAuditLogs();
     fetchVehicles();
     fetchDrivers();
     fetchRoaming();
@@ -150,6 +169,13 @@ export default function Report() {
 
   const filteredLogs = logs.filter((l) => {
     const d = l.timestamp ? l.timestamp.slice(0, 10) : "";
+    if (filters.startDate && d < filters.startDate) return false;
+    if (filters.endDate && d > filters.endDate) return false;
+    return true;
+  });
+
+  const filteredAuditLogs = auditLogs.filter((a) => {
+    const d = a.created_at ? a.created_at.slice(0, 10) : "";
     if (filters.startDate && d < filters.startDate) return false;
     if (filters.endDate && d > filters.endDate) return false;
     return true;
@@ -340,6 +366,8 @@ export default function Report() {
         STATUS_COLORS={STATUS_COLORS}
         roaming={filteredRoaming}
       />
+
+      <AuditTrail filteredAuditLogs={filteredAuditLogs} />
 
       <FleetRecords
         vehiclesTotal={vehiclesTotal}

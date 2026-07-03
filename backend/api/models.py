@@ -120,11 +120,12 @@ class Ticket(models.Model):
     reason = models.TextField(blank=True)
     
     is_late = models.BooleanField(default=False, db_index=True)
-    intended_batch = models.CharField(max_length=20, blank=True)  
-    
+    intended_batch = models.CharField(max_length=20, blank=True)
+    batch = models.CharField(max_length=20, blank=True, db_index=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         indexes = [
             models.Index(fields=['status', 'is_verified']),
@@ -143,6 +144,17 @@ class Ticket(models.Model):
             if latest_price:
                 self.collection_amount = latest_price.amount
             # If no price exists, leave as null — backend will use fallback
+        if not self.batch:
+            from django.utils import timezone
+            from datetime import timedelta
+            from .views.helpers import load_schedule
+            reference_time = self.issued_at or timezone.now()
+            local_hour = (reference_time + timedelta(hours=8)).hour
+            schedule = load_schedule()
+            for key, shift in schedule.items():
+                if shift["startHour"] <= local_hour < shift["endHour"]:
+                    self.batch = key
+                    break
         super().save(*args, **kwargs)
 
 class Requisition(models.Model):
@@ -313,6 +325,28 @@ class Redemption(models.Model):
 
     def __str__(self):
         return f"{self.profile.driver} — ₱{self.peso_value} ({self.status})"
+
+
+class AuditLog(models.Model):
+    ACTION_CHOICES = [('CREATE', 'Create'), ('UPDATE', 'Update'), ('DELETE', 'Delete')]
+
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='audit_logs')
+    action = models.CharField(max_length=10, choices=ACTION_CHOICES)
+    model_name = models.CharField(max_length=100)
+    object_id = models.CharField(max_length=50, blank=True)
+    object_repr = models.CharField(max_length=255, blank=True)
+    changes = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['model_name', 'action']),
+            models.Index(fields=['created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_action_display()} {self.model_name} #{self.object_id} by {self.user or 'System'}"
 
 
 class RoamingLog(models.Model):
