@@ -41,11 +41,14 @@ function Ticket({ userRole }) {
     selectVehicleById,
     handleDriverChange,
     handleIssueTicket,
+    isOutsideBatchHours,
   } = useTicket(userRole);
 
   const [activeTab, setActiveTab] = useState("tickets");
   const [vehicleSearch, setVehicleSearch] = useState("");
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
+  const [driverSearch, setDriverSearch] = useState("");
+  const [showDriverDropdown, setShowDriverDropdown] = useState(false);
 
   const vehicleSearchResults = availableVehicles.filter((v) => {
     const term = vehicleSearch.toLowerCase();
@@ -54,6 +57,16 @@ function Ticket({ userRole }) {
       (v.route_detail?.full_name || "").toLowerCase().includes(term)
     );
   });
+
+  const driverSearchResults = activeDrivers.filter((d) =>
+    d.name.toLowerCase().includes(driverSearch.toLowerCase()),
+  );
+
+  const handleSelectDriver = (driver) => {
+    handleDriverChange(driver.id);
+    setDriverSearch("");
+    setShowDriverDropdown(false);
+  };
 
   const handleSelectVehicle = (vehicle) => {
     selectVehicleById(vehicle.id);
@@ -217,7 +230,10 @@ function Ticket({ userRole }) {
                   <button
                     type="button"
                     className="ticket-change-btn"
-                    onClick={() => setShowDriverModal(!showDriverModal)}
+                    onClick={() => {
+                      setShowDriverModal(!showDriverModal);
+                      setDriverSearch("");
+                    }}
                   >
                     {showDriverModal ? "Close" : "Change Driver"}
                   </button>
@@ -255,25 +271,53 @@ function Ticket({ userRole }) {
                     <label className="ticket-label">
                       Select Active Driver
                     </label>
-                    <select
-                      className="ticket-select"
-                      value={selectedDriver?.id || ""}
-                      onChange={(e) =>
-                        handleDriverChange(parseInt(e.target.value))
-                      }
-                    >
-                      <option value="">— Choose a driver —</option>
-                      {activeDrivers.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="ticket-vehicle-combobox">
+                    <div className="ticket-search-wrap">
+                      <SearchIcon className="ticket-search-icon" />
+                      <input
+                        className="ticket-select ticket-vehicle-search-input"
+                        placeholder="Search by driver name…"
+                        value={driverSearch}
+                        onChange={(e) => {
+                          setDriverSearch(e.target.value);
+                          setShowDriverDropdown(true);
+                        }}
+                        onFocus={() => setShowDriverDropdown(true)}
+                        onBlur={() =>
+                          setTimeout(() => setShowDriverDropdown(false), 150)
+                        }
+                      />
+                    </div>
+                    {showDriverDropdown && (
+                      <div className="ticket-vehicle-dropdown">
+                        {driverSearchResults.length === 0 ? (
+                          <div className="ticket-vehicle-dropdown-empty">
+                            No matching drivers
+                          </div>
+                        ) : (
+                          driverSearchResults.map((d) => (
+                            <div
+                              key={d.id}
+                              className="ticket-vehicle-dropdown-item"
+                              onMouseDown={() => handleSelectDriver(d)}
+                            >
+                              <span className="ticket-plate">{d.name}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                    </div>
                   </div>
                 )}
               </div>
             )}
 
+            {isOutsideBatchHours && (
+              <div className="ticket-alert ticket-alert--error">
+                Ticket issuance is closed outside of batch hours.
+              </div>
+            )}
             {successMessage && (
               <div className="ticket-alert ticket-alert--success">
                 {successMessage}
@@ -289,14 +333,22 @@ function Ticket({ userRole }) {
               type="button"
               className="ticket-issue-btn"
               onClick={handleIssueTicket}
-              disabled={issuingTicket || !selectedVehicle || !selectedDriver || !selectedSeriesId}
+              disabled={
+                issuingTicket ||
+                isOutsideBatchHours ||
+                !selectedVehicle ||
+                !selectedDriver ||
+                !selectedSeriesId
+              }
             >
               <IssueTicketIcon />
               {issuingTicket
                 ? "Issuing…"
-                : ticketQuantity > 1
-                  ? `Issue ${ticketQuantity} Tickets`
-                  : "Issue Ticket"}
+                : isOutsideBatchHours
+                  ? "Outside Batch Hours"
+                  : ticketQuantity > 1
+                    ? `Issue ${ticketQuantity} Tickets`
+                    : "Issue Ticket"}
             </button>
           </div>
         </div>

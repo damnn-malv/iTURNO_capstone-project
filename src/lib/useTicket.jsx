@@ -3,6 +3,7 @@ import { OperationsService } from "./operations-service";
 import { SHIFTS } from "./constants";
 import { apiService } from "./api-service";
 import { useShifts } from "./useShifts";
+import { useTerminalPrice } from "./useTerminalPrice";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 export const statusColor = {
@@ -85,6 +86,13 @@ export function useTicket(userRole = "") {
   });
 
   const { shifts: scheduleShifts } = useShifts();
+  const { terminalPrice } = useTerminalPrice();
+
+  const currentBatch = useMemo(
+    () => getCurrentBatch(scheduleShifts),
+    [scheduleShifts],
+  );
+  const isOutsideBatchHours = !currentBatch;
 
   // Fetch data
   const fetchTickets = async () => {
@@ -213,6 +221,10 @@ export function useTicket(userRole = "") {
     setSuccessMessage("");
     setIssueError("");
 
+    if (isOutsideBatchHours) {
+      setIssueError("Ticket issuance is closed outside of batch hours.");
+      return;
+    }
     if (!selectedVehicle) {
       setIssueError("Please select a vehicle.");
       return;
@@ -262,10 +274,19 @@ export function useTicket(userRole = "") {
       return;
     }
 
+    const cap = Number(terminalPrice?.amount || 0);
+    if (cap > 0 && ticketFee * quantity > cap) {
+      setIssueError(
+        `Total collection amount (₱${(ticketFee * quantity).toFixed(2)}) exceeds the terminal price limit of ₱${cap.toFixed(2)}.`,
+      );
+      return;
+    }
+
     try {
       setIssuingTicket(true);
       let nextStartNo = parseInt(series.start_no);
       const issuedIds = [];
+      const issuanceGroup = crypto.randomUUID();
 
       for (let i = 0; i < quantity; i++) {
         const ticketPayload = {
@@ -276,6 +297,7 @@ export function useTicket(userRole = "") {
           series_id: parseInt(selectedSeriesId),
           status: "ISSUED",
           is_verified: false,
+          issuance_group: issuanceGroup,
         };
         if (ticketFee > 0) {
           ticketPayload.collection_amount = ticketFee;
@@ -392,5 +414,7 @@ export function useTicket(userRole = "") {
     handleDriverChange,
     handleIssueTicket,
     ticketFee,
+    terminalPrice,
+    isOutsideBatchHours,
   };
 }
