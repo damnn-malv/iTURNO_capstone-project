@@ -1,13 +1,13 @@
 from datetime import datetime, timedelta
 
-from django.db.models import Sum
+from django.db.models import Sum, Count
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from ..models import Ticket, TicketPrice, Vehicle, Driver, Route, RemittanceBatch, Collection, Deposit, AuditLog, TerminalPrice
+from ..models import Ticket, TicketPrice, Vehicle, Driver, Route, RemittanceBatch, Collection, Deposit, AuditLog, TerminalPrice, TicketSeries
 from ..serializers import TicketSerializer, RemittanceBatchSerializer, AuditLogSerializer, TerminalPriceSerializer
-from .helpers import summarize, parse_iso_datetime, record_audit_log, parse_date_start, parse_date_end, expire_stale_queue_tickets
+from .helpers import summarize, parse_iso_datetime, record_audit_log, parse_date_start, parse_date_end, expire_stale_queue_tickets, paginate_request
 
 
 @api_view(['GET'])
@@ -57,11 +57,20 @@ def audit_logs(request):
         except ValueError:
             pass
 
-    data = AuditLogSerializer(logs, many=True).data
-    total = len(data)
-    if not show_all:
-        data = data[:10]
+    paged = paginate_request(request, logs)
+    if paged is not None:
+        page_num, page_size, total, sliced = paged
+        data = AuditLogSerializer(sliced, many=True).data
+        return Response({
+            'logs': data,
+            'total': total,
+            'page': page_num,
+            'page_size': page_size,
+            'total_pages': max((total + page_size - 1) // page_size, 1),
+        })
 
+    total = logs.count()
+    data = AuditLogSerializer(logs if show_all else logs[:10], many=True).data
     return Response({'logs': data, 'total': total})
 
 
@@ -91,6 +100,50 @@ def dashboard_stats(request):
     latest_price = TicketPrice.objects.order_by('-effective_date').first()
     fallback_amount = float(latest_price.amount) if latest_price else 0.0
 
+    # A single day of bars is a poor trend view — when the filter is on today only
+    # (the default), the chart alone looks back 7 days instead. Every other stat
+    # on the page still reflects today only; this widening is chart-specific.
+    if start_date == end_date == today_str:
+        chart_range_start = parse_date_start((now_ph - timedelta(days=6)).strftime('%Y-%m-%d'))
+        chart_ticket_qs = Ticket.objects.filter(
+            dispatched_at__isnull=False,
+            dispatched_at__gte=chart_range_start,
+            dispatched_at__lte=range_end,
+        )
+    else:
+        chart_ticket_qs = range_dispatched
+
+    # Per-day breakdown, on the same "dispatched_at" basis as today_total/total_revenue
+    # above — keeps the dashboard chart and its stat cards in agreement instead of
+    # quietly using two different definitions.
+    daily = {}
+    for t in chart_ticket_qs:
+        local_dt = t.dispatched_at + timedelta(hours=8)
+        day_key = local_dt.strftime('%Y-%m-%d')
+        amount = float(t.collection_amount) if (t.collection_amount and float(t.collection_amount) > 0) else fallback_amount
+        if day_key not in daily:
+            daily[day_key] = {'date': day_key, 'count': 0, 'total': 0.0}
+        daily[day_key]['count'] += 1
+        daily[day_key]['total'] = round(daily[day_key]['total'] + amount, 2)
+    chart_data = sorted(daily.values(), key=lambda x: x['date'])
+
+    # Ticket lifecycle mix for tickets issued within the range.
+    ticket_status_breakdown = {choice: 0 for choice, _ in Ticket.STATUS_CHOICES}
+    for row in range_issued.values('status').annotate(n=Count('id')):
+        ticket_status_breakdown[row['status']] = row['n']
+
+    # Live fleet snapshot — current state, not tied to the date filter.
+    fleet_status = {choice: 0 for choice, _ in Vehicle.STATUS_CHOICES}
+    for row in Vehicle.objects.filter(is_archived=False).values('status').annotate(n=Count('id')):
+        fleet_status[row['status']] = row['n']
+
+    # Total physical ticket stock left across active (non-archived) requisitions —
+    # same "remaining" math as TicketSeriesSerializer.get_remaining, aggregated.
+    ticket_stock_remaining = 0
+    for series in TicketSeries.objects.filter(requisition__is_archived=False).annotate(issued_count=Count('tickets')):
+        original = max(int(series.end_no or 0) - int(series.start_no or 0) + 1, 0)
+        ticket_stock_remaining += max(original - series.issued_count, 0)
+
     return Response({
         'today_total': summarize(range_dispatched, fallback_amount),
         'total_tickets': Ticket.objects.count(),
@@ -100,6 +153,10 @@ def dashboard_stats(request):
         'active_drivers': range_issued.values('driver_id').distinct().count(),
         'start_date': start_date,
         'end_date': end_date,
+        'chart_data': chart_data,
+        'ticket_status_breakdown': ticket_status_breakdown,
+        'fleet_status': fleet_status,
+        'ticket_stock_remaining': ticket_stock_remaining,
     })
 
 
@@ -233,6 +290,32 @@ def remittance_batches(request):
         return Response({'id': batch.id, 'status': 'created'}, status=201)
 
     batches = RemittanceBatch.objects.select_related('issued_by').order_by('-issued_at')
+
+    start_date = request.query_params.get('start_date')
+    end_date = request.query_params.get('end_date')
+    if start_date:
+        try:
+            batches = batches.filter(issued_at__gte=parse_date_start(start_date))
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            batches = batches.filter(issued_at__lte=parse_date_end(end_date))
+        except ValueError:
+            pass
+
+    paged = paginate_request(request, batches)
+    if paged is not None:
+        page_num, page_size, total, sliced = paged
+        serializer = RemittanceBatchSerializer(sliced, many=True)
+        return Response({
+            'results': serializer.data,
+            'count': total,
+            'page': page_num,
+            'page_size': page_size,
+            'total_pages': max((total + page_size - 1) // page_size, 1),
+        })
+
     serializer = RemittanceBatchSerializer(batches, many=True)
     return Response({
         'results': serializer.data,

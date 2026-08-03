@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
 
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
+from django.utils.crypto import get_random_string
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Requisition, TicketSeries, RoamingLog, AuditLog, BackupRecord, TerminalPrice
@@ -17,14 +19,13 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'first_name', 'middle_name', 'last_name',
-            'role', 'is_active', 'password',
+            'role', 'is_active', 'must_reset_password',
         ]
         extra_kwargs = {
-            'password': {'write_only': True, 'required': False},
+            'must_reset_password': {'read_only': True},
         }
 
     def create(self, validated_data):
-        password = validated_data.pop('password', None)
         user = User(
             username=validated_data['username'],
             first_name=validated_data.get('first_name', ''),
@@ -32,20 +33,14 @@ class UserSerializer(serializers.ModelSerializer):
             last_name=validated_data.get('last_name', ''),
             role=validated_data.get('role', 'PERSONNEL'),
             is_active=validated_data.get('is_active', True),
+            must_reset_password=True,
         )
-        if password:
-            user.set_password(password)
+        raw_password = get_random_string(12)
+        user.set_password(raw_password)
         user.save()
+        # Transient attribute, not persisted — read by the view to send the welcome email.
+        user._generated_password = raw_password
         return user
-
-    def update(self, instance, validated_data):
-        password = validated_data.pop('password', None)
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        if password:
-            instance.set_password(password)
-        instance.save()
-        return instance
 
 
 class DriverSerializer(serializers.ModelSerializer):
@@ -184,6 +179,16 @@ class TicketSerializer(serializers.ModelSerializer):
                 # so the ticket is born already dispatched with no queue step.
                 validated_data['status'] = 'DISPATCHED'
                 validated_data['dispatched_at'] = timezone.now()
+            elif not is_continuation:
+                # Queue check-ins get a route-acronym + daily bay number
+                # (e.g. "SJ-1"), counted per route and reset every midnight.
+                route = vehicle.route
+                if route:
+                    today = timezone.localtime().date()
+                    count_today = Ticket.objects.filter(
+                        mode='QUEUE', route=route, issued_at__date=today,
+                    ).count()
+                    validated_data['queue_code'] = f"{route.acronym}-{count_today + 1}"
 
             ticket = Ticket.objects.create(vehicle=vehicle, driver=driver, series=series, **validated_data)
 
@@ -210,15 +215,16 @@ class PUVTypeSerializer(serializers.ModelSerializer):
 class RouteSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     checked_in_today = serializers.SerializerMethodField()
+    revenue_in_range = serializers.SerializerMethodField()
 
     class Meta:
         model = Route
-        fields = ['id', 'origin', 'is_active', 'created_at', 'updated_at', 'full_name', 'checked_in_today']
+        fields = ['id', 'origin', 'is_active', 'created_at', 'updated_at', 'full_name', 'checked_in_today', 'revenue_in_range']
 
     def get_full_name(self, obj):
         return f"{obj.origin} - San Fernando"
 
-    def get_checked_in_today(self, obj):
+    def _get_range(self):
         now_ph = timezone.now() + timedelta(hours=8)
         today_str = now_ph.strftime('%Y-%m-%d')
 
@@ -242,11 +248,21 @@ class RouteSerializer(serializers.ModelSerializer):
         range_end = timezone.make_aware(
             datetime(end_d.year, end_d.month, end_d.day, 23, 59, 59) - timedelta(hours=8)
         )
+        return range_start, range_end
 
+    def get_checked_in_today(self, obj):
+        range_start, range_end = self._get_range()
         return Ticket.objects.filter(
             route=obj, issued_at__gte=range_start, issued_at__lte=range_end
         ).values('vehicle_id').distinct().count()
-    
+
+    def get_revenue_in_range(self, obj):
+        range_start, range_end = self._get_range()
+        total = Ticket.objects.filter(
+            route=obj, dispatched_at__isnull=False, dispatched_at__gte=range_start, dispatched_at__lte=range_end
+        ).aggregate(s=Sum('collection_amount'))['s']
+        return round(float(total or 0), 2)
+
 class TicketFormSerializer(serializers.ModelSerializer):
     class Meta:
         model = TicketForm
@@ -287,20 +303,19 @@ class TicketSeriesSerializer(serializers.ModelSerializer):
 
     def get_beginning(self, obj):
         from datetime import date
-        today = date.today()
-        if obj.beginning_balance is not None and obj.beginning_balance_date == today:
-            return obj.beginning_balance
         original = self._get_original_pcs(obj)
-        tickets_before_today = self._get_tickets_issued(obj, before_date=today)
-        beginning = max(original - tickets_before_today, 0)
-        obj.beginning_balance = beginning
-        obj.beginning_balance_date = today
-        obj.save(update_fields=['beginning_balance', 'beginning_balance_date'])
-        return beginning
+        if hasattr(obj, '_issued_before_today'):
+            tickets_before_today = obj._issued_before_today
+        else:
+            tickets_before_today = self._get_tickets_issued(obj, before_date=date.today())
+        return max(original - tickets_before_today, 0)
 
     def get_remaining(self, obj):
         original = self._get_original_pcs(obj)
-        total_issued = self._get_tickets_issued(obj)
+        if hasattr(obj, '_total_issued'):
+            total_issued = obj._total_issued
+        else:
+            total_issued = self._get_tickets_issued(obj)
         return max(original - total_issued, 0)
 
     class Meta:
@@ -330,7 +345,7 @@ class RequisitionSerializer(serializers.ModelSerializer):
         model = Requisition
         fields = [
             'id', 'date_requested', 'requested_by', 'requested_by_name',
-            'approved_by_name', 'status', 'total_value',
+            'approved_by_name', 'status', 'total_value', 'is_archived',
             'ticket_series', 'created_at', 'updated_at',
         ]
 
