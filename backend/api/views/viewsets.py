@@ -149,7 +149,7 @@ class RouteViewSet(AuditLogMixin, viewsets.ModelViewSet):
 
 
 class VehicleViewSet(AuditLogMixin, viewsets.ModelViewSet):
-    queryset = Vehicle.objects.select_related('route', 'active_driver', 'transportation_id').all()
+    queryset = Vehicle.objects.select_related('route', 'active_driver', 'owner_driver', 'transportation_id').all()
     serializer_class = VehicleSerializer
 
     def get_queryset(self):
@@ -181,14 +181,17 @@ def _consume_series_fifo(ticket_form_id, quantity):
     """Assign `quantity` physical ticket numbers to a denomination, drawing from the
     oldest ticket series first and spilling into the next-oldest one as each depletes.
 
-    Remaining stock per series is derived from how many Ticket rows already
-    reference it (start_no/end_no are the original allotted range and must stay
-    fixed, or the "remaining" count computed elsewhere would double-subtract).
+    Which numbers are already taken is looked up directly (which Ticket rows
+    reference this series), not derived from a count — a paper backfill can claim
+    a specific number in the middle of a series' range (see backfill.py), so the
+    next number handed out here must skip whatever's actually taken rather than
+    assuming issuance is contiguous from start_no, or it could hand out a number
+    a backfill already claimed.
 
     Locks the TicketSeries rows for this denomination (must be called inside
     transaction.atomic()) so two concurrent dispatches drawing from the same
     denomination — even for different vehicles/routes — serialize instead of
-    both reading the same "remaining" count and handing out the same physical
+    both reading the same "remaining" set and handing out the same physical
     ticket number twice.
 
     Returns a list of (series, ticket_id) pairs of length `quantity`.
@@ -197,14 +200,11 @@ def _consume_series_fifo(ticket_form_id, quantity):
     series_list = list(
         TicketSeries.objects.select_for_update()
         .filter(ticket_form_id=ticket_form_id, requisition__is_archived=False)
-        .annotate(_issued_count=Count('tickets'))
         .order_by('requisition_id', 'id')
     )
-    already_issued = {
-        s.id: s._issued_count for s in series_list
-    }
+    taken_by_series = {s.id: set(s.tickets.values_list('id', flat=True)) for s in series_list}
     total_available = sum(
-        max(int(s.end_no) - int(s.start_no) + 1 - already_issued[s.id], 0) for s in series_list
+        max(int(s.end_no) - int(s.start_no) + 1 - len(taken_by_series[s.id]), 0) for s in series_list
     )
     if quantity > total_available:
         raise ValidationError({
@@ -216,12 +216,15 @@ def _consume_series_fifo(ticket_form_id, quantity):
     for series in series_list:
         if remaining <= 0:
             break
-        start = int(series.start_no) + already_issued[series.id]
+        taken = taken_by_series[series.id]
+        n = int(series.start_no)
         end = int(series.end_no)
-        while remaining > 0 and start <= end:
-            units.append((series, str(start)))
-            start += 1
-            remaining -= 1
+        while remaining > 0 and n <= end:
+            candidate = str(n)
+            if candidate not in taken:
+                units.append((series, candidate))
+                remaining -= 1
+            n += 1
 
     return units
 

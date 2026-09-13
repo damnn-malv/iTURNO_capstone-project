@@ -126,6 +126,12 @@ class Vehicle(models.Model):
     operator_address = models.CharField(max_length=255, blank=True)
     qr_code = models.CharField(max_length=255, blank=True, db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='AVAILABLE')
+    # The vehicle's registered driver — set only via the Vehicle Registry
+    # records form, stable across shifts.
+    owner_driver = models.ForeignKey('Driver', null=True, blank=True, on_delete=models.SET_NULL, related_name='owned_vehicles')
+    # Who's actually driving right now — set by check-in/roam/dispatch, and
+    # reverted to owner_driver when a stale queue ticket expires at day's end
+    # (see expire_stale_queue_tickets in views/helpers.py).
     active_driver = models.ForeignKey('Driver', null=True, blank=True, on_delete=models.SET_NULL, related_name='vehicles')
 
     is_archived = models.BooleanField(default=False, db_index=True)

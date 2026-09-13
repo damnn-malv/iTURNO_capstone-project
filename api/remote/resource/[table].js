@@ -40,8 +40,13 @@ async function getTicketStatsBySeries(seriesIds) {
   return stats;
 }
 
+// api_vehicle now has two FKs to api_driver (active_driver_id, owner_driver_id),
+// so each embed needs a column-name hint to disambiguate which relationship
+// PostgREST should follow — see https://postgrest.org/en/stable/references/api/resource_embedding.html#disambiguating-relationships
 const VEHICLE_SELECT =
-  "*, route:api_route(*), transportation:api_puvtype(id,name), driver_obj:api_driver(id,last_name,first_name)";
+  "*, route:api_route(*), transportation:api_puvtype(id,name), " +
+  "driver_obj:api_driver!active_driver_id(id,last_name,first_name), " +
+  "owner_driver_obj:api_driver!owner_driver_id(id,last_name,first_name)";
 const TICKET_SELECT =
   `*, vehicle:api_vehicle(${VEHICLE_SELECT}), driver:api_driver(*), route:api_route(*), ` +
   "series:api_ticketseries(id,series_no,start_no,end_no,ticket_form:api_ticketform(id,name,price))";

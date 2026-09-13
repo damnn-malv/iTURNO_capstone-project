@@ -244,6 +244,7 @@ class Command(BaseCommand):
                 route=routes_by_town[town],
                 operator_address=f"{random.choice(BARANGAYS)}, {town}, La Union",
                 status="AVAILABLE",
+                owner_driver=driver,
                 active_driver=driver,
             )
             vehicles.append(vehicle)

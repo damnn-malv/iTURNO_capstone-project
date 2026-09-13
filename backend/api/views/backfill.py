@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from ..models import Ticket, Vehicle, Driver, Route, TicketForm, User, WipMode
+from ..models import Ticket, Vehicle, Driver, Route, TicketForm, TicketSeries, User, WipMode
 from ..serializers import WipModeSerializer
 from .helpers import record_audit_log
 from .viewsets import IsSupervisorOrAdminForWrite
@@ -80,6 +80,24 @@ def _parse_ph_datetime(value):
     return timezone.make_aware(dt - timedelta(hours=8))
 
 
+def _find_series_for_ticket_id(ticket_id):
+    """A backfilled ticket number must be a real physical ticket from a requisitioned
+    booklet, not an arbitrary string — find the TicketSeries whose printed start_no..end_no
+    range covers it (archived requisitions count too: an old, fully-issued booklet is still
+    a real one). Returns None if no series covers it, or the id isn't a plain integer."""
+    try:
+        n = int(ticket_id)
+    except (TypeError, ValueError):
+        return None
+    for series in TicketSeries.objects.all():
+        try:
+            if int(series.start_no) <= n <= int(series.end_no):
+                return series
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def _resolve_row(row, existing_ids_in_batch):
     """Validate + resolve FKs for one row. Returns (resolved_dict_or_None, outcome, reason)
     where outcome is 'ok' | 'duplicate' | 'error'. Never writes anything — shared by the
@@ -91,6 +109,13 @@ def _resolve_row(row, existing_ids_in_batch):
         return None, 'error', f'Missing {F_TICKET_ID}'
     if ticket_id in existing_ids_in_batch or Ticket.objects.filter(id=ticket_id).exists():
         return None, 'duplicate', 'This ticket number already exists'
+
+    series = _find_series_for_ticket_id(ticket_id)
+    if series is None:
+        return None, 'error', (
+            f"{F_TICKET_ID} '{ticket_id}' doesn't fall within any requisitioned ticket series — "
+            "check the number on the paper ticket."
+        )
 
     vehicle = Vehicle.objects.filter(plate_number__iexact=get(F_PLATE)).first()
     if not vehicle:
@@ -142,21 +167,24 @@ def _resolve_row(row, existing_ids_in_batch):
     return {
         'ticket_id': ticket_id, 'vehicle': vehicle, 'driver': driver, 'route': route,
         'mode': mode, 'collection_amount': collection_amount, 'active_user': active_user,
-        'historical_dt': historical_dt, 'reason': get(F_NOTES),
+        'historical_dt': historical_dt, 'reason': get(F_NOTES), 'series': series,
     }, 'ok', None
 
 
 def _create_ticket(resolved):
     """Writes one Ticket row for an already-resolved dict. Uses .create() (not
     bulk_create()) so the post_save signal fires and queues it for Supabase sync
-    (see api/sync/signals.py) — required, not optional. series is intentionally
-    left unset: _consume_series_fifo (viewsets.py) tracks series stock by count,
-    not by which numbers are taken, so attaching a backfilled ticket to a live
-    series could corrupt that series' remaining-stock arithmetic."""
+    (see api/sync/signals.py) — required, not optional. series is set to whichever
+    TicketSeries range the ticket number was validated against in _resolve_row, so
+    it counts against that series' remaining stock like any other issued ticket
+    (_consume_series_fifo in viewsets.py picks numbers by checking what's actually
+    taken, not by count, so it stays collision-safe regardless of where in the
+    range a backfilled number lands)."""
     with transaction.atomic():
         ticket = Ticket.objects.create(
             id=resolved['ticket_id'], vehicle=resolved['vehicle'], driver=resolved['driver'],
-            route=resolved['route'], mode=resolved['mode'], status='COLLECTED', is_verified=True,
+            route=resolved['route'], mode=resolved['mode'], series=resolved['series'],
+            status='COLLECTED', is_verified=True,
             collection_amount=resolved['collection_amount'], active_user=resolved['active_user'],
             active_user_name='' if resolved['active_user'] else 'Paper Backfill',
             dispatched_at=resolved['historical_dt'] or timezone.now(), reason=resolved['reason'],
@@ -192,6 +220,7 @@ def backfill_manual(request):
         'vehicle': resolved['vehicle'].plate_number, 'driver': str(resolved['driver']),
         'route': resolved['route'].full_name if resolved['route'] else None,
         'collection_amount': float(resolved['collection_amount']) if resolved['collection_amount'] is not None else None,
+        'series_no': resolved['series'].series_no,
     })
 
 

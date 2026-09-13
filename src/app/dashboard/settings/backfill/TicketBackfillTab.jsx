@@ -25,7 +25,7 @@ const CSV_TEMPLATE_HEADER = [
 // unfamiliar with spreadsheets to leave it there and start typing in row 3,
 // or edit it in place instead of replacing it. The download is header-only.
 const CSV_COLUMN_REFERENCE = [
-  { name: F_TICKET_ID, required: true, example: "1001", note: "The physical ticket number written on the paper ticket. If it's already in the system, that row is skipped, not an error." },
+  { name: F_TICKET_ID, required: true, example: "1001", note: "The physical ticket number written on the paper ticket. Must fall within an actual requisitioned ticket series range. If it's already in the system, that row is skipped, not an error." },
   { name: F_PLATE, required: true, example: "ABC-123", note: "Must match a vehicle's plate number exactly." },
   { name: F_DRIVER_IWP, required: true, example: "12345", note: "The driver's IWP Number (same as on the Fleet & Driver page)." },
   { name: F_DRIVER_LAST, required: true, example: "Dela Cruz", note: "Used together with the IWP Number to find the driver." },
@@ -216,8 +216,9 @@ export default function TicketBackfillTab() {
       <p className="set-rewards-note">
         WIP pauses ticket issuance system-wide — every terminal is blocked from checking in or
         dispatching tickets while WIP is on. Use it while backfilling paper tickets below, then
-        switch back to Active when done. Use a ticket-numbering scheme for paper backfills that
-        won't collide with your active ticket series ranges.
+        switch back to Active when done. Ticket Number must be the real number printed on the
+        physical ticket — it has to fall inside an actual requisitioned ticket series range, or
+        the entry is rejected.
         {IS_REMOTE && " Switching WIP on or off only works from the LAN terminal itself."}
       </p>
 
@@ -382,6 +383,7 @@ export default function TicketBackfillTab() {
               {manualPreview.vehicle} / {manualPreview.driver}
               {manualPreview.route ? ` on ${manualPreview.route}` : ""} —{" "}
               {manualPreview.collection_amount != null ? `₱${manualPreview.collection_amount.toFixed(2)}` : "auto-priced"}
+              {manualPreview.series_no ? ` (series ${manualPreview.series_no})` : ""}
             </div>
           )}
 

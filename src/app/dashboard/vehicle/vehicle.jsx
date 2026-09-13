@@ -56,7 +56,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
   const selectOperator = (driver) => {
     setForm({
       ...form,
-      active_driver: driver ? driver.id : null,
+      owner_driver: driver ? driver.id : null,
       operator_address: driver
         ? buildDriverAddress(driver)
         : form.operator_address,
@@ -67,10 +67,10 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
 
   React.useEffect(() => {
     if (isModalOpen) {
-      const current = activeDrivers.find((d) => d.id === form.active_driver);
+      const current = activeDrivers.find((d) => d.id === form.owner_driver);
       setOperatorSearch(current ? current.name : "");
     }
-  }, [isModalOpen, form.active_driver, activeDrivers]);
+  }, [isModalOpen, form.owner_driver, activeDrivers]);
 
   const exportQR = () => {
     const toExport = filteredVehicles.filter((v) => v.qr_code);
@@ -238,7 +238,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                   "Transportation",
                   "Franchise #",
                   
-                  "Active Operator",
+                  "Owner Driver",
                   "Status",
                   "Actions",
                 ].map((h) => (
@@ -306,7 +306,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                     </td>
                     
                     <td className="veh-td-driver">
-                      {vehicle.active_driver_name || (
+                      {vehicle.owner_driver_name || (
                         <span className="veh-na">Unassigned</span>
                       )}
                     </td>
@@ -520,7 +520,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                   destination={DESTINATION}
                 />
                 <div className="veh-profile-grid">
-                  <Field label="Active Operator">
+                  <Field label="Owner Driver">
                     <div className="veh-operator-search-wrap">
                       <input
                         type="text"
@@ -548,7 +548,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                             filteredDrivers.map((d) => (
                               <li
                                 key={d.id}
-                                className={`veh-operator-option ${d.id === form.active_driver ? "veh-operator-option--active" : ""}`}
+                                className={`veh-operator-option ${d.id === form.owner_driver ? "veh-operator-option--active" : ""}`}
                                 onMouseDown={() => selectOperator(d)}
                               >
                                 {d.name}

@@ -13,7 +13,7 @@ export function DashboardIcon({ className }) {
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="lucide lucide-layout-dashboard mr-3 h-5 w-5 flex-shrink-0 text-black"
+        className="lucide lucide-layout-dashboard mr-3 h-5 w-5 flex-shrink-0 text-muted-foreground group-hover:text-foreground"
       >
         <rect width="7" height="9" x="3" y="3" rx="1"></rect>
         <rect width="7" height="5" x="14" y="3" rx="1"></rect>

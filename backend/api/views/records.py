@@ -100,10 +100,14 @@ def dashboard_stats(request):
         daily[day_key]['total'] = round(daily[day_key]['total'] + amount, 2)
     chart_data = sorted(daily.values(), key=lambda x: x['date'])
 
-    # Ticket lifecycle mix for tickets issued within the range.
-    ticket_status_breakdown = {choice: 0 for choice, _ in Ticket.STATUS_CHOICES}
-    for row in range_issued.values('status').annotate(n=Count('id')):
-        ticket_status_breakdown[row['status']] = row['n']
+    # Ticket status breakdown for tickets issued within the range — cancelled
+    # tickets get their own bucket, while the still-live ones are split by
+    # mode (QUEUE/UNLOAD) to mirror the Collection Log / Roaming Vehicle Log
+    # tabs on the Transaction page instead of the QUEUED/COLLECTED statuses.
+    ticket_status_breakdown = {'QUEUE': 0, 'UNLOAD': 0, 'CANCELLED': 0}
+    for row in range_issued.values('mode', 'status').annotate(n=Count('id')):
+        key = 'CANCELLED' if row['status'] == 'CANCELLED' else row['mode']
+        ticket_status_breakdown[key] += row['n']
 
     # Live fleet snapshot — current state, not tied to the date filter.
     fleet_status = {choice: 0 for choice, _ in Vehicle.STATUS_CHOICES}

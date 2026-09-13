@@ -12,7 +12,7 @@ const EMPTY_FORM = {
   operator_address: "",
   qr_code: "",
   status: "AVAILABLE",
-  active_driver: null,
+  owner_driver: null,
 };
 
 export const STATUS_COLOR = {
@@ -279,7 +279,7 @@ export function useVehicle() {
         operator_address: form.operator_address,
         qr_code: qrCode,
         status: form.status,
-        active_driver: form.active_driver || null,
+        owner_driver: form.owner_driver || null,
       };
 
       if (editing) {
@@ -305,7 +305,7 @@ export function useVehicle() {
       operator_address: vehicle.operator_address || "",
       qr_code: vehicle.qr_code || "",
       status: vehicle.status,
-      active_driver: vehicle.active_driver,
+      owner_driver: vehicle.owner_driver,
     });
     setRouteMode("select");
     setNewOrigin("");

@@ -53,6 +53,7 @@ export function shapeDriver(d) {
 export function shapeVehicle(v) {
   if (!v) return null;
   const driver = v.driver_obj;
+  const owner = v.owner_driver_obj;
   return {
     id: v.id,
     plate_number: v.plate_number,
@@ -64,6 +65,8 @@ export function shapeVehicle(v) {
     operator_address: v.operator_address,
     qr_code: v.qr_code,
     status: v.status,
+    owner_driver: owner?.id ?? v.owner_driver ?? null,
+    owner_driver_name: owner ? `${owner.last_name}, ${owner.first_name}`.trim() : null,
     active_driver: driver?.id ?? v.active_driver ?? null,
     active_driver_name: driver ? `${driver.last_name}, ${driver.first_name}`.trim() : null,
     is_archived: v.is_archived,

@@ -7,13 +7,15 @@ import { requireAuth, requireRole, CAN_EDIT_SETTINGS } from "../../_lib/auth.js"
 //
 // Both are PUSH_MODELS (LAN-authoritative, one-way mirror — see
 // backend/api/sync/registry.py), so each only allows editing fields that
-// don't affect live LAN dispatch/queue operations: status, active_driver,
-// is_archived stay LAN-only, everything else (registry/paperwork detail)
-// is fair game for SUPERADMIN remotely.
+// don't affect live LAN dispatch/queue operations: status, active_driver
+// (who's actually driving right now — set by check-in/roam/dispatch), and
+// is_archived stay LAN-only. owner_driver is registry/paperwork detail (the
+// vehicle's registered driver, same bucket as plate/franchise/route), so
+// it's fair game for SUPERADMIN remotely.
 const RESOURCES = {
   vehicles: {
     table: "api_vehicle",
-    editableFields: ["plate_number", "transportation_id", "franchise_number", "route", "operator_address", "qr_code"],
+    editableFields: ["plate_number", "transportation_id", "franchise_number", "route", "operator_address", "qr_code", "owner_driver"],
   },
   drivers: {
     table: "api_driver",

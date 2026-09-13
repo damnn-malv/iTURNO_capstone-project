@@ -73,6 +73,7 @@ class RouteSerializer(serializers.ModelSerializer):
 
 class VehicleSerializer(serializers.ModelSerializer):
     active_driver_name = serializers.SerializerMethodField()
+    owner_driver_name = serializers.SerializerMethodField()
     route_detail = RouteSerializer(source='route', read_only=True)
     transportation_name = serializers.CharField(source='transportation_id.name', read_only=True, allow_null=True)
 
@@ -81,7 +82,7 @@ class VehicleSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'plate_number', 'transportation_id', 'transportation_name', 'franchise_number',
             'route', 'route_detail', 'operator_address', 'qr_code',
-            'status', 'active_driver', 'active_driver_name',
+            'status', 'owner_driver', 'owner_driver_name', 'active_driver', 'active_driver_name',
             'is_archived', 'created_at', 'updated_at',
         ]
 
@@ -89,6 +90,20 @@ class VehicleSerializer(serializers.ModelSerializer):
         if obj.active_driver:
             return f"{obj.active_driver.last_name}, {obj.active_driver.first_name}".strip()
         return None
+
+    def get_owner_driver_name(self, obj):
+        if obj.owner_driver:
+            return f"{obj.owner_driver.last_name}, {obj.owner_driver.first_name}".strip()
+        return None
+
+    def create(self, validated_data):
+        # A freshly-registered vehicle has no shift history yet, so its
+        # current driver starts out as its owner (mirrors the pre-split
+        # behavior where setting "Active Operator" at creation applied
+        # immediately) — unless the caller explicitly supplied one.
+        if 'active_driver' not in validated_data and validated_data.get('owner_driver'):
+            validated_data['active_driver'] = validated_data['owner_driver']
+        return super().create(validated_data)
 
 
 class TicketSeriesBriefSerializer(serializers.ModelSerializer):

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone as dt_timezone
 
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 from ..models import Ticket, TicketPrice, AuditLog, Vehicle
@@ -85,8 +86,11 @@ def expire_stale_queue_tickets(actor=None):
         Ticket.objects.bulk_update(stale, ['status', 'reason', 'updated_at'])
         AuditLog.objects.bulk_create(logs)
 
+        # The driver checked in for that stale shift never got dispatched, so
+        # the vehicle reverts to its registered owner rather than staying
+        # pinned to whoever was checked in when the day ended.
         Vehicle.objects.filter(id__in=vehicle_ids, status='QUEUED').update(
-            status='AVAILABLE', updated_at=timezone.now()
+            status='AVAILABLE', active_driver=F('owner_driver'), updated_at=timezone.now()
         )
 
 
