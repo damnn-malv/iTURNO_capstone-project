@@ -42,7 +42,13 @@ async function routesResource(req, res, supabase, payload) {
   if (req.method === "POST") {
     const { origin, is_active = true } = req.body || {};
     if (!origin || !origin.trim()) return void res.status(400).json({ detail: "origin is required" });
-    const { data, error } = await supabase.from("api_route").insert({ origin: origin.trim(), is_active }).select().single();
+    // created_at/updated_at are Django's auto_now_add/auto_now — application-managed,
+    // not DB defaults, so both columns are NOT NULL with nothing to fall back on here.
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("api_route")
+      .insert({ origin: origin.trim(), is_active, created_at: now, updated_at: now })
+      .select().single();
     if (error) throw error;
     res.status(201).json(data);
     return;
@@ -84,11 +90,16 @@ async function usersResource(req, res, supabase, payload) {
     const { username, first_name = "", middle_name = "", last_name = "", role = "PERSONNEL", is_active = true } = req.body || {};
     if (!username || !username.trim()) return void res.status(400).json({ detail: "username (email) is required" });
     const tempPassword = generateTempPassword();
+    // created_at/updated_at (auto_now_add/auto_now) and date_joined (AbstractUser's
+    // default=timezone.now) are all Django application-side defaults, not DB
+    // defaults — the column is NOT NULL with nothing to fall back on if omitted.
+    const now = new Date().toISOString();
     const { data, error } = await supabase
       .from("api_user")
       .insert({
         username: username.trim(), first_name, middle_name, last_name, role, is_active,
         password: hashDjangoPassword(tempPassword), must_reset_password: true, is_staff: false, is_superuser: false,
+        created_at: now, updated_at: now, date_joined: now,
       })
       .select(SELECT).single();
     if (error) throw error;
@@ -179,7 +190,12 @@ async function terminalPriceResource(req, res, supabase, payload) {
     let { data, error } = await supabase.from("api_terminalprice").select("*").eq("id", 1).maybeSingle();
     if (error) throw error;
     if (!data) {
-      ({ data, error } = await supabase.from("api_terminalprice").insert({ id: 1, amount: 0 }).select().single());
+      // updated_at is Django's auto_now — application-managed, not a DB default,
+      // so the column is NOT NULL with nothing to fall back on if omitted here.
+      ({ data, error } = await supabase
+        .from("api_terminalprice")
+        .insert({ id: 1, amount: 0, updated_at: new Date().toISOString() })
+        .select().single());
       if (error) throw error;
     }
     res.status(200).json(data);
@@ -188,7 +204,10 @@ async function terminalPriceResource(req, res, supabase, payload) {
 
   if (req.method === "PATCH" || req.method === "PUT") {
     const { amount } = req.body || {};
-    const { data, error } = await supabase.from("api_terminalprice").upsert({ id: 1, amount }).select().single();
+    const { data, error } = await supabase
+      .from("api_terminalprice")
+      .upsert({ id: 1, amount, updated_at: new Date().toISOString() })
+      .select().single();
     if (error) throw error;
     res.status(200).json(data);
     return;
@@ -265,6 +284,8 @@ async function backfillResource(req, res, supabase, payload) {
       return;
     }
 
+    // created_at is Django's auto_now_add — application-managed, not a DB default,
+    // so the column is NOT NULL with nothing to fall back on if omitted here.
     const { data, error } = await supabase
       .from("api_remotebackfillrequest")
       .insert({
@@ -272,6 +293,7 @@ async function backfillResource(req, res, supabase, payload) {
         ticket_id: ticketId,
         requested_by_name: payload.username || "",
         status: "PENDING",
+        created_at: new Date().toISOString(),
       })
       .select()
       .single();

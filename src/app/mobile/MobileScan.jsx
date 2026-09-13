@@ -38,10 +38,14 @@ function MobileScan() {
   const [photoZoomOpen, setPhotoZoomOpen] = useState(false);
   const [photoBroken, setPhotoBroken] = useState(false);
   const [dismissedNotices, setDismissedNotices] = useState({});
+  const [driverQuery, setDriverQuery] = useState("");
+  const [driverDropdownOpen, setDriverDropdownOpen] = useState(false);
+  const [driverQrOpen, setDriverQrOpen] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const rafRef = useRef(null);
+  const driverBoxRef = useRef(null);
 
   const BACKEND_URL =
     window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
@@ -144,6 +148,41 @@ function MobileScan() {
   useEffect(() => {
     setPhotoBroken(false);
   }, [selectedDriver]);
+
+  // A new vehicle scan may auto-select a remembered/registered driver — sync
+  // the search box to show it. Manual picks/QR scans update it themselves,
+  // so this doesn't fight the user mid-typing.
+  useEffect(() => {
+    setDriverQuery(selectedDriver?.name || "");
+    setDriverDropdownOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scannedVehicle]);
+
+  useEffect(() => {
+    if (!driverDropdownOpen) return;
+    const handleClickOutside = (e) => {
+      if (driverBoxRef.current && !driverBoxRef.current.contains(e.target)) {
+        setDriverDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [driverDropdownOpen]);
+
+  const filteredDrivers = activeDrivers.filter((d) =>
+    d.name.toLowerCase().includes(driverQuery.trim().toLowerCase())
+  );
+
+  const selectDriverFromList = (driver) => {
+    handleDriverChange(String(driver.id));
+    setDriverQuery(driver.name);
+    setDriverDropdownOpen(false);
+  };
+
+  const clearDriverSearch = () => {
+    handleDriverChange("");
+    setDriverQuery("");
+  };
 
   const dismissNotice = (key, message) =>
     setDismissedNotices((prev) => ({ ...prev, [key]: message }));
@@ -452,18 +491,73 @@ function MobileScan() {
             {mode === "DISPATCH" ? (
               <span className="ms-plate">{selectedDriver?.name || "No driver assigned"}</span>
             ) : (
-              <select
-                className="ms-select"
-                value={selectedDriver?.id || ""}
-                onChange={(e) => handleDriverChange(e.target.value)}
-              >
-                <option value="">— Select driver —</option>
-                {activeDrivers.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
+              <div className="ms-combobox" ref={driverBoxRef}>
+                <div className="ms-combobox-input-wrap">
+                  <input
+                    type="text"
+                    className="ms-select ms-combobox-input"
+                    placeholder="Search driver by name…"
+                    value={driverQuery}
+                    onChange={(e) => {
+                      setDriverQuery(e.target.value);
+                      setDriverDropdownOpen(true);
+                      if (selectedDriver && e.target.value !== selectedDriver.name) {
+                        handleDriverChange("");
+                      }
+                    }}
+                    onFocus={(e) => {
+                      setDriverDropdownOpen(true);
+                      e.target.select();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (filteredDrivers.length > 0) selectDriverFromList(filteredDrivers[0]);
+                      } else if (e.key === "Escape") {
+                        setDriverDropdownOpen(false);
+                        e.target.blur();
+                      }
+                    }}
+                  />
+                  {driverQuery && (
+                    <button
+                      type="button"
+                      className="ms-combobox-clear"
+                      aria-label="Clear driver"
+                      onClick={clearDriverSearch}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                {driverDropdownOpen && (
+                  <div className="ms-combobox-list">
+                    {filteredDrivers.length === 0 ? (
+                      <div className="ms-combobox-empty">No matching drivers</div>
+                    ) : (
+                      filteredDrivers.map((d) => (
+                        <button
+                          type="button"
+                          key={d.id}
+                          className={`ms-combobox-option ${
+                            selectedDriver?.id === d.id ? "ms-combobox-option--active" : ""
+                          }`}
+                          onClick={() => selectDriverFromList(d)}
+                        >
+                          {d.name}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="ms-btn ms-btn--outline ms-btn--sm"
+                  onClick={() => setDriverQrOpen(true)}
+                >
+                  Scan Driver QR
+                </button>
+              </div>
             )}
           </div>
 
@@ -495,6 +589,17 @@ function MobileScan() {
         </div>
       )}
 
+      {driverQrOpen && (
+        <DriverQrScanner
+          drivers={activeDrivers}
+          onDetect={(driver) => {
+            selectDriverFromList(driver);
+            setDriverQrOpen(false);
+          }}
+          onClose={() => setDriverQrOpen(false)}
+        />
+      )}
+
       {photoZoomOpen && driverPhotoUrl && !photoBroken && (
         <div className="ms-lightbox" onClick={() => setPhotoZoomOpen(false)}>
           <button
@@ -510,6 +615,105 @@ function MobileScan() {
           />
         </div>
       )}
+    </div>
+  );
+}
+
+// Scans a driver's QR badge (same jsQR loop as the vehicle scanner above) and
+// matches it against the active driver list. Refs hold `drivers`/`onDetect`
+// so the camera effect runs once on mount rather than restarting on every
+// parent re-render.
+function DriverQrScanner({ drivers, onDetect, onClose }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const rafRef = useRef(null);
+  const driversRef = useRef(drivers);
+  const onDetectRef = useRef(onDetect);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    driversRef.current = drivers;
+    onDetectRef.current = onDetect;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const scanFrame = () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (!video || !canvas || video.readyState !== video.HAVE_ENOUGH_DATA) {
+        rafRef.current = requestAnimationFrame(scanFrame);
+        return;
+      }
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "dontInvert",
+      });
+
+      if (code && code.data) {
+        const driver = driversRef.current.find(
+          (d) => d.qr_code === code.data || String(d.id) === code.data
+        );
+        if (driver) {
+          onDetectRef.current(driver);
+          return;
+        }
+        setError("No active driver found for this QR code.");
+      }
+
+      rafRef.current = requestAnimationFrame(scanFrame);
+    };
+
+    (async () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setError("Camera not available. Make sure you're using HTTPS.");
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.setAttribute("playsinline", "true");
+          await videoRef.current.play();
+        }
+        rafRef.current = requestAnimationFrame(scanFrame);
+      } catch (err) {
+        setError(err.message || "Could not access camera.");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  return (
+    <div className="ms-lightbox" onClick={onClose}>
+      <div className="ms-qr-modal" onClick={(e) => e.stopPropagation()}>
+        <button className="ms-lightbox-close" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+        <h3 className="ms-qr-modal-title">Scan Driver QR</h3>
+        <video ref={videoRef} className="ms-qr-modal-video" muted playsInline />
+        <canvas ref={canvasRef} style={{ display: "none" }} />
+        {error && <div className="ms-alert ms-alert--error">{error}</div>}
+      </div>
     </div>
   );
 }
