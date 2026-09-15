@@ -4,7 +4,7 @@ import Pager from "./Pager";
 import ReportTableModal from "./ReportTableModal";
 import { matchesLogRow, matchesRoamingRow, useDebouncedSearchAll } from "../reportHook";
 const LOG_COLUMNS = ["Timestamp", "Ticket ID", "Action", "Driver", "Vehicle", "Route", "User"];
-const ROAMING_COLUMNS = ["Ticket ID", "Timestamp", "Vehicle", "Driver", "Issued By", "Verified"];
+const ROAMING_COLUMNS = ["Ticket ID", "Timestamp", "Vehicle", "Driver", "Issued By"];
 // Main card shows a short preview like the other report cards (FleetRecords) —
 // "View All" opens the modal for the full paginated list.
 const PREVIEW_SIZE = 5;
@@ -139,17 +139,6 @@ export default function TransactionLogs({
       </td>
       <td className={cellClass}>{t.driver?.name || <span className="rpt-na">—</span>}</td>
       <td className={cellClass}>{t.active_user_name || <span className="rpt-na">—</span>}</td>
-      <td className={cellClass}>
-        <span
-          className="rpt-action-pill"
-          style={{
-            background: `${STATUS_COLORS[t.status === "CANCELLED" ? "CANCELLED" : t.is_verified ? "COLLECTED" : "QUEUED"] || "#64748b"}22`,
-            color: STATUS_COLORS[t.status === "CANCELLED" ? "CANCELLED" : t.is_verified ? "COLLECTED" : "QUEUED"] || "#64748b",
-          }}
-        >
-          {t.status === "CANCELLED" ? "Cancelled" : t.is_verified ? "Verified" : "Pending"}
-        </span>
-      </td>
     </tr>
   );
 

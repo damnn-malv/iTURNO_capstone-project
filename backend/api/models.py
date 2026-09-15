@@ -144,6 +144,9 @@ class Vehicle(models.Model):
             models.Index(fields=['route', 'is_archived'], name='api_vehicle_route_i_33d88b_idx'),
         ]
 
+    def __str__(self):
+        return self.plate_number
+
 class Ticket(models.Model):
     STATUS_CHOICES = [('QUEUED', 'Queued'), ('COLLECTED', 'Collected'), ('CANCELLED', 'Cancelled')]
     MODE_CHOICES = [('UNLOAD', 'Unload'), ('QUEUE', 'Queue')]
@@ -318,14 +321,14 @@ class RemoteBackfillRequest(models.Model):
     authoritative for what tickets exist — so a remote submission can't create a
     Ticket directly. It lands here instead (written straight to Supabase by the
     remote endpoint), and api/sync/apply_remote_backfill.py applies it through
-    the same _resolve_row/_create_ticket path as a local manual entry on the next
+    the same _resolve_batch/_reserve_and_create path as a local manual entry on the next
     sync cycle, then writes the outcome back onto this same row for the remote
     UI to poll."""
     STATUS_CHOICES = [('PENDING', 'Pending'), ('APPLIED', 'Applied'), ('FAILED', 'Failed')]
 
     # Raw payload, keyed by the same plain-English field names
-    # (F_TICKET_ID etc. in backend/api/views/backfill.py and
-    # src/app/dashboard/settings/backfill/fields.js) that _resolve_row expects
+    # (F_PLATE etc. in backend/api/views/backfill.py and
+    # src/app/dashboard/settings/backfill/fields.js) that _resolve_batch expects
     # — avoids duplicating every backfill column onto this model too.
     payload = models.JSONField()
     ticket_id = models.CharField(max_length=50, blank=True, default="")  # denormalized for quick display
@@ -401,6 +404,36 @@ class BackupRecord(models.Model):
 
     def __str__(self):
         return f"{self.filename} ({self.created_at})"
+
+
+class BackfillRecord(models.Model):
+    """One row per committed paper-ticket backfill (manual, CSV, or applied from a
+    remote request) — powers the history table on the Ticket Backfill settings tab
+    so staff can see who backfilled what and when, and re-download the exact CSV
+    that was imported. created_by_name mirrors Ticket.active_user_name: stored as
+    plain text at creation time so display never depends on the User FK still
+    resolving (a remote submitter may not have a matching LAN account)."""
+    SOURCE_CHOICES = [('MANUAL', 'Manual Entry'), ('CSV', 'CSV Import'), ('REMOTE', 'Remote Request')]
+
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES)
+    created_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='backfill_records')
+    created_by_name = models.CharField(max_length=150, blank=True, default="")
+    ticket_count = models.PositiveIntegerField(default=0)
+    reason = models.TextField()
+    # Null for CSV imports: each row carries its own Date and Time Issued (the paper
+    # log books this data comes from are kept per-route with their own real
+    # timestamps, so one shared value for the whole file would be less accurate than
+    # what's already on each row) — only Manual/Remote entries have one true value.
+    issued_at = models.DateTimeField(null=True, blank=True)
+    csv_filename = models.CharField(max_length=255, blank=True, default="")
+    csv_file = models.FileField(upload_to='backfill_csv/', null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.get_source_display()} backfill ({self.ticket_count} ticket(s)) by {self.created_by_name or 'System'}"
 
 
 class SyncQueue(models.Model):

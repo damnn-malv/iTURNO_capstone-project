@@ -164,7 +164,10 @@ function Settings() {
   }, []);
 
   const handleAddPUVType = async () => {
-    if (!newType.trim()) return;
+    if (!newType.trim()) {
+      showToast?.("Name is required", "info");
+      return;
+    }
     try {
       const created = await apiService.createPUVType({ name: newType });
       setPuvTypes([...puvTypes, created]);
@@ -172,6 +175,7 @@ function Settings() {
       setPuvModalOpen(false);
     } catch (err) {
       console.error("Failed to create:", err);
+      showToast?.(err.message || "Failed to create PUV type", "info");
     }
   };
 
@@ -191,7 +195,10 @@ function Settings() {
   }, []);
 
   const handleAddRoute = async () => {
-    if (!newOrigin.trim()) return;
+    if (!newOrigin.trim()) {
+      showToast?.("Route origin is required", "info");
+      return;
+    }
     try {
       const created = await apiService.createRoute({ origin: newOrigin });
       setRoutes([...routes, created]);
@@ -199,6 +206,7 @@ function Settings() {
       setRouteModalOpen(false);
     } catch (err) {
       console.error("Failed to create route:", err);
+      showToast?.(err.message || "Failed to create route", "info");
     }
   };
 
@@ -218,15 +226,23 @@ function Settings() {
   }, []);
 
   const handleAddTicketForm = async () => {
-    if (!newTicketForm.trim()) return;
+    if (!newTicketForm.trim()) {
+      showToast?.("Name is required", "info");
+      return;
+    }
+    if (!newTicketFormPrice.trim() || isNaN(parseFloat(newTicketFormPrice))) {
+      showToast?.("Price is required", "info");
+      return;
+    }
     try {
-      const created = await apiService.createTicketForm({ name: newTicketForm, price: parseFloat(newTicketFormPrice) || 0 });
+      const created = await apiService.createTicketForm({ name: newTicketForm, price: parseFloat(newTicketFormPrice) });
       setTicketForms([...ticketForms, created]);
       setNewTicketForm("");
       setNewTicketFormPrice("");
       setTicketFormModalOpen(false);
     } catch (err) {
       console.error("Failed to create ticket form:", err);
+      showToast?.(err.message || "Failed to create ticket form", "info");
     }
   };
 

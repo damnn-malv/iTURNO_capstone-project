@@ -1,11 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useToast, useConfirm } from "../../../../components/ui/ToastConfirmContext";
-import { IS_REMOTE } from "../../../../lib/api-service";
+import { apiService, IS_REMOTE } from "../../../../lib/api-service";
 import { useTicketBackfill } from "./useTicketBackfill";
 import BackfillResults from "./BackfillResults";
 import {
-  F_TICKET_ID, F_PLATE, F_DRIVER_IWP, F_DRIVER_LAST, F_DRIVER_FIRST,
-  F_ROUTE, F_TICKET_TYPE, F_AMOUNT, F_ISSUED_AT, F_STAFF_EMAIL, F_MODE, F_NOTES,
+  F_TICKET_ID, F_PLATE, F_TICKET_TYPE, F_QUANTITY, F_ISSUED_AT, F_STAFF_EMAIL, F_MODE, F_NOTES,
 } from "./fields";
 
 function toBackendDateTime(localDateTimeValue) {
@@ -15,28 +14,19 @@ function toBackendDateTime(localDateTimeValue) {
   return localDateTimeValue.replace("T", " ");
 }
 
-const CSV_TEMPLATE_HEADER = [
-  F_TICKET_ID, F_PLATE, F_DRIVER_IWP, F_DRIVER_LAST, F_DRIVER_FIRST,
-  F_ROUTE, F_TICKET_TYPE, F_AMOUNT, F_ISSUED_AT, F_STAFF_EMAIL, F_MODE, F_NOTES,
-];
+const CSV_TEMPLATE_HEADER = [F_PLATE, F_TICKET_TYPE, F_QUANTITY, F_ISSUED_AT, F_STAFF_EMAIL, F_MODE];
 
 // The example lives only on-screen (the guide table below), not in the
 // downloaded file — a filled-in row 2 in the actual template invites someone
 // unfamiliar with spreadsheets to leave it there and start typing in row 3,
 // or edit it in place instead of replacing it. The download is header-only.
 const CSV_COLUMN_REFERENCE = [
-  { name: F_TICKET_ID, required: true, example: "1001", note: "The physical ticket number written on the paper ticket. Must fall within an actual requisitioned ticket series range. If it's already in the system, that row is skipped, not an error." },
-  { name: F_PLATE, required: true, example: "ABC-123", note: "Must match a vehicle's plate number exactly." },
-  { name: F_DRIVER_IWP, required: true, example: "12345", note: "The driver's IWP Number (same as on the Fleet & Driver page)." },
-  { name: F_DRIVER_LAST, required: true, example: "Dela Cruz", note: "Used together with the IWP Number to find the driver." },
-  { name: F_DRIVER_FIRST, required: false, example: "Juan", note: "Only needed if that IWP Number + last name matches more than one driver." },
-  { name: F_ROUTE, required: false, example: "San Fernando", note: "Just the origin town. Leave blank to use the vehicle's own assigned route automatically." },
-  { name: F_TICKET_TYPE, required: false, example: "Cash Tickets@10", note: "The ticket type name — used to set the price if Amount is blank." },
-  { name: F_AMOUNT, required: false, example: "10.00", note: "The peso amount collected. If given, it overrides Ticket Type's price." },
-  { name: F_ISSUED_AT, required: false, example: "2026-08-20 09:15", note: "When the paper ticket was actually issued. Format: YYYY-MM-DD HH:MM (24-hour clock). Leave blank to use right now." },
+  { name: F_PLATE, required: true, example: "ABC-123", note: "Must match a vehicle's plate number exactly. Driver and route are filled in automatically from that vehicle — the vehicle must have a registered owner." },
+  { name: F_TICKET_TYPE, required: true, example: "Cash Tickets@10", note: "The ticket type name — sets the price and which ticket series to draw numbers from." },
+  { name: F_QUANTITY, required: true, example: "5", note: "How many physical tickets of this type to record for this vehicle, e.g. 5 pcs of a ₱2 ticket = 5 tickets, ₱10 total. Numbers are auto-assigned, never typed in." },
+  { name: F_ISSUED_AT, required: true, example: "2026-08-20 09:15", note: "When the paper ticket was actually issued, from the route's own log book. Format: YYYY-MM-DD HH:MM (24-hour clock)." },
   { name: F_STAFF_EMAIL, required: false, example: "(leave blank)", note: "The login email of the staff member who issued it. Leave blank to label it \"Paper Backfill\"." },
   { name: F_MODE, required: false, example: "Queue", note: "Queue or Roaming (matches the Queue Management page). Leave blank for Queue." },
-  { name: F_NOTES, required: false, example: "system outage 2026-08-20", note: "Any free-text note." },
 ];
 
 function downloadCsvTemplate() {
@@ -57,38 +47,31 @@ export default function TicketBackfillTab() {
   const showConfirm = useConfirm();
   const {
     wipMode, wipLoading, togglingWip, toggleWipMode,
-    vehicles, drivers, ticketForms,
+    vehicles, ticketForms,
     manualRow, manualPreview, manualBusy, updateManualField, resetManualRow, previewManualRow, confirmManualRow,
     csvFile, setCsvFile, csvReport, csvBusy, previewCsv, importCsv, resetCsv,
     remoteRequests, remoteRequestsLoading,
+    history, historyLoading,
   } = useTicketBackfill();
 
   const [mode, setMode] = useState("manual");
   const [vehicleSearch, setVehicleSearch] = useState("");
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
-  const [driverSearch, setDriverSearch] = useState("");
-  const [showDriverDropdown, setShowDriverDropdown] = useState(false);
   const [issuedAtLocal, setIssuedAtLocal] = useState("");
+  const [useExactTicketNumber, setUseExactTicketNumber] = useState(false);
+
+  const [csvImportReason, setCsvImportReason] = useState("");
 
   const vehicleResults = vehicles.filter((v) =>
     v.plate_number?.toLowerCase().includes(vehicleSearch.toLowerCase())
   ).slice(0, 20);
-  const driverResults = drivers.filter((d) =>
-    d.name?.toLowerCase().includes(driverSearch.toLowerCase())
-  ).slice(0, 20);
 
-  // The route isn't picked by hand — it's whatever route the selected vehicle
-  // is assigned to (Vehicle.route on the backend), so it's derived here rather
-  // than left as a manual dropdown.
+  // Driver and route aren't picked by hand — they're whatever the selected
+  // vehicle is already registered with (Vehicle.owner_driver / Vehicle.route),
+  // so both are derived here rather than left as manual fields.
   const selectedVehicle = vehicles.find(
     (v) => v.plate_number?.toLowerCase() === vehicleSearch.trim().toLowerCase()
   );
-  const selectedVehicleRoute = selectedVehicle?.route_detail || null;
-
-  useEffect(() => {
-    updateManualField(F_ROUTE, selectedVehicleRoute?.origin || "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVehicleRoute?.id]);
 
   const handleSelectVehicle = (vehicle) => {
     updateManualField(F_PLATE, vehicle.plate_number);
@@ -96,24 +79,24 @@ export default function TicketBackfillTab() {
     setShowVehicleDropdown(false);
   };
 
-  const handleSelectDriver = (driver) => {
-    updateManualField(F_DRIVER_IWP, driver.iwp_number);
-    updateManualField(F_DRIVER_LAST, driver.last_name);
-    updateManualField(F_DRIVER_FIRST, driver.first_name);
-    setDriverSearch(driver.name);
-    setShowDriverDropdown(false);
-  };
-
   const handleClearManualForm = () => {
     resetManualRow();
     setVehicleSearch("");
-    setDriverSearch("");
     setIssuedAtLocal("");
+    setUseExactTicketNumber(false);
   };
 
   const handleIssuedAtChange = (value) => {
     setIssuedAtLocal(value);
     updateManualField(F_ISSUED_AT, toBackendDateTime(value));
+  };
+
+  const handleToggleExactTicketNumber = (checked) => {
+    setUseExactTicketNumber(checked);
+    if (!checked) {
+      updateManualField(F_TICKET_ID, "");
+      updateManualField(F_QUANTITY, "1");
+    }
   };
 
   const handleToggleWip = async () => {
@@ -151,32 +134,38 @@ export default function TicketBackfillTab() {
   const handleConfirmManual = async () => {
     const ok = await showConfirm(
       IS_REMOTE
-        ? `Queue ticket #${manualRow[F_TICKET_ID]} for backfill? The LAN terminal creates it on its next sync.`
-        : `Add ticket #${manualRow[F_TICKET_ID]}? This creates a real record.`
+        ? "Queue this backfill? The LAN terminal creates it on its next sync."
+        : "Add this backfill? This creates real record(s)."
     );
     if (!ok) return;
     try {
       const result = await confirmManualRow();
       if (result.outcome === "ok") {
         showToast(
-          result.queued ? `Ticket #${result.ticket_id} queued for backfill` : `Ticket #${result.ticket_id} added`,
+          result.queued
+            ? "Backfill queued"
+            : `${result.ticket_ids?.length || 1} ticket(s) added`,
           "success"
         );
         setVehicleSearch("");
-        setDriverSearch("");
         setIssuedAtLocal("");
+        setUseExactTicketNumber(false);
       } else {
-        showToast(result.reason || "Could not add this ticket", "info");
+        showToast(result.reason || "Could not add this backfill", "info");
       }
     } catch (err) {
       console.error("Failed to add manual entry:", err);
-      showToast(err.message || "Failed to add this ticket", "info");
+      showToast(err.message || "Failed to add this backfill", "info");
     }
   };
 
   const handlePreviewCsv = async () => {
+    if (!csvImportReason.trim()) {
+      showToast("Import Reason is required", "info");
+      return;
+    }
     try {
-      await previewCsv();
+      await previewCsv(csvImportReason.trim());
     } catch (err) {
       console.error("Failed to preview CSV:", err);
       showToast(err.message || "Failed to preview this file", "info");
@@ -185,15 +174,29 @@ export default function TicketBackfillTab() {
 
   const handleImportCsv = async () => {
     const ok = await showConfirm(
-      `Import ${csvReport?.imported_count ?? 0} ticket(s) from this file? Duplicates and invalid rows are skipped automatically.`
+      `Import ${csvReport?.imported_count ?? 0} row(s) from this file? Invalid rows are skipped automatically.`
     );
     if (!ok) return;
     try {
-      const result = await importCsv();
-      showToast(`Imported ${result.imported_count} ticket(s)`, "success");
+      const result = await importCsv(csvImportReason.trim());
+      showToast(`Imported ${result.imported_count} row(s)`, "success");
     } catch (err) {
       console.error("Failed to import CSV:", err);
       showToast(err.message || "Failed to import this file", "info");
+    }
+  };
+
+  const handleResetCsv = () => {
+    resetCsv();
+    setCsvImportReason("");
+  };
+
+  const handleDownloadHistoryCsv = async (record) => {
+    try {
+      await apiService.downloadBackfillCsv(record.id, record.csv_filename);
+    } catch (err) {
+      console.error("Failed to download backfill CSV:", err);
+      showToast(err.message || "Failed to download this file", "info");
     }
   };
 
@@ -216,16 +219,14 @@ export default function TicketBackfillTab() {
       <p className="set-rewards-note">
         WIP pauses ticket issuance system-wide — every terminal is blocked from checking in or
         dispatching tickets while WIP is on. Use it while backfilling paper tickets below, then
-        switch back to Active when done. Ticket Number must be the real number printed on the
-        physical ticket — it has to fall inside an actual requisitioned ticket series range, or
-        the entry is rejected.
+        switch back to Active when done. Ticket numbers are assigned automatically from the
+        selected Ticket Type's series — they're never typed in.
         {IS_REMOTE && " Switching WIP on or off only works from the LAN terminal itself."}
       </p>
 
       {!IS_REMOTE && !wipLoading && !wipMode?.is_active && (
         <div className="tbf-nudge">
           <span>Currently Active — consider switching to WIP before importing to avoid collisions with live ticket issuance.</span>
-          <button className="set-add-btn" onClick={handleToggleWip} disabled={togglingWip}>Switch to WIP</button>
         </div>
       )}
       {IS_REMOTE && !wipLoading && !wipMode?.is_active && (
@@ -257,16 +258,6 @@ export default function TicketBackfillTab() {
       {mode === "manual" && (!IS_REMOTE || wipMode?.is_active) && (
         <div className="tbf-manual-form">
           <div className="set-add-row">
-            <label className="set-field">
-              <span className="set-field-label">Ticket Number *</span>
-              <input
-                className="set-input"
-                value={manualRow[F_TICKET_ID]}
-                onChange={(e) => updateManualField(F_TICKET_ID, e.target.value)}
-                placeholder="Physical ticket number"
-              />
-            </label>
-
             <label className="set-field tbf-searchable">
               <span className="set-field-label">Vehicle Plate Number *</span>
               <input
@@ -299,66 +290,57 @@ export default function TicketBackfillTab() {
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleSelectVehicle(v)}
                     >
-                      {v.plate_number}
+                      {v.plate_number} {v.owner_driver_name ? `— ${v.owner_driver_name}` : ""}
                     </div>
                   ))}
                 </div>
               )}
             </label>
 
-            <label className="set-field tbf-searchable">
-              <span className="set-field-label">Driver *</span>
-              <input
-                className="set-input"
-                value={driverSearch}
-                onChange={(e) => {
-                  // Same reasoning as the vehicle field above — keep the submitted
-                  // value in sync with what's visibly typed, not just a confirmed pick.
-                  setDriverSearch(e.target.value);
-                  setShowDriverDropdown(true);
-                  updateManualField(F_DRIVER_LAST, e.target.value);
-                }}
-                onFocus={() => setShowDriverDropdown(true)}
-                placeholder="Search driver name..."
-              />
-              {showDriverDropdown && driverSearch && (
-                <div className="tbf-dropdown">
-                  {driverResults.length === 0 ? (
-                    <div className="tbf-dropdown-empty">No matches</div>
-                  ) : driverResults.map((d) => (
-                    <div
-                      key={d.id}
-                      className="tbf-dropdown-item"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => handleSelectDriver(d)}
-                    >
-                      {d.name} {d.iwp_number ? `(${d.iwp_number})` : ""}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </label>
-          </div>
-
-          <div className="set-add-row">
             <label className="set-field">
-              <span className="set-field-label">Ticket Type</span>
+              <span className="set-field-label">Ticket Type *</span>
               <select
                 className="set-input"
                 value={manualRow[F_TICKET_TYPE]}
                 onChange={(e) => updateManualField(F_TICKET_TYPE, e.target.value)}
               >
-                <option value="">— none (use terminal's default price) —</option>
+                <option value="">— select —</option>
                 {ticketForms.map((tf) => (
                   <option key={tf.id} value={tf.name}>{tf.name} (₱{Number(tf.price).toFixed(2)})</option>
                 ))}
               </select>
             </label>
+
+            <label className="set-field">
+              <span className="set-field-label">Ticket Amount (pcs) *</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                className="set-input"
+                value={manualRow[F_QUANTITY]}
+                onChange={(e) => updateManualField(F_QUANTITY, e.target.value)}
+                disabled={useExactTicketNumber}
+              />
+            </label>
           </div>
+
+          {selectedVehicle && !selectedVehicle.owner_driver_name && (
+            <p className="tbf-warning">
+              This vehicle has no registered owner — set one on the Fleet & Driver page before backfilling.
+            </p>
+          )}
+          {selectedVehicle?.owner_driver_name && (
+            <p className="set-rewards-note">
+              Driver: {selectedVehicle.owner_driver_name}
+              {selectedVehicle.route_detail ? ` — Route: ${selectedVehicle.route_detail.origin}` : ""}
+              {" "}(filled in automatically from this vehicle)
+            </p>
+          )}
 
           <div className="set-add-row">
             <label className="set-field">
-              <span className="set-field-label">Date and Time Issued (when the paper ticket was actually issued)</span>
+              <span className="set-field-label">Date and Time Issued *</span>
               <input
                 type="datetime-local"
                 className="set-input"
@@ -367,29 +349,71 @@ export default function TicketBackfillTab() {
               />
             </label>
             <label className="set-field">
-              <span className="set-field-label">Notes</span>
+              <span className="set-field-label">Staff Email</span>
               <input
                 className="set-input"
-                value={manualRow[F_NOTES]}
-                onChange={(e) => updateManualField(F_NOTES, e.target.value)}
-                placeholder="e.g. system outage 2026-08-20"
+                value={manualRow[F_STAFF_EMAIL] || ""}
+                onChange={(e) => updateManualField(F_STAFF_EMAIL, e.target.value)}
+                placeholder='Leave blank for "Paper Backfill"'
               />
             </label>
           </div>
 
+          <div className="set-add-row">
+            <label className="set-field">
+              <span className="set-field-label">Notes *</span>
+              <input
+                className="set-input"
+                value={manualRow[F_NOTES]}
+                onChange={(e) => updateManualField(F_NOTES, e.target.value)}
+                placeholder="Why this is being backfilled, e.g. system outage 2026-08-20"
+              />
+            </label>
+          </div>
+
+          <label className="tbf-advanced-toggle">
+            <input
+              type="checkbox"
+              checked={useExactTicketNumber}
+              onChange={(e) => handleToggleExactTicketNumber(e.target.checked)}
+            />
+            I have the exact physical ticket number (rare — for reconciling a ticket from an already-archived booklet)
+          </label>
+
+          {useExactTicketNumber && (
+            <div className="set-add-row">
+              <label className="set-field">
+                <span className="set-field-label">Ticket Number *</span>
+                <input
+                  className="set-input"
+                  value={manualRow[F_TICKET_ID]}
+                  onChange={(e) => updateManualField(F_TICKET_ID, e.target.value)}
+                  placeholder="Physical ticket number"
+                />
+              </label>
+            </div>
+          )}
+
           {!IS_REMOTE && manualPreview && manualPreview.outcome === "ok" && (
             <div className="tbf-preview-line">
-              Will {manualPreview.committed ? "record" : "create"} ticket #{manualPreview.ticket_id} for{" "}
+              Will {manualPreview.committed ? "record" : "create"} {manualPreview.quantity} ticket(s) for{" "}
               {manualPreview.vehicle} / {manualPreview.driver}
-              {manualPreview.route ? ` on ${manualPreview.route}` : ""} —{" "}
-              {manualPreview.collection_amount != null ? `₱${manualPreview.collection_amount.toFixed(2)}` : "auto-priced"}
-              {manualPreview.series_no ? ` (series ${manualPreview.series_no})` : ""}
+              {manualPreview.route ? ` on ${manualPreview.route}` : ""} — {manualPreview.ticket_type} —{" "}
+              ₱{manualPreview.total_amount.toFixed(2)} total
+              {manualPreview.available != null ? ` (${manualPreview.available} available)` : ""}
             </div>
           )}
 
           <div className="set-add-row">
             {!IS_REMOTE && (
-              <button className="set-add-btn" onClick={handlePreviewManual} disabled={manualBusy || !manualRow[F_TICKET_ID]}>
+              <button
+                className="set-add-btn"
+                onClick={handlePreviewManual}
+                disabled={
+                  manualBusy || !manualRow[F_PLATE] || !manualRow[F_TICKET_TYPE] ||
+                  (useExactTicketNumber && !manualRow[F_TICKET_ID])
+                }
+              >
                 Preview
               </button>
             )}
@@ -397,9 +421,9 @@ export default function TicketBackfillTab() {
               className="set-add-btn"
               onClick={handleConfirmManual}
               disabled={
-                manualBusy ||
+                manualBusy || (useExactTicketNumber && !manualRow[F_TICKET_ID]) ||
                 (IS_REMOTE
-                  ? !manualRow[F_TICKET_ID] || !manualRow[F_PLATE] || !manualRow[F_DRIVER_IWP] || !manualRow[F_DRIVER_LAST]
+                  ? !manualRow[F_PLATE] || !manualRow[F_TICKET_TYPE] || !manualRow[F_ISSUED_AT] || !manualRow[F_NOTES]
                   : !manualPreview || manualPreview.outcome !== "ok")
               }
             >
@@ -421,7 +445,9 @@ export default function TicketBackfillTab() {
                 <table className="set-table">
                   <thead>
                     <tr>
-                      <th>Ticket #</th>
+                      <th>Vehicle</th>
+                      <th>Ticket Type</th>
+                      <th>Qty</th>
                       <th>Status</th>
                       <th>Requested by</th>
                       <th>Submitted</th>
@@ -431,7 +457,9 @@ export default function TicketBackfillTab() {
                   <tbody>
                     {remoteRequests.map((r) => (
                       <tr key={r.id} className="set-row">
-                        <td className="set-cell-label">{r.ticket_id}</td>
+                        <td className="set-cell-label">{r.payload?.[F_PLATE]}</td>
+                        <td>{r.payload?.[F_TICKET_TYPE]}</td>
+                        <td>{r.payload?.[F_QUANTITY] || 1}</td>
                         <td>{r.status}</td>
                         <td className="set-cell-meta">{r.requested_by_name}</td>
                         <td className="set-cell-meta">{new Date(r.created_at).toLocaleString()}</td>
@@ -452,8 +480,25 @@ export default function TicketBackfillTab() {
             <button className="set-add-btn" onClick={downloadCsvTemplate} type="button">
               Download CSV Template
             </button>
-            <span className="tbf-meta">Required: {F_TICKET_ID}, {F_PLATE}, {F_DRIVER_IWP}, {F_DRIVER_LAST}. See the column guide below.</span>
+            <span className="tbf-meta">Required columns: {F_PLATE}, {F_TICKET_TYPE}, {F_QUANTITY}, {F_ISSUED_AT}. See the column guide below.</span>
           </div>
+
+          <div className="set-add-row">
+            <label className="set-field">
+              <span className="set-field-label">Import Reason *</span>
+              <input
+                className="set-input"
+                value={csvImportReason}
+                onChange={(e) => setCsvImportReason(e.target.value)}
+                placeholder="Why this whole file is being backfilled, e.g. digitizing the San Fernando route log book"
+                disabled={csvReport && !csvReport.dry_run}
+              />
+            </label>
+          </div>
+          <p className="set-rewards-note">
+            Applies to every ticket this file creates. Date and Time Issued stays a per-row column below —
+            each route's log book has its own real timestamps, so they aren't lumped into one shared value.
+          </p>
 
           <div className="set-add-row">
             <input
@@ -471,11 +516,11 @@ export default function TicketBackfillTab() {
               title={!csvReport?.dry_run ? "Run Preview Import first" : undefined}
             >
               {csvReport?.dry_run
-                ? `Confirm & Import ${csvReport.imported_count} Ticket(s)`
+                ? `Confirm & Import ${csvReport.imported_count} Row(s)`
                 : "Confirm & Import (preview first)"}
             </button>
             {csvReport && !csvReport.dry_run && (
-              <button className="set-delete-btn" onClick={resetCsv} disabled={csvBusy}>
+              <button className="set-delete-btn" onClick={handleResetCsv} disabled={csvBusy}>
                 Start New Import
               </button>
             )}
@@ -505,6 +550,48 @@ export default function TicketBackfillTab() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {!IS_REMOTE && (
+        <div className="tbf-history">
+          <h4>Backfill history</h4>
+          {historyLoading ? (
+            <p className="set-rewards-note">Loading…</p>
+          ) : history.length === 0 ? (
+            <p className="set-rewards-note">No backfills recorded yet.</p>
+          ) : (
+            <table className="set-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Backfilled by</th>
+                  <th>Source</th>
+                  <th>Tickets</th>
+                  <th>Reason</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((r) => (
+                  <tr key={r.id} className="set-row">
+                    <td className="set-cell-meta">{new Date(r.created_at).toLocaleString()}</td>
+                    <td className="set-cell-label">{r.created_by_name || "System"}</td>
+                    <td>{r.source_display}</td>
+                    <td>{r.ticket_count}</td>
+                    <td className="set-cell-meta">{r.reason}</td>
+                    <td>
+                      {r.has_csv && (
+                        <button className="set-add-btn" onClick={() => handleDownloadHistoryCsv(r)}>
+                          Download CSV
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
     </div>

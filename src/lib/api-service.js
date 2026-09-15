@@ -547,16 +547,39 @@ export const apiService = {
     return this.get("/settings/backfill");
   },
 
-  previewTicketBackfill(file) {
+  previewTicketBackfill(file, importReason) {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("import_reason", importReason);
     return this.post("/backfill/preview/", formData);
   },
 
-  importTicketBackfill(file) {
+  importTicketBackfill(file, importReason) {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("import_reason", importReason);
     return this.post("/backfill/import/", formData);
+  },
+
+  getBackfillHistory() {
+    return this.get("/backfill/history/");
+  },
+
+  async downloadBackfillCsv(id, filename) {
+    const token = sessionStorage.getItem("accessToken");
+    const res = await fetch(`${API_BASE_URL}/backfill/history/${id}/download/`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error(`Failed to download CSV (HTTP ${res.status})`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "backfill.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   },
 
   deleteRemittanceBatch(id) {

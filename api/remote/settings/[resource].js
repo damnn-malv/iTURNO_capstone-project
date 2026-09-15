@@ -228,12 +228,15 @@ async function wipModeResource(req, res, supabase) {
   res.status(200).json(data || { is_active: false, updated_at: null });
 }
 
-// Keys match F_TICKET_ID etc. in backend/api/views/backfill.py and
+// Keys match F_PLATE etc. in backend/api/views/backfill.py and
 // src/app/dashboard/settings/backfill/fields.js — same required set as
-// backfill.py's REQUIRED_FIELDS, checked here only so a malformed remote
-// submission fails fast instead of silently sitting PENDING until the LAN's
-// next sync cycle rejects it.
-const BACKFILL_REQUIRED = ["Ticket Number", "Vehicle Plate Number", "Driver IWP Number", "Driver Last Name"];
+// backfill.py's _resolve_batch (minus Ticket Type/Quantity's own value checks,
+// which need a DB lookup only the LAN side can do), checked here only so a
+// malformed remote submission fails fast instead of silently sitting PENDING
+// until the LAN's next sync cycle rejects it. "Ticket Number" is Single
+// Entry's advanced exact-number fallback — optional here, since the normal
+// path never sends one.
+const BACKFILL_REQUIRED = ["Vehicle Plate Number", "Ticket Type", "Date and Time Issued", "Notes"];
 
 async function backfillResource(req, res, supabase, payload) {
   requireRole(payload, CAN_BACKFILL);
@@ -258,30 +261,38 @@ async function backfillResource(req, res, supabase, payload) {
     }
 
     const row = req.body || {};
+    const ticketId = String(row["Ticket Number"] || "").trim();
     const missing = BACKFILL_REQUIRED.filter((f) => !String(row[f] || "").trim());
+    // Ticket Amount is only required for the normal auto-consume path — the advanced
+    // exact-ticket-number fallback (Ticket Number present) doesn't use it.
+    if (!ticketId && !String(row["Ticket Amount"] || "").trim()) missing.push("Ticket Amount");
     if (missing.length) {
       res.status(400).json({ detail: `Missing required field(s): ${missing.join(", ")}` });
       return;
     }
 
-    const ticketId = String(row["Ticket Number"]).trim();
-    // A retried POST (flaky connection, double tab, back-button resubmit) must not
-    // queue a second request for the same ticket — the LAN sync worker would apply
-    // one and permanently fail the other with a confusing "already exists" error.
-    const { data: dup, error: dupErr } = await supabase
-      .from("api_remotebackfillrequest")
-      .select("id,status")
-      .eq("ticket_id", ticketId)
-      .in("status", ["PENDING", "APPLIED"])
-      .maybeSingle();
-    if (dupErr) throw dupErr;
-    if (dup) {
-      res.status(409).json({
-        detail: dup.status === "APPLIED"
-          ? `Ticket ${ticketId} has already been backfilled.`
-          : `Ticket ${ticketId} was already submitted and is still pending.`,
-      });
-      return;
+    // Dedup only applies to the exact-ticket-number fallback — the normal path has no
+    // natural key to dedup on (a retried submission just queues a second batch, same
+    // small risk a double-tap on live ticket dispatch already carries).
+    if (ticketId) {
+      // A retried POST (flaky connection, double tab, back-button resubmit) must not
+      // queue a second request for the same ticket — the LAN sync worker would apply
+      // one and permanently fail the other with a confusing "already exists" error.
+      const { data: dup, error: dupErr } = await supabase
+        .from("api_remotebackfillrequest")
+        .select("id,status")
+        .eq("ticket_id", ticketId)
+        .in("status", ["PENDING", "APPLIED"])
+        .maybeSingle();
+      if (dupErr) throw dupErr;
+      if (dup) {
+        res.status(409).json({
+          detail: dup.status === "APPLIED"
+            ? `Ticket ${ticketId} has already been backfilled.`
+            : `Ticket ${ticketId} was already submitted and is still pending.`,
+        });
+        return;
+      }
     }
 
     // created_at is Django's auto_now_add — application-managed, not a DB default,

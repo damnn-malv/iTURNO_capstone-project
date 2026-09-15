@@ -2,8 +2,8 @@ import logging
 
 from django.utils import timezone
 
-from api.models import RemoteBackfillRequest
-from api.views.backfill import _resolve_row, _create_ticket
+from api.models import RemoteBackfillRequest, BackfillRecord
+from api.views.backfill import _resolve_batch, _reserve_and_create
 from api.views.helpers import record_audit_log
 
 logger = logging.getLogger('sync')
@@ -29,14 +29,19 @@ def apply_pending():
         if not claimed:
             continue
 
-        resolved, outcome, reason = _resolve_row(req.payload, existing_ids_in_batch=set())
+        resolved, outcome, reason = _resolve_batch(req.payload)
         if outcome == 'ok':
             try:
-                ticket = _create_ticket(resolved)
+                tickets = _reserve_and_create(resolved)
                 record_audit_log(
                     user=None, action='CREATE', model_name='Ticket',
-                    object_id=ticket.pk, object_repr=f"Remote backfill: {ticket}",
+                    object_id=','.join(t.pk for t in tickets), object_repr=f"Remote backfill: {len(tickets)} ticket(s)",
                     changes={'source': 'remote_backfill', 'requested_by': req.requested_by_name},
+                )
+                BackfillRecord.objects.create(
+                    source='REMOTE', ticket_count=len(tickets),
+                    reason=resolved['reason'], issued_at=resolved['historical_dt'],
+                    created_by_name=req.requested_by_name,
                 )
                 req.status = 'APPLIED'
                 req.result_reason = ''

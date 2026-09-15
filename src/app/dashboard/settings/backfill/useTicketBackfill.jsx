@@ -1,20 +1,16 @@
 import { useEffect, useState } from "react";
 import { apiService, IS_REMOTE } from "../../../../lib/api-service";
 import {
-  F_TICKET_ID, F_PLATE, F_DRIVER_IWP, F_DRIVER_LAST, F_DRIVER_FIRST,
-  F_ROUTE, F_TICKET_TYPE, F_AMOUNT, F_ISSUED_AT, F_MODE, F_NOTES,
+  F_TICKET_ID, F_PLATE, F_TICKET_TYPE, F_QUANTITY, F_ISSUED_AT, F_STAFF_EMAIL, F_MODE, F_NOTES,
 } from "./fields";
 
 const EMPTY_ROW = {
   [F_TICKET_ID]: "",
   [F_PLATE]: "",
-  [F_DRIVER_IWP]: "",
-  [F_DRIVER_LAST]: "",
-  [F_DRIVER_FIRST]: "",
-  [F_ROUTE]: "",
   [F_TICKET_TYPE]: "",
-  [F_AMOUNT]: "",
+  [F_QUANTITY]: "1",
   [F_ISSUED_AT]: "",
+  [F_STAFF_EMAIL]: "",
   [F_MODE]: "Queue",
   [F_NOTES]: "",
 };
@@ -25,7 +21,6 @@ export function useTicketBackfill() {
   const [togglingWip, setTogglingWip] = useState(false);
 
   const [vehicles, setVehicles] = useState([]);
-  const [drivers, setDrivers] = useState([]);
   const [ticketForms, setTicketForms] = useState([]);
 
   const [manualRow, setManualRow] = useState(EMPTY_ROW);
@@ -42,6 +37,11 @@ export function useTicketBackfill() {
   const [remoteRequests, setRemoteRequests] = useState([]);
   const [remoteRequestsLoading, setRemoteRequestsLoading] = useState(false);
 
+  // "Who backfilled what, when" — LAN-only, since the stored CSV file lives on
+  // the LAN's local disk and isn't mirrored to Supabase for the remote dashboard.
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   const fetchRemoteRequests = () => {
     if (!IS_REMOTE) return Promise.resolve();
     setRemoteRequestsLoading(true);
@@ -50,6 +50,16 @@ export function useTicketBackfill() {
       .then(setRemoteRequests)
       .catch((err) => console.error("Failed to load remote backfill requests:", err))
       .finally(() => setRemoteRequestsLoading(false));
+  };
+
+  const fetchHistory = () => {
+    if (IS_REMOTE) return Promise.resolve();
+    setHistoryLoading(true);
+    return apiService
+      .getBackfillHistory()
+      .then((result) => setHistory(Array.isArray(result) ? result : result.results || []))
+      .catch((err) => console.error("Failed to load backfill history:", err))
+      .finally(() => setHistoryLoading(false));
   };
 
   const fetchWipMode = () => {
@@ -64,8 +74,8 @@ export function useTicketBackfill() {
   useEffect(() => {
     fetchWipMode();
     fetchRemoteRequests();
+    fetchHistory();
     apiService.getVehicles().then(setVehicles).catch((err) => console.error("Failed to load vehicles:", err));
-    apiService.getDrivers().then(setDrivers).catch((err) => console.error("Failed to load drivers:", err));
     apiService.getTicketForms().then(setTicketForms).catch((err) => console.error("Failed to load ticket forms:", err));
   }, []);
 
@@ -108,6 +118,7 @@ export function useTicketBackfill() {
       if (result.outcome === "ok") {
         resetManualRow();
         if (IS_REMOTE) await fetchRemoteRequests();
+        else await fetchHistory();
       }
       return result;
     } finally {
@@ -115,11 +126,11 @@ export function useTicketBackfill() {
     }
   };
 
-  const previewCsv = async () => {
+  const previewCsv = async (importReason) => {
     if (!csvFile) return;
     setCsvBusy(true);
     try {
-      const result = await apiService.previewTicketBackfill(csvFile);
+      const result = await apiService.previewTicketBackfill(csvFile, importReason);
       setCsvReport(result);
       return result;
     } finally {
@@ -127,12 +138,13 @@ export function useTicketBackfill() {
     }
   };
 
-  const importCsv = async () => {
+  const importCsv = async (importReason) => {
     if (!csvFile) return;
     setCsvBusy(true);
     try {
-      const result = await apiService.importTicketBackfill(csvFile);
+      const result = await apiService.importTicketBackfill(csvFile, importReason);
       setCsvReport(result);
+      await fetchHistory();
       return result;
     } finally {
       setCsvBusy(false);
@@ -146,9 +158,10 @@ export function useTicketBackfill() {
 
   return {
     wipMode, wipLoading, togglingWip, toggleWipMode,
-    vehicles, drivers, ticketForms,
+    vehicles, ticketForms,
     manualRow, manualPreview, manualBusy, updateManualField, resetManualRow, previewManualRow, confirmManualRow,
     csvFile, setCsvFile, csvReport, csvBusy, previewCsv, importCsv, resetCsv,
     remoteRequests, remoteRequestsLoading,
+    history, historyLoading,
   };
 }

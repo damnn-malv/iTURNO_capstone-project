@@ -135,12 +135,6 @@ const CreateBatchForm = ({ onClose, onSave, existingBatches = [], targetDate }) 
     setCollections(ticketFormOptions.map(tf => computeRowForForm(tf.name)));
   }, [ticketFormOptions, ticketSeries, todayTickets]);
 
-  const updateCollection = (index, field, value) => {
-    const updated = [...collections];
-    updated[index][field] = value;
-    setCollections(updated);
-  };
-
   const updateDeposit = (index, field, value) => {
     const updated = [...deposits];
     updated[index][field] = value;
@@ -271,7 +265,8 @@ const CreateBatchForm = ({ onClose, onSave, existingBatches = [], targetDate }) 
                       type="number"
                       className="rem-input"
                       value={c.from}
-                      onChange={(e) => updateCollection(i, "from", e.target.value)}
+                      readOnly
+                      style={{ opacity: 0.6 }}
                     />
                   </td>
                   <td>
@@ -288,7 +283,8 @@ const CreateBatchForm = ({ onClose, onSave, existingBatches = [], targetDate }) 
                       type="number"
                       className="rem-input"
                       value={c.amount}
-                      onChange={(e) => updateCollection(i, "amount", e.target.value)}
+                      readOnly
+                      style={{ opacity: 0.6 }}
                     />
                   </td>
                 </tr>

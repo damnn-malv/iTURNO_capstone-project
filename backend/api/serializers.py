@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.utils.crypto import get_random_string
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
-from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Requisition, TicketSeries, RoamingLog, AuditLog, BackupRecord, TerminalPrice, WipMode
+from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Requisition, TicketSeries, RoamingLog, AuditLog, BackupRecord, BackfillRecord, TerminalPrice, WipMode
 from .sms import send_sms_async, queue_position_message
 
 
@@ -465,6 +465,21 @@ class BackupRecordSerializer(serializers.ModelSerializer):
             return 'System'
         full = f"{user.first_name} {user.last_name}".strip()
         return full or user.username
+
+
+class BackfillRecordSerializer(serializers.ModelSerializer):
+    source_display = serializers.CharField(source='get_source_display', read_only=True)
+    has_csv = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BackfillRecord
+        fields = [
+            'id', 'source', 'source_display', 'created_by', 'created_by_name',
+            'ticket_count', 'reason', 'issued_at', 'csv_filename', 'has_csv', 'created_at',
+        ]
+
+    def get_has_csv(self, obj):
+        return bool(obj.csv_file)
 
 
 class RemittanceBatchSerializer(serializers.ModelSerializer):

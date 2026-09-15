@@ -150,12 +150,7 @@ function Queue({ userRole }) {
                     checked={issuanceType === "QUEUE"}
                     onChange={(e) => setIssuanceType(e.target.value)}
                   />
-                  <span className="queue-type-option-icon">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10" />
-                      <polyline points="12 6 12 12 16 14" />
-                    </svg>
-                  </span>
+                  
                   <span className="queue-type-option-text">
                     <span className="queue-type-option-title">Queue</span>
                     <span className="queue-type-option-desc">Check in vehicle</span>
@@ -171,9 +166,7 @@ function Queue({ userRole }) {
                     checked={issuanceType === "ROAM"}
                     onChange={(e) => setIssuanceType(e.target.value)}
                   />
-                  <span className="queue-type-option-icon">
-                    <RouteIcon />
-                  </span>
+                  
                   <span className="queue-type-option-text">
                     <span className="queue-type-option-title">Roaming</span>
                     <span className="queue-type-option-desc">Issue ticket now</span>
@@ -406,7 +399,7 @@ function Queue({ userRole }) {
                 (issuanceType === "ROAM" && !selectedSeriesId)
               }
             >
-              <IssueTicketIcon />
+              
               {issuingTicket
                 ? "Issuing…"
                 : issuanceType === "ROAM" && ticketQuantity > 1

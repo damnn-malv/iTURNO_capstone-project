@@ -17,19 +17,31 @@ export default function RemittanceGapBanner({ canViewRemittance }) {
     const gapDate = getPhDateString(-1);
 
     let cancelled = false;
-    apiService
-      .get(`/report/eod-reconciliation/?date=${gapDate}`)
-      .then((data) => {
-        if (cancelled || !data) return;
-        if (Number(data.difference) !== 0) {
-          setGap(data);
-          setDismissed(sessionStorage.getItem("remittanceGapDismissedFor") === gapDate);
-        }
-      })
-      .catch(() => {});
+    const checkGap = () => {
+      apiService
+        .get(`/report/eod-reconciliation/?date=${gapDate}`)
+        .then((data) => {
+          if (cancelled || !data) return;
+          if (Number(data.difference) !== 0) {
+            setGap(data);
+            setDismissed(sessionStorage.getItem("remittanceGapDismissedFor") === gapDate);
+          } else {
+            setGap(null);
+          }
+        })
+        .catch(() => {});
+    };
+
+    checkGap();
+    // A late remittance filed elsewhere in the dashboard (this banner lives at
+    // the layout level, outside the Remittance page's component tree) can
+    // resolve the gap without this component ever remounting — recheck when
+    // that happens instead of leaving a stale banner up.
+    window.addEventListener("remittance-batch-saved", checkGap);
 
     return () => {
       cancelled = true;
+      window.removeEventListener("remittance-batch-saved", checkGap);
     };
   }, [canViewRemittance]);
 

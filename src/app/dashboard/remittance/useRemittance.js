@@ -82,6 +82,7 @@ export function useRemittance() {
       setShowModal(false);
       const data = await loadPage(page, isArchived);
       fetchTabCounts();
+      window.dispatchEvent(new Event("remittance-batch-saved"));
       return data;
     } catch (err) {
       console.error("Failed to save batch", err);

@@ -8,7 +8,6 @@ export default function EodReconciliation({
 }) {
   const checkoutCount = eod?.checkout_count ?? 0;
   const expectedCash = eod?.expected_cash ?? 0;
-  const actualCash = eod?.actual_cash ?? 0;
 
   return (
     <div className="rpt-card rpt-section">
@@ -35,10 +34,6 @@ export default function EodReconciliation({
         <div className="rpt-summary-card">
           <span className="rpt-summary-label">Expected Cash</span>
           <div className="rpt-summary-total">{eodLoading ? "…" : peso(expectedCash)}</div>
-        </div>
-        <div className="rpt-summary-card">
-          <span className="rpt-summary-label">Actual Cash (Remitted)</span>
-          <div className="rpt-summary-total">{eodLoading ? "…" : peso(actualCash)}</div>
         </div>
       </div>
     </div>

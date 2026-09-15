@@ -50,4 +50,6 @@ from .backfill import (
     backfill_manual,
     backfill_preview,
     backfill_import,
+    backfill_history,
+    backfill_history_download,
 )
