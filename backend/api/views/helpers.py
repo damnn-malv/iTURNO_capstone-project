@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone as dt_timezone
 
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 from ..models import Ticket, TicketPrice, AuditLog, Vehicle
@@ -59,29 +60,37 @@ def expire_stale_queue_tickets(actor=None):
     with transaction.atomic():
         stale = list(
             Ticket.objects.select_for_update()
-            .filter(status='ISSUED', issued_at__lt=today_start)
+            .filter(status='QUEUED', issued_at__lt=today_start)
         )
         if not stale:
             return
 
         vehicle_ids = set()
         reason = 'Auto-cancelled: vehicle was not dispatched before end of day.'
+        now = timezone.now()
+        logs = []
         for ticket in stale:
             ticket.status = 'CANCELLED'
             ticket.reason = reason
-            ticket.save(update_fields=['status', 'reason', 'updated_at'])
+            ticket.updated_at = now  # bulk_update bypasses auto_now, so set it explicitly
             vehicle_ids.add(ticket.vehicle_id)
-            record_audit_log(
-                user=actor,
+            logs.append(AuditLog(
+                user=actor if actor and getattr(actor, 'is_authenticated', False) else None,
                 action='UPDATE',
                 model_name='Ticket',
-                object_id=ticket.id,
-                object_repr=str(ticket),
+                object_id=str(ticket.id),
+                object_repr=str(ticket)[:255],
                 changes={'status': 'CANCELLED', 'reason': reason, 'auto_expired': True},
-            )
+            ))
 
+        Ticket.objects.bulk_update(stale, ['status', 'reason', 'updated_at'])
+        AuditLog.objects.bulk_create(logs)
+
+        # The driver checked in for that stale shift never got dispatched, so
+        # the vehicle reverts to its registered owner rather than staying
+        # pinned to whoever was checked in when the day ended.
         Vehicle.objects.filter(id__in=vehicle_ids, status='QUEUED').update(
-            status='AVAILABLE', updated_at=timezone.now()
+            status='AVAILABLE', active_driver=F('owner_driver'), updated_at=timezone.now()
         )
 
 

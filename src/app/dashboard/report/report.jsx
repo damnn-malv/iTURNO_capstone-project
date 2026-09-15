@@ -1,47 +1,41 @@
 import { useState, useEffect, useCallback } from "react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
 import { DataTable } from "../../../components/ui/dataTable";
 import {
   STATUS_COLORS,
-  today,
-  yearStart,
-  formatTime,
-  formatChanges,
+  getToday,
+  getYearStart,
   exportCSV,
-  SummaryCard,
-} from "../../../lib/report/reportHook";
-import { exportTablePDF } from "../../../lib/report/exportPDF";
+  matchesLogRow,
+  matchesRoamingRow,
+  matchesRequisitionRow,
+  matchesRemittanceRow,
+  matchesAuditRow,
+  matchesVehicleRow,
+  matchesDriverRow,
+  formatAuditItem,
+  formatAuditDetails,
+} from "./reportHook";
+import { exportTablePDF } from "./exportPDF";
 
-import TransactionLogs from "../../../lib/report/tables/TransactionLogs";
-import AuditTrail from "../../../lib/report/tables/AuditTrail";
-import FleetRecords from "../../../lib/report/tables/FleetRecords";
-import RequisitionRemittance from "../../../lib/report/tables/RequisitionRemittance";
-import { getDriverCode } from "../../../lib/driver-utils";
+import TransactionLogs from "./tables/TransactionLogs";
+import AuditTrail from "./tables/AuditTrail";
+import FleetRecords from "./tables/FleetRecords";
+import RequisitionRemittance from "./tables/RequisitionRemittance";
+import { getDriverCode } from "../driver/driver-utils";
+import { IS_REMOTE, authFetch } from "../../../lib/api-service";
 import "../../../styles/Report.css";
-
-const API_BASE =
-  import.meta.env.VITE_API_URL ||
-  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-    ? "http://localhost:8000/api"
-    : `http://${window.location.hostname}:8000/api`);
 
 const PAGE_SIZE = 30;
 const EMPTY_PAGE_META = { count: 0, totalPages: 1 };
 
 // Shapes a raw Ticket record into the flat row TransactionLogs/export expect.
+// ticket_id mirrors getTicketDisplayId() (queue/useQueue.jsx) so cancelled queue
+// tickets show their friendly bay code (e.g. "NA-2") instead of the raw
+// placeholder id they keep until a real ticket number is assigned at dispatch.
 const mapTicketToLogRow = (t) => ({
   id: t.id,
   timestamp: t.created_at,
-  ticket_id: t.id,
+  ticket_id: t.queue_code || String(t.id || "").replace(/^TICKET-/i, ""),
   action: t.status,
   driver: t.driver?.name || "",
   vehicle: t.vehicle?.plate_number || "",
@@ -52,14 +46,9 @@ const mapTicketToLogRow = (t) => ({
 
 export default function Report() {
   const [filters, setFilters] = useState({
-    startDate: yearStart,
-    endDate: today,
+    startDate: getYearStart(),
+    endDate: getToday(),
   });
-  const [summary, setSummary] = useState(null);
-  const [collections, setCollections] = useState([]);
-  const [chartData, setChartData] = useState([]);
-  const [showAllCollections, setShowAllCollections] = useState(false);
-
   const [transactionData, setTransactionData] = useState([]);
   const [transactionMeta, setTransactionMeta] = useState(EMPTY_PAGE_META);
 
@@ -78,9 +67,11 @@ export default function Report() {
 
   const [requisitionData, setRequisitionData] = useState([]);
   const [requisitionMeta, setRequisitionMeta] = useState(EMPTY_PAGE_META);
+  const [requisitionArchived, setRequisitionArchived] = useState(false);
 
   const [remittanceData, setRemittanceData] = useState([]);
   const [remittanceMeta, setRemittanceMeta] = useState(EMPTY_PAGE_META);
+  const [remittanceArchived, setRemittanceArchived] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -92,69 +83,51 @@ export default function Report() {
     return p.toString();
   }, [filters.startDate, filters.endDate]);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    setShowAllCollections(false);
-    try {
-      const qs = buildParams();
-      const q = qs ? `?${qs}` : "";
-      const [sumRes, colRes, chartRes] = await Promise.all([
-        fetch(`${API_BASE}/report/summary/${q}`),
-        fetch(`${API_BASE}/report/collections/${q}`),
-        fetch(`${API_BASE}/report/chart/${q}`),
-      ]);
-      setSummary(await sumRes.json());
-      setCollections((await colRes.json()).results || []);
-      setChartData((await chartRes.json()).chart_data || []);
-    } catch {
-      setError("Failed to load report data. Check your API connection.");
-    } finally {
-      setLoading(false);
-    }
-  }, [buildParams]);
-
   // Raw page fetchers — return data instead of touching state, so the "View All"
   // modal in each table can browse further pages without disturbing the
   // top-30 preview shown on the main card.
   const fetchTransactionRaw = useCallback(async (page = 1) => {
     const qs = buildParams();
-    const res = await fetch(
-      `${API_BASE}/tickets/?mode=QUEUE&page=${page}&page_size=${PAGE_SIZE}${qs ? `&${qs}` : ""}`,
+    const res = await authFetch(
+      `/tickets/?mode=QUEUE&page=${page}&page_size=${PAGE_SIZE}${qs ? `&${qs}` : ""}`,
     );
     const data = await res.json();
     return {
       results: (data.results || []).map(mapTicketToLogRow),
       count: data.count || 0,
-      totalPages: data.total_pages || 1,
+      totalPages: data.total_pages || Math.max(Math.ceil((data.count || 0) / PAGE_SIZE), 1),
       page: data.page || page,
     };
   }, [buildParams]);
 
   const fetchRoamingRaw = useCallback(async (page = 1) => {
     const qs = buildParams();
-    const res = await fetch(
-      `${API_BASE}/tickets/?mode=UNLOAD&page=${page}&page_size=${PAGE_SIZE}${qs ? `&${qs}` : ""}`,
+    const res = await authFetch(
+      `/tickets/?mode=UNLOAD&page=${page}&page_size=${PAGE_SIZE}${qs ? `&${qs}` : ""}`,
     );
     const data = await res.json();
     return {
       results: data.results || [],
       count: data.count || 0,
-      totalPages: data.total_pages || 1,
+      totalPages: data.total_pages || Math.max(Math.ceil((data.count || 0) / PAGE_SIZE), 1),
       page: data.page || page,
     };
   }, [buildParams]);
 
   const fetchAuditRaw = useCallback(async (page = 1) => {
     const qs = buildParams();
-    const res = await fetch(
-      `${API_BASE}/audit-logs/?page=${page}&page_size=${PAGE_SIZE}${qs ? `&${qs}` : ""}`,
+    const res = await authFetch(
+      `/audit-logs/?page=${page}&page_size=${PAGE_SIZE}${qs ? `&${qs}` : ""}`,
     );
     const data = await res.json();
+    // Remote /resource/audit-logs returns {results,count} (shared shape
+    // across all remote resources); LAN's /audit-logs/ returns {logs,total}.
+    const results = IS_REMOTE ? data.results || [] : data.logs || [];
+    const count = IS_REMOTE ? data.count || 0 : data.total || 0;
     return {
-      results: data.logs || [],
-      count: data.total || 0,
-      totalPages: data.total_pages || 1,
+      results,
+      count,
+      totalPages: data.total_pages || Math.max(Math.ceil(count / PAGE_SIZE), 1),
       page: data.page || page,
     };
   }, [buildParams]);
@@ -166,6 +139,7 @@ export default function Report() {
       setTransactionMeta({ count: data.count, totalPages: data.totalPages });
     } catch {
       console.error("Failed to load transaction logs");
+      setError("Failed to load report data. Check your API connection.");
     }
   }, [fetchTransactionRaw]);
 
@@ -176,6 +150,7 @@ export default function Report() {
       setRoamingMeta({ count: data.count, totalPages: data.totalPages });
     } catch {
       console.error("Failed to load roaming logs");
+      setError("Failed to load report data. Check your API connection.");
     }
   }, [fetchRoamingRaw]);
 
@@ -186,12 +161,13 @@ export default function Report() {
       setAuditMeta({ count: data.count, totalPages: data.totalPages });
     } catch {
       console.error("Failed to load audit trail");
+      setError("Failed to load report data. Check your API connection.");
     }
   }, [fetchAuditRaw]);
 
   const fetchVehicles = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/vehicles/`);
+      const res = await authFetch("/vehicles/");
       const data = await res.json();
       setVehicles(Array.isArray(data) ? data : data.vehicles || []);
       setVehiclesTotal(Array.isArray(data) ? data.length : data.total || 0);
@@ -202,7 +178,7 @@ export default function Report() {
 
   const fetchDrivers = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/drivers/`);
+      const res = await authFetch("/drivers/");
       const data = await res.json();
       setDrivers(Array.isArray(data) ? data : data.drivers || []);
       setDriversTotal(Array.isArray(data) ? data.length : data.total || 0);
@@ -213,31 +189,31 @@ export default function Report() {
 
   const fetchRequisitionRaw = useCallback(async (page = 1) => {
     const qs = buildParams();
-    const res = await fetch(
-      `${API_BASE}/requisitions/?page=${page}&page_size=${PAGE_SIZE}${qs ? `&${qs}` : ""}`,
+    const res = await authFetch(
+      `/requisitions/?page=${page}&page_size=${PAGE_SIZE}&is_archived=${requisitionArchived}${qs ? `&${qs}` : ""}`,
     );
     const data = await res.json();
     return {
       results: data.results || [],
       count: data.count || 0,
-      totalPages: data.total_pages || 1,
+      totalPages: data.total_pages || Math.max(Math.ceil((data.count || 0) / PAGE_SIZE), 1),
       page: data.page || page,
     };
-  }, [buildParams]);
+  }, [buildParams, requisitionArchived]);
 
   const fetchRemittanceRaw = useCallback(async (page = 1) => {
     const qs = buildParams();
-    const res = await fetch(
-      `${API_BASE}/report/remittance/?page=${page}&page_size=${PAGE_SIZE}${qs ? `&${qs}` : ""}`,
+    const res = await authFetch(
+      `/report/remittance/?page=${page}&page_size=${PAGE_SIZE}&is_archived=${remittanceArchived}${qs ? `&${qs}` : ""}`,
     );
     const data = await res.json();
     return {
       results: data.results || [],
       count: data.count || 0,
-      totalPages: data.total_pages || 1,
+      totalPages: data.total_pages || Math.max(Math.ceil((data.count || 0) / PAGE_SIZE), 1),
       page: data.page || page,
     };
-  }, [buildParams]);
+  }, [buildParams, remittanceArchived]);
 
   const fetchRequisitionPage = useCallback(async () => {
     try {
@@ -246,6 +222,7 @@ export default function Report() {
       setRequisitionMeta({ count: data.count, totalPages: data.totalPages });
     } catch {
       console.error("Failed to load requisitions");
+      setError("Failed to load report data. Check your API connection.");
     }
   }, [fetchRequisitionRaw]);
 
@@ -256,6 +233,7 @@ export default function Report() {
       setRemittanceMeta({ count: data.count, totalPages: data.totalPages });
     } catch {
       console.error("Failed to load remittance batches");
+      setError("Failed to load report data. Check your API connection.");
     }
   }, [fetchRemittanceRaw]);
 
@@ -263,7 +241,7 @@ export default function Report() {
   // so CSV/PDF stay complete even though the on-screen table only loads one page.
   const fetchTransactionExportRows = useCallback(async () => {
     const qs = buildParams();
-    const res = await fetch(`${API_BASE}/tickets/?mode=QUEUE${qs ? `&${qs}` : ""}`);
+    const res = await authFetch(`/tickets/?mode=QUEUE${qs ? `&${qs}` : ""}`);
     const data = await res.json();
     const list = Array.isArray(data) ? data : data.results || [];
     return list.map(mapTicketToLogRow);
@@ -271,42 +249,55 @@ export default function Report() {
 
   const fetchRoamingExportRows = useCallback(async () => {
     const qs = buildParams();
-    const res = await fetch(`${API_BASE}/tickets/?mode=UNLOAD${qs ? `&${qs}` : ""}`);
+    const res = await authFetch(`/tickets/?mode=UNLOAD${qs ? `&${qs}` : ""}`);
     const data = await res.json();
     return Array.isArray(data) ? data : data.results || [];
   }, [buildParams]);
 
   const fetchAuditExportRows = useCallback(async () => {
     const qs = buildParams();
-    const res = await fetch(`${API_BASE}/audit-logs/?all=true${qs ? `&${qs}` : ""}`);
+    const res = await authFetch(`/audit-logs/?all=true${qs ? `&${qs}` : ""}`);
     const data = await res.json();
-    return data.logs || [];
+    return IS_REMOTE ? data.results || data || [] : data.logs || [];
   }, [buildParams]);
 
   const fetchRequisitionExportRows = useCallback(async () => {
     const qs = buildParams();
-    const res = await fetch(`${API_BASE}/requisitions/${qs ? `?${qs}` : ""}`);
+    const res = await authFetch(
+      `/requisitions/?is_archived=${requisitionArchived}${qs ? `&${qs}` : ""}`,
+    );
     const data = await res.json();
     return Array.isArray(data) ? data : data.results || [];
-  }, [buildParams]);
+  }, [buildParams, requisitionArchived]);
 
   const fetchRemittanceExportRows = useCallback(async () => {
     const qs = buildParams();
-    const res = await fetch(`${API_BASE}/report/remittance/${qs ? `?${qs}` : ""}`);
+    const res = await authFetch(
+      `/report/remittance/?is_archived=${remittanceArchived}${qs ? `&${qs}` : ""}`,
+    );
     const data = await res.json();
-    return data.results || [];
-  }, [buildParams]);
+    return Array.isArray(data) ? data : data.results || [];
+  }, [buildParams, remittanceArchived]);
 
   useEffect(() => {
-    fetchData();
-    fetchTransactionPage();
-    fetchRoamingPage();
-    fetchAuditPage();
+    setLoading(true);
+    setError("");
+    Promise.all([fetchTransactionPage(), fetchRoamingPage(), fetchAuditPage()]).finally(() =>
+      setLoading(false),
+    );
     fetchVehicles();
     fetchDrivers();
-    fetchRequisitionPage();
-    fetchRemittancePage();
   }, []);
+
+  // Refetches on mount and whenever the Active/Archived requisition tab flips.
+  useEffect(() => {
+    fetchRequisitionPage();
+  }, [requisitionArchived]);
+
+  // Refetches on mount and whenever the Active/Archived remittance tab flips.
+  useEffect(() => {
+    fetchRemittancePage();
+  }, [remittanceArchived]);
 
   const handleDateChange = (field, value) => {
     setFilters((prev) => {
@@ -320,16 +311,19 @@ export default function Report() {
   };
 
   const refetchFiltered = () => {
-    fetchData();
-    fetchTransactionPage();
-    fetchRoamingPage();
-    fetchAuditPage();
-    fetchRequisitionPage();
-    fetchRemittancePage();
+    setLoading(true);
+    setError("");
+    Promise.all([
+      fetchTransactionPage(),
+      fetchRoamingPage(),
+      fetchAuditPage(),
+      fetchRequisitionPage(),
+      fetchRemittancePage(),
+    ]).finally(() => setLoading(false));
   };
 
   const handleClearFilter = () => {
-    setFilters({ startDate: yearStart, endDate: today });
+    setFilters({ startDate: getYearStart(), endDate: getToday() });
     setTimeout(refetchFiltered, 0);
   };
 
@@ -358,23 +352,23 @@ export default function Report() {
     "Contact No.": d.contact || "—",
   });
 
-  const handleExportVehiclesCSV = () =>
+  const handleExportVehiclesCSV = (search = "") =>
     exportCSV(
-      vehicles.map(buildVehicleExportRow),
+      vehicles.filter((v) => matchesVehicleRow(v, search)).map(buildVehicleExportRow),
       `vehicle_records_${Date.now()}.csv`,
     );
 
-  const handleExportDriversCSV = () =>
+  const handleExportDriversCSV = (search = "") =>
     exportCSV(
-      drivers.map(buildDriverExportRow),
+      drivers.filter((d) => matchesDriverRow(d, search)).map(buildDriverExportRow),
       `driver_records_${Date.now()}.csv`,
     );
 
-  const handleExportVehiclesPDF = () =>
-    exportTablePDF(vehicles.map(buildVehicleExportRow), "Vehicle Records");
+  const handleExportVehiclesPDF = (search = "") =>
+    exportTablePDF(vehicles.filter((v) => matchesVehicleRow(v, search)).map(buildVehicleExportRow), "Vehicle Records");
 
-  const handleExportDriversPDF = () =>
-    exportTablePDF(drivers.map(buildDriverExportRow), "Driver Records");
+  const handleExportDriversPDF = (search = "") =>
+    exportTablePDF(drivers.filter((d) => matchesDriverRow(d, search)).map(buildDriverExportRow), "Driver Records");
 
   const buildRequisitionExportRow = (r) => ({
     "Date Requested": r.date_requested ? r.date_requested.slice(0, 10) : "—",
@@ -387,14 +381,17 @@ export default function Report() {
     Status: r.status,
   });
 
-  const handleExportRequisitionsCSV = async () => {
+  const handleExportRequisitionsCSV = async (search = "") => {
     const rows = await fetchRequisitionExportRows();
-    exportCSV(rows.map(buildRequisitionExportRow), `requisitions_${Date.now()}.csv`);
+    exportCSV(
+      rows.filter((r) => matchesRequisitionRow(r, search)).map(buildRequisitionExportRow),
+      `requisitions_${Date.now()}.csv`,
+    );
   };
 
-  const handleExportRequisitionsPDF = async () => {
+  const handleExportRequisitionsPDF = async (search = "") => {
     const rows = await fetchRequisitionExportRows();
-    exportTablePDF(rows.map(buildRequisitionExportRow), "Requisition");
+    exportTablePDF(rows.filter((r) => matchesRequisitionRow(r, search)).map(buildRequisitionExportRow), "Requisition");
   };
 
   const buildRemittanceExportRow = (b) => ({
@@ -405,18 +402,21 @@ export default function Report() {
     Status: b.status,
   });
 
-  const handleExportRemittanceCSV = async () => {
+  const handleExportRemittanceCSV = async (search = "") => {
     const rows = await fetchRemittanceExportRows();
-    exportCSV(rows.map(buildRemittanceExportRow), `remittance_${Date.now()}.csv`);
+    exportCSV(
+      rows.filter((b) => matchesRemittanceRow(b, search)).map(buildRemittanceExportRow),
+      `remittance_${Date.now()}.csv`,
+    );
   };
 
-  const handleExportRemittancePDF = async () => {
+  const handleExportRemittancePDF = async (search = "") => {
     const rows = await fetchRemittanceExportRows();
-    exportTablePDF(rows.map(buildRemittanceExportRow), "Remittance");
+    exportTablePDF(rows.filter((b) => matchesRemittanceRow(b, search)).map(buildRemittanceExportRow), "Remittance");
   };
 
   const buildLogExportRow = (l) => ({
-    Timestamp: l.timestamp,
+    Timestamp: l.timestamp ? new Date(l.timestamp).toLocaleString() : "—",
     "Ticket ID": l.ticket_id,
     Action: l.action,
     Driver: l.driver,
@@ -426,51 +426,60 @@ export default function Report() {
     User: l.user,
   });
 
-  const handleExportLogsCSV = async () => {
+  const handleExportLogsCSV = async (search = "") => {
     const rows = await fetchTransactionExportRows();
-    exportCSV(rows.map(buildLogExportRow), `transaction_logs_${Date.now()}.csv`);
+    exportCSV(
+      rows.filter((l) => matchesLogRow(l, search)).map(buildLogExportRow),
+      `transaction_logs_${Date.now()}.csv`,
+    );
   };
 
-  const handleExportLogsPDF = async () => {
+  const handleExportLogsPDF = async (search = "") => {
     const rows = await fetchTransactionExportRows();
-    exportTablePDF(rows.map(buildLogExportRow), "Transaction Logs");
+    exportTablePDF(rows.filter((l) => matchesLogRow(l, search)).map(buildLogExportRow), "Transaction Logs");
   };
 
   const buildRoamingExportRow = (t) => ({
     "Ticket ID": String(t.id).replace(/^TICKET-/i, ""),
-    Time: formatTime(t.issued_at),
+    Timestamp: t.issued_at ? new Date(t.issued_at).toLocaleString() : "—",
     Vehicle: t.vehicle?.plate_number || "",
     Driver: t.driver?.name || "",
     "Issued By": t.active_user_name || "",
     Verified: t.status === "CANCELLED" ? "Cancelled" : t.is_verified ? "Verified" : "Pending",
   });
 
-  const handleExportRoamingCSV = async () => {
+  const handleExportRoamingCSV = async (search = "") => {
     const rows = await fetchRoamingExportRows();
-    exportCSV(rows.map(buildRoamingExportRow), `roaming_logs_${Date.now()}.csv`);
+    exportCSV(
+      rows.filter((t) => matchesRoamingRow(t, search)).map(buildRoamingExportRow),
+      `roaming_logs_${Date.now()}.csv`,
+    );
   };
 
-  const handleExportRoamingPDF = async () => {
+  const handleExportRoamingPDF = async (search = "") => {
     const rows = await fetchRoamingExportRows();
-    exportTablePDF(rows.map(buildRoamingExportRow), "Roaming Logs");
+    exportTablePDF(rows.filter((t) => matchesRoamingRow(t, search)).map(buildRoamingExportRow), "Roaming Logs");
   };
 
   const buildAuditExportRow = (l) => ({
     Timestamp: l.created_at ? new Date(l.created_at).toLocaleString() : "—",
     Action: l.action_display || l.action,
-    Item: `${l.model_name} #${l.object_id}`,
-    Details: l.object_repr || formatChanges(l.changes),
+    Item: formatAuditItem(l),
+    Details: formatAuditDetails(l),
     User: l.user_name || "System",
   });
 
-  const handleExportAuditCSV = async () => {
+  const handleExportAuditCSV = async (search = "") => {
     const rows = await fetchAuditExportRows();
-    exportCSV(rows.map(buildAuditExportRow), `audit_trail_${Date.now()}.csv`);
+    exportCSV(
+      rows.filter((l) => matchesAuditRow(l, search)).map(buildAuditExportRow),
+      `audit_trail_${Date.now()}.csv`,
+    );
   };
 
-  const handleExportAuditPDF = async () => {
+  const handleExportAuditPDF = async (search = "") => {
     const rows = await fetchAuditExportRows();
-    exportTablePDF(rows.map(buildAuditExportRow), "Audit Trail");
+    exportTablePDF(rows.filter((l) => matchesAuditRow(l, search)).map(buildAuditExportRow), "Audit Trail");
   };
 
   return (
@@ -515,7 +524,7 @@ export default function Report() {
               type="date"
               className="rpt-date-input"
               value={filters.startDate}
-              max={today}
+              max={getToday()}
               onChange={(e) => handleDateChange("startDate", e.target.value)}
             />
           </div>
@@ -526,7 +535,7 @@ export default function Report() {
               className="rpt-date-input"
               value={filters.endDate}
               min={filters.startDate || undefined}
-              max={today}
+              max={getToday()}
               onChange={(e) => handleDateChange("endDate", e.target.value)}
             />
           </div>
@@ -577,6 +586,8 @@ export default function Report() {
         onRoamingFetchPage={fetchRoamingRaw}
         onExportRoamingCSV={handleExportRoamingCSV}
         onExportRoamingPDF={handleExportRoamingPDF}
+        onLogsFetchAll={fetchTransactionExportRows}
+        onRoamingFetchAll={fetchRoamingExportRows}
         STATUS_COLORS={STATUS_COLORS}
         pageSize={PAGE_SIZE}
       />
@@ -585,13 +596,19 @@ export default function Report() {
         requisitionData={requisitionData}
         requisitionMeta={requisitionMeta}
         onRequisitionFetchPage={fetchRequisitionRaw}
+        onRequisitionFetchAll={fetchRequisitionExportRows}
         onExportRequisitionsCSV={handleExportRequisitionsCSV}
         onExportRequisitionsPDF={handleExportRequisitionsPDF}
+        requisitionArchived={requisitionArchived}
+        onRequisitionArchivedChange={setRequisitionArchived}
         remittanceData={remittanceData}
         remittanceMeta={remittanceMeta}
         onRemittanceFetchPage={fetchRemittanceRaw}
+        onRemittanceFetchAll={fetchRemittanceExportRows}
         onExportRemittanceCSV={handleExportRemittanceCSV}
         onExportRemittancePDF={handleExportRemittancePDF}
+        remittanceArchived={remittanceArchived}
+        onRemittanceArchivedChange={setRemittanceArchived}
         pageSize={PAGE_SIZE}
       />
 
@@ -614,6 +631,7 @@ export default function Report() {
         auditData={auditData}
         auditMeta={auditMeta}
         onAuditFetchPage={fetchAuditRaw}
+        onAuditFetchAll={fetchAuditExportRows}
         onExportCSV={handleExportAuditCSV}
         onExportPDF={handleExportAuditPDF}
         pageSize={PAGE_SIZE}

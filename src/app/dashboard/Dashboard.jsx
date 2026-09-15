@@ -12,7 +12,6 @@ import {
 } from "recharts";
 import { apiService } from "../../lib/api-service";
 import "../../styles/Dashboard.css";
-import "../../styles/Ticket.css";
 
 const peso = (n) => {
   const num = parseFloat(n);
@@ -26,26 +25,19 @@ const peso = (n) => {
   );
 };
 
-// Ticket lifecycle + live fleet status colors reuse the app's existing status
+// Ticket status + live fleet status colors reuse the app's existing status
 // vocabulary (Dispatch.css badge dots, AuditTrail.jsx action pills) rather than
 // introducing a new palette: green=good, amber=pending, blue=active, red=critical,
 // slate=neutral. Every dot is always paired with a text label, never color alone.
+// Queued/Roamed mirror the Collection Log (mode=QUEUE) / Roaming Vehicle Log
+// (mode=UNLOAD) split on the Transaction page; Cancelled stays a separate
+// bucket regardless of mode.
 const TICKET_STATUS_META = {
-  ISSUED: { label: "Issued", color: "#f59e0b" },
-  DISPATCHED: { label: "Dispatched", color: "#3b82f6" },
-  COLLECTED: { label: "Collected", color: "#22c55e" },
+  QUEUE: { label: "Queued", color: "#1a2744" },
+  UNLOAD: { label: "Roamed", color: "#3b82f6" },
   CANCELLED: { label: "Cancelled", color: "#ef4444" },
-  RETURNED: { label: "Returned", color: "#94a3b8" },
 };
-const TICKET_STATUS_ORDER = ["ISSUED", "DISPATCHED", "COLLECTED", "CANCELLED", "RETURNED"];
-
-const FLEET_STATUS_META = {
-  QUEUED: { label: "Queued", color: "#f59e0b" },
-  DISPATCHED: { label: "Dispatched", color: "#3b82f6" },
-  AVAILABLE: { label: "Available", color: "#22c55e" },
-  MAINTENANCE: { label: "Maintenance", color: "#ef4444" },
-};
-const FLEET_STATUS_ORDER = ["QUEUED", "DISPATCHED", "AVAILABLE", "MAINTENANCE"];
+const TICKET_STATUS_ORDER = ["QUEUE", "UNLOAD", "CANCELLED"];
 
 // Matches AuditTrail.jsx's ACTION_COLORS exactly so audit entries look the same everywhere.
 const ACTION_COLORS = { CREATE: "#22c55e", UPDATE: "#3b82f6", DELETE: "#ef4444" };
@@ -81,13 +73,14 @@ function CustomTooltip({ active, payload, label }) {
 }
 
 // ─── Stat Card ───────────────────────────────────────────────────────────────
-function StatCard({ label, value, sub, icon, alert }) {
+// `featured` makes the single Collections card fill the tall left slot next
+// to the 2x2 quad of Check-Ins / Live Status cards.
+function StatCard({ label, value, sub, alert, featured }) {
   return (
-    <div className={`stat-card${alert ? " stat-card--alert" : ""}`}>
-      <div className="stat-card-top">
-        <div className="stat-card-label">{label}</div>
-        <div className="stat-card-icon">{icon}</div>
-      </div>
+    <div
+      className={`stat-card${alert ? " stat-card--alert" : ""}${featured ? " stat-card--featured" : ""}`}
+    >
+      <div className="stat-card-label">{label}</div>
       <div className="stat-card-value">{value}</div>
       {sub && <div className="stat-card-sub">{sub}</div>}
     </div>
@@ -101,7 +94,7 @@ function BreakdownCard({ title, badge, data, order, meta }) {
 
   return (
     <div className="chart-card">
-      <div className="chart-card-header">
+      <div className="chart-card-header chart-card-header--stacked">
         <span className="chart-card-title">{title}</span>
         <span className="chart-card-badge">{badge}</span>
       </div>
@@ -222,7 +215,12 @@ export default function Dashboard() {
           apiService.getRoutes(range).catch(() => []),
           apiService.getAuditLogs({ ...range, all: true }).catch(() => ({ logs: [] })),
         ]);
-        setRoutes(Array.isArray(routeData) ? routeData : []);
+        // Backend returns routes alphabetically (origin) — fine for picker dropdowns
+        // elsewhere, but this sidebar ranks routes by activity, so re-sort busiest first.
+        const sortedRoutes = (Array.isArray(routeData) ? routeData : []).sort(
+          (a, b) => (b.checked_in_today ?? 0) - (a.checked_in_today ?? 0),
+        );
+        setRoutes(sortedRoutes);
         setActivity(Array.isArray(logsData.logs) ? logsData.logs : []);
         setActivityPage(0);
       } catch {
@@ -272,9 +270,7 @@ export default function Dashboard() {
           <div className="col-header-accent" />
           <div>
             <h1 className="col-title">Dashboard</h1>
-            <p className="col-subtitle">
-              Overview of collection and activity for {rangeLabel}
-            </p>
+            <p className="col-subtitle">Overview of collection and activity</p>
           </div>
         </div>
         <div className="col-header-right">
@@ -299,7 +295,7 @@ export default function Dashboard() {
             </label>
           </div>
           <button
-            className="ticket-mobile-scan-btn"
+            className="dashboard-scan-btn"
             onClick={() => window.open("/public-view", "_blank", "noopener,noreferrer")}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -309,7 +305,7 @@ export default function Dashboard() {
             </svg>
             Public View
           </button>
-          <button className="ticket-mobile-scan-btn" onClick={() => navigate("/mobile-scan")}>
+          <button className="dashboard-scan-btn" onClick={() => navigate("/mobile-scan")}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M3 7V5a2 2 0 0 1 2-2h2" />
               <path d="M17 3h2a2 2 0 0 1 2 2v2" />
@@ -332,54 +328,39 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
-          {/* ─── Collections ─────────────────────────────────────────────────── */}
+          {/* ─── Overview: Collections (left) + Check-Ins/Live Status quad (right) ─── */}
           <div>
-            <div className="dashboard-section-label">
-              Collections <span className="dashboard-section-range">({rangeLabel})</span>
-            </div>
-            <div className="stat-cards-row">
-              <StatCard
-                label="Total"
-                value={stats?.today_total?.count ?? 0}
-                sub={peso(stats?.today_total?.total ?? 0)}
-              />
-            </div>
-          </div>
-          {/* ─── Check-Ins ──────────────────────────────────────────────────── */}
-          <div className="dashboard-section">
-            <div className="dashboard-section-label">
-              Check-Ins <span className="dashboard-section-range">({rangeLabel})</span>
-            </div>
-            <div className="stat-cards-row">
-              <StatCard
-                label="Vehicles Checked In"
-                value={stats?.active_vehicles ?? 0}
-                sub={isTodayOnly ? "Resets daily" : rangeLabel}
-              />
-              <StatCard
-                label="Drivers Checked In"
-                value={stats?.active_drivers ?? 0}
-                sub={isTodayOnly ? "Resets daily" : rangeLabel}
-              />
-            </div>
-          </div>
-          {/* ─── Live Status ────────────────────────────────────────────────── */}
-          <div className="dashboard-section">
-            <div className="dashboard-section-label">
-              Live Status <span className="dashboard-section-range">(current)</span>
-            </div>
-            <div className="stat-cards-row">
-              <StatCard
-                label="Currently Queued"
-                value={queuedCount}
-                sub="Awaiting dispatch"
-              />
-              <StatCard
-                label="Ticket Stock"
-                value={`${ticketStock.toLocaleString()} pcs`}
-                sub={stockSub}
-                alert={stockIsLow}
-              />
+            <div className="dashboard-overview-grid">
+              <div className="quad-group">
+                <div className="quad-group-label">Overview</div>
+                <StatCard
+                  featured
+                  label="Total Collections"
+                  value={stats?.today_total?.count ?? 0}
+                  sub={peso(stats?.today_total?.total ?? 0)}
+                />
+              </div>
+              <div className="stat-cards-quad">
+                <div className="quad-group">
+                  <div className="quad-group-label">Checked In</div>
+                  <div className="quad-group-row">
+                    <StatCard label="Vehicles Checked In" value={stats?.active_vehicles ?? 0} />
+                    <StatCard label="Drivers Checked In" value={stats?.active_drivers ?? 0} />
+                  </div>
+                </div>
+                <div className="quad-group">
+                  <div className="quad-group-label">Live Status</div>
+                  <div className="quad-group-row">
+                    <StatCard label="Currently Queued" value={queuedCount} />
+                    <StatCard
+                      label="Ticket Stock"
+                      value={`${ticketStock.toLocaleString()} pcs`}
+                      sub={stockSub}
+                      alert={stockIsLow}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           {/* ─── Bar Chart + Routes Sidebar ─────────────────────────────────── */}
@@ -425,17 +406,17 @@ export default function Dashboard() {
                       >
                         <CartesianGrid
                           strokeDasharray="3 3"
-                          stroke="rgba(26,39,68,0.15)"
+                          stroke="var(--border)"
                           vertical={false}
                         />
                         <XAxis
                           dataKey="date"
-                          tick={{ fontSize: 11, fill: "#1a2744" }}
+                          tick={{ fontSize: 11, fill: "var(--text-muted)" }}
                           axisLine={false}
                           tickLine={false}
                         />
                         <YAxis
-                          tick={{ fontSize: 11, fill: "#1a2744" }}
+                          tick={{ fontSize: 11, fill: "var(--text-muted)" }}
                           axisLine={false}
                           tickLine={false}
                           tickFormatter={yTickFormatter}
@@ -443,7 +424,7 @@ export default function Dashboard() {
                         />
                         <Tooltip
                           content={<CustomTooltip />}
-                          cursor={{ fill: "rgba(26,39,68,0.07)" }}
+                          cursor={{ fill: "var(--bg-hover)" }}
                         />
                         <Legend
                           wrapperStyle={{ fontSize: 12, paddingTop: 12 }}
@@ -452,7 +433,7 @@ export default function Dashboard() {
                           <Bar
                             dataKey="total"
                             name="Amount (₱)"
-                            fill="#1a2744"
+                            fill="var(--chart-bar)"
                             radius={[4, 4, 0, 0]}
                             maxBarSize={32}
                           />
@@ -460,7 +441,7 @@ export default function Dashboard() {
                           <Bar
                             dataKey="count"
                             name="Tickets"
-                            fill="#1a2744"
+                            fill="var(--chart-bar)"
                             radius={[4, 4, 0, 0]}
                             maxBarSize={32}
                           />
@@ -535,7 +516,8 @@ export default function Dashboard() {
             {/* closes dashboard-routes-sidebar */}
           </div>{" "}
           {/* closes dashboard-chart-layout */}
-          {/* ─── Ticket & Fleet Breakdown ───────────────────────────────────── */}
+          {/* ─── Ticket Breakdown + Recent Activity: two columns on desktop, ──── */}
+          {/* stacked on mobile via the existing dashboard-insights-row breakpoint. */}
           <div className="dashboard-insights-row">
             <BreakdownCard
               title="Ticket Status Breakdown"
@@ -544,54 +526,46 @@ export default function Dashboard() {
               order={TICKET_STATUS_ORDER}
               meta={TICKET_STATUS_META}
             />
-            <BreakdownCard
-              title="Fleet Status"
-              badge="Live"
-              data={fleetStatus}
-              order={FLEET_STATUS_ORDER}
-              meta={FLEET_STATUS_META}
-            />
-          </div>
-          {/* ─── Recent Activity ────────────────────────────────────────────── */}
-          <div className="chart-card dashboard-section">
-            <div className="chart-card-header">
-              <span className="chart-card-title">Recent Activity</span>
-              <span className="chart-card-badge">{rangeLabel}</span>
-            </div>
-            {activity.length === 0 ? (
-              <div className="activity-empty">No activity recorded for this range.</div>
-            ) : (
-              <>
-                <div className="activity-list">
-                  {activity
-                    .slice(activityPage * ACTIVITY_PAGE_SIZE, (activityPage + 1) * ACTIVITY_PAGE_SIZE)
-                    .map((log, idx) => (
-                      <ActivityRow key={`${log.id}-${idx}`} log={log} />
-                    ))}
-                </div>
-                <div className="dashboard-pagination">
-                  <span className="dashboard-pagination-info">
-                    Page {activityPage + 1} of {Math.ceil(activity.length / ACTIVITY_PAGE_SIZE)}
-                  </span>
-                  <div className="dashboard-pagination-btns">
-                    <button
-                      className="dashboard-page-btn"
-                      disabled={activityPage === 0}
-                      onClick={() => setActivityPage((p) => p - 1)}
-                    >
-                      ← Prev
-                    </button>
-                    <button
-                      className="dashboard-page-btn"
-                      disabled={(activityPage + 1) * ACTIVITY_PAGE_SIZE >= activity.length}
-                      onClick={() => setActivityPage((p) => p + 1)}
-                    >
-                      Next →
-                    </button>
+            <div className="chart-card">
+              <div className="chart-card-header">
+                <span className="chart-card-title">Recent Activity</span>
+                <span className="chart-card-badge">{rangeLabel}</span>
+              </div>
+              {activity.length === 0 ? (
+                <div className="activity-empty">No activity recorded for this range.</div>
+              ) : (
+                <>
+                  <div className="activity-list">
+                    {activity
+                      .slice(activityPage * ACTIVITY_PAGE_SIZE, (activityPage + 1) * ACTIVITY_PAGE_SIZE)
+                      .map((log, idx) => (
+                        <ActivityRow key={`${log.id}-${idx}`} log={log} />
+                      ))}
                   </div>
-                </div>
-              </>
-            )}
+                  <div className="dashboard-pagination">
+                    <span className="dashboard-pagination-info">
+                      Page {activityPage + 1} of {Math.ceil(activity.length / ACTIVITY_PAGE_SIZE)}
+                    </span>
+                    <div className="dashboard-pagination-btns">
+                      <button
+                        className="dashboard-page-btn"
+                        disabled={activityPage === 0}
+                        onClick={() => setActivityPage((p) => p - 1)}
+                      >
+                        ← Prev
+                      </button>
+                      <button
+                        className="dashboard-page-btn"
+                        disabled={(activityPage + 1) * ACTIVITY_PAGE_SIZE >= activity.length}
+                        onClick={() => setActivityPage((p) => p + 1)}
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </>
       )}

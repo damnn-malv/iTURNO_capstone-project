@@ -10,18 +10,22 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.2",
     "@tailwindcss/vite": "^4.2.2",
     "date-fns": "^4.1.0",
+    "exceljs": "^4.4.0",
     "html5-qrcode": "^2.3.8",
+    "jsonwebtoken": "^9.0.3",
     "jsqr": "^1.4.0",
+    "nodemailer": "^7.0.13",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.14.1",
     "recharts": "^3.8.1",
     "select-philippines-address": "^1.0.6",
-    "tailwindcss": "^4.2.2",
-    "uuid": "^14.0.1"
+    "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

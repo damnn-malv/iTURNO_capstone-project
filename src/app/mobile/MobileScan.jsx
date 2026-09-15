@@ -12,12 +12,11 @@ function MobileScan() {
     mode,
     setMode,
     queuePosition,
-    selectedSeriesId,
-    setSelectedSeriesId,
+    roamTicketFormId,
+    setRoamTicketFormId,
     ticketQuantity,
     setTicketQuantity,
     activeDrivers,
-    availableSeries,
     ticketFee,
     denominationOptions,
     dispatchTicketFormId,
@@ -38,10 +37,15 @@ function MobileScan() {
   const [scanError, setScanError] = useState(null);
   const [photoZoomOpen, setPhotoZoomOpen] = useState(false);
   const [photoBroken, setPhotoBroken] = useState(false);
+  const [dismissedNotices, setDismissedNotices] = useState({});
+  const [driverQuery, setDriverQuery] = useState("");
+  const [driverDropdownOpen, setDriverDropdownOpen] = useState(false);
+  const [driverQrOpen, setDriverQrOpen] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const rafRef = useRef(null);
+  const driverBoxRef = useRef(null);
 
   const BACKEND_URL =
     window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
@@ -121,7 +125,11 @@ function MobileScan() {
       rafRef.current = requestAnimationFrame(scanFrame);
     } catch (err) {
       const msg = err.name || err.message || String(err);
-      if (msg.includes("NotAllowed") || msg.includes("Permission")) {
+      if (msg.includes("AbortError")) {
+        // A stale camera stream from a previous attempt is usually the cause —
+        // a retry hits the same error, but a reload clears it reliably.
+        window.location.reload();
+      } else if (msg.includes("NotAllowed") || msg.includes("Permission")) {
         setScanError("Camera permission denied. Allow camera access in your browser settings and try again.");
       } else if (msg.includes("NotFound") || msg.includes("DevicesNotFound")) {
         setScanError("No camera found on this device.");
@@ -141,6 +149,65 @@ function MobileScan() {
     setPhotoBroken(false);
   }, [selectedDriver]);
 
+  // A new vehicle scan may auto-select a remembered/registered driver — sync
+  // the search box to show it. Manual picks/QR scans update it themselves,
+  // so this doesn't fight the user mid-typing.
+  useEffect(() => {
+    setDriverQuery(selectedDriver?.name || "");
+    setDriverDropdownOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scannedVehicle]);
+
+  useEffect(() => {
+    if (!driverDropdownOpen) return;
+    const handleClickOutside = (e) => {
+      if (driverBoxRef.current && !driverBoxRef.current.contains(e.target)) {
+        setDriverDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [driverDropdownOpen]);
+
+  const filteredDrivers = activeDrivers.filter((d) =>
+    d.name.toLowerCase().includes(driverQuery.trim().toLowerCase())
+  );
+
+  const selectDriverFromList = (driver) => {
+    handleDriverChange(String(driver.id));
+    setDriverQuery(driver.name);
+    setDriverDropdownOpen(false);
+  };
+
+  const clearDriverSearch = () => {
+    handleDriverChange("");
+    setDriverQuery("");
+  };
+
+  const dismissNotice = (key, message) =>
+    setDismissedNotices((prev) => ({ ...prev, [key]: message }));
+
+  const notices = [
+    result && dismissedNotices.result !== result
+      ? { key: "result", type: "success", message: result }
+      : null,
+    error && dismissedNotices.error !== error
+      ? { key: "error", type: "error", message: error }
+      : null,
+    scanError && dismissedNotices.scanError !== scanError
+      ? { key: "scanError", type: "error", message: scanError }
+      : null,
+  ].filter(Boolean);
+
+  // Notices are pinned to the bottom of the viewport, near the submit button
+  // the user was just looking at — scroll down so a new one is never missed.
+  useEffect(() => {
+    if (notices.length > 0) {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, error, scanError]);
+
   if (loading) {
     return (
       <div className="ms-page">
@@ -159,19 +226,27 @@ function MobileScan() {
           </svg>
         </button>
         <div>
-          <h1 className="ms-title">iTURNO Mobile</h1>
+          <h1 className="ms-title">North Central Terminal</h1>
           <p className="ms-subtitle">Scan QR to issue ticket or log roaming</p>
         </div>
       </header>
 
-      {result && (
-        <div className="ms-alert ms-alert--success">{result}</div>
-      )}
-      {error && (
-        <div className="ms-alert ms-alert--error">{error}</div>
-      )}
-      {scanError && (
-        <div className="ms-alert ms-alert--error">{scanError}</div>
+      {notices.length > 0 && (
+        <div className="ms-notice-stack">
+          {notices.map((n) => (
+            <div key={n.key} className={`ms-alert ms-alert--${n.type}`}>
+              <span>{n.message}</span>
+              <button
+                type="button"
+                className="ms-alert-close"
+                aria-label="Dismiss notice"
+                onClick={() => dismissNotice(n.key, n.message)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* QR Scanner */}
@@ -343,22 +418,28 @@ function MobileScan() {
             </>
           )}
 
-          {/* Ticket Series (ROAM mode issues + dispatches in one step) */}
+          {/* Denomination (ROAM mode issues + dispatches in one step — the server
+              draws the physical numbers FIFO, same as Dispatch) */}
           {mode === "ROAM" && (
             <div className="ms-field">
-              <span className="ms-label">Ticket Series</span>
+              <span className="ms-label">Denomination</span>
               <select
                 className="ms-select"
-                value={selectedSeriesId}
-                onChange={(e) => setSelectedSeriesId(e.target.value)}
+                value={roamTicketFormId}
+                onChange={(e) => setRoamTicketFormId(e.target.value)}
               >
-                <option value="">— Select series —</option>
-                {availableSeries.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.ticket_form_label || "Unspecified"} — Series {s.series_no} ({s.pcs} pcs)
+                <option value="">— Select a denomination —</option>
+                {denominationOptions.map((form) => (
+                  <option key={form.id} value={form.id}>
+                    {form.name} — {form.remaining} pcs remaining
                   </option>
                 ))}
               </select>
+              {denominationOptions.length === 0 && (
+                <span className="ms-field-hint">
+                  No ticket stock available for any denomination.
+                </span>
+              )}
               {ticketFee > 0 && (
                 <span className="ms-fee">Fee: ₱{ticketFee.toFixed(2)}</span>
               )}
@@ -410,18 +491,73 @@ function MobileScan() {
             {mode === "DISPATCH" ? (
               <span className="ms-plate">{selectedDriver?.name || "No driver assigned"}</span>
             ) : (
-              <select
-                className="ms-select"
-                value={selectedDriver?.id || ""}
-                onChange={(e) => handleDriverChange(e.target.value)}
-              >
-                <option value="">— Select driver —</option>
-                {activeDrivers.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
+              <div className="ms-combobox" ref={driverBoxRef}>
+                <div className="ms-combobox-input-wrap">
+                  <input
+                    type="text"
+                    className="ms-select ms-combobox-input"
+                    placeholder="Search driver by name…"
+                    value={driverQuery}
+                    onChange={(e) => {
+                      setDriverQuery(e.target.value);
+                      setDriverDropdownOpen(true);
+                      if (selectedDriver && e.target.value !== selectedDriver.name) {
+                        handleDriverChange("");
+                      }
+                    }}
+                    onFocus={(e) => {
+                      setDriverDropdownOpen(true);
+                      e.target.select();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (filteredDrivers.length > 0) selectDriverFromList(filteredDrivers[0]);
+                      } else if (e.key === "Escape") {
+                        setDriverDropdownOpen(false);
+                        e.target.blur();
+                      }
+                    }}
+                  />
+                  {driverQuery && (
+                    <button
+                      type="button"
+                      className="ms-combobox-clear"
+                      aria-label="Clear driver"
+                      onClick={clearDriverSearch}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                {driverDropdownOpen && (
+                  <div className="ms-combobox-list">
+                    {filteredDrivers.length === 0 ? (
+                      <div className="ms-combobox-empty">No matching drivers</div>
+                    ) : (
+                      filteredDrivers.map((d) => (
+                        <button
+                          type="button"
+                          key={d.id}
+                          className={`ms-combobox-option ${
+                            selectedDriver?.id === d.id ? "ms-combobox-option--active" : ""
+                          }`}
+                          onClick={() => selectDriverFromList(d)}
+                        >
+                          {d.name}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="ms-btn ms-btn--outline ms-btn--sm"
+                  onClick={() => setDriverQrOpen(true)}
+                >
+                  Scan Driver QR
+                </button>
+              </div>
             )}
           </div>
 
@@ -433,7 +569,7 @@ function MobileScan() {
               submitting ||
               (mode === "DISPATCH"
                 ? queuePosition !== 1 || !dispatchTicketFormId
-                : !selectedDriver || (mode === "ROAM" && !selectedSeriesId))
+                : !selectedDriver || (mode === "ROAM" && !roamTicketFormId))
             }
           >
             {submitting
@@ -453,6 +589,17 @@ function MobileScan() {
         </div>
       )}
 
+      {driverQrOpen && (
+        <DriverQrScanner
+          drivers={activeDrivers}
+          onDetect={(driver) => {
+            selectDriverFromList(driver);
+            setDriverQrOpen(false);
+          }}
+          onClose={() => setDriverQrOpen(false)}
+        />
+      )}
+
       {photoZoomOpen && driverPhotoUrl && !photoBroken && (
         <div className="ms-lightbox" onClick={() => setPhotoZoomOpen(false)}>
           <button
@@ -468,6 +615,105 @@ function MobileScan() {
           />
         </div>
       )}
+    </div>
+  );
+}
+
+// Scans a driver's QR badge (same jsQR loop as the vehicle scanner above) and
+// matches it against the active driver list. Refs hold `drivers`/`onDetect`
+// so the camera effect runs once on mount rather than restarting on every
+// parent re-render.
+function DriverQrScanner({ drivers, onDetect, onClose }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const rafRef = useRef(null);
+  const driversRef = useRef(drivers);
+  const onDetectRef = useRef(onDetect);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    driversRef.current = drivers;
+    onDetectRef.current = onDetect;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const scanFrame = () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (!video || !canvas || video.readyState !== video.HAVE_ENOUGH_DATA) {
+        rafRef.current = requestAnimationFrame(scanFrame);
+        return;
+      }
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "dontInvert",
+      });
+
+      if (code && code.data) {
+        const driver = driversRef.current.find(
+          (d) => d.qr_code === code.data || String(d.id) === code.data
+        );
+        if (driver) {
+          onDetectRef.current(driver);
+          return;
+        }
+        setError("No active driver found for this QR code.");
+      }
+
+      rafRef.current = requestAnimationFrame(scanFrame);
+    };
+
+    (async () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setError("Camera not available. Make sure you're using HTTPS.");
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.setAttribute("playsinline", "true");
+          await videoRef.current.play();
+        }
+        rafRef.current = requestAnimationFrame(scanFrame);
+      } catch (err) {
+        setError(err.message || "Could not access camera.");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  return (
+    <div className="ms-lightbox" onClick={onClose}>
+      <div className="ms-qr-modal" onClick={(e) => e.stopPropagation()}>
+        <button className="ms-lightbox-close" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+        <h3 className="ms-qr-modal-title">Scan Driver QR</h3>
+        <video ref={videoRef} className="ms-qr-modal-video" muted playsInline />
+        <canvas ref={canvasRef} style={{ display: "none" }} />
+        {error && <div className="ms-alert ms-alert--error">{error}</div>}
+      </div>
     </div>
   );
 }

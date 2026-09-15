@@ -25,10 +25,12 @@ load_dotenv(BASE_DIR / '.env')
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-1*uo^a3h0u!7^=v&r3q41ph1@enpp4=v8=pg5#as)438#-b+ps'
+SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Local dev: leave DEBUG unset in backend/.env (defaults to True).
+# Production: set DEBUG=False in the environment.
+DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = ['*']
 
@@ -94,13 +96,43 @@ CHANNEL_LAYERS = {
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-
+#
+# 'default' is always SQLite — the LAN source of truth for live transactions,
+# and it must keep working with no internet connection. DEBUG picks WHICH
+# file: a throwaway one for local test runs vs. a separate one for the real
+# terminal, so test data never mixes with real operational data.
+#
+# 'supabase' is the remote Postgres mirror, used only by the sync engine
+# (api/sync/) — never by regular app code. It pushes LAN transactions out
+# for read-only remote viewing, and pulls down settings/records that
+# admin/manager edit remotely. Pushing is disabled while DEBUG=True (see
+# api/sync/push.py) so local test runs can never leak into the shared
+# remote mirror that real users see.
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+        'NAME': BASE_DIR / ('db.sqlite3' if DEBUG else 'db_production.sqlite3'),
+        # SQLite only allows one writer at a time; two staff dispatching tickets
+        # at the same moment is entirely realistic at a live terminal, and
+        # without an explicit timeout the second writer gets "database is
+        # locked" immediately instead of just waiting its turn.
+        'OPTIONS': {'timeout': 20},
+    },
+    'supabase': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME'),
+        'USER': os.getenv('DB_USER'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST'),
+        'PORT': os.getenv('DB_PORT', '5432'),
+        'OPTIONS': {'sslmode': 'require'},
+        'CONN_MAX_AGE': 60,
+    },
 }
+
+# Sync engine (LAN SQLite <-> Supabase mirror) — see api/sync/
+SYNC_INTERVAL_SECONDS = int(os.getenv('SYNC_INTERVAL_SECONDS', '10'))
+SYNC_BATCH_SIZE = int(os.getenv('SYNC_BATCH_SIZE', '200'))
 
 
 # Password validation
@@ -149,7 +181,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.AllowAny' if DEBUG else 'rest_framework.permissions.IsAuthenticated',
     ],
 }
 
@@ -179,3 +211,52 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
 
 # Base URL of the frontend app, used to build the password-reset link sent by email
 FRONTEND_URL = 'http://localhost:5173'
+
+
+# SMS queue alerts (PhilSMS — https://philsms.com). Both alerts are wired in:
+# queue-join (api/serializers.py TicketSerializer.create) and next-up-on-
+# dispatch (api/views/viewsets.py dispatch_ticket action).
+# Off by default, same switch style as DEBUG above.
+# Turn ON: set SMS_ENABLED=True in backend/.env and fill in PHILSMS_API_TOKEN.
+# Turn OFF: set SMS_ENABLED=False (or unset it) in backend/.env — send_sms()
+# then just logs and returns instead of calling the PhilSMS API.
+SMS_ENABLED = os.getenv('SMS_ENABLED', 'False') == 'False'
+PHILSMS_API_TOKEN = os.getenv('PHILSMS_API_TOKEN', '')
+PHILSMS_SENDER_ID = os.getenv('PHILSMS_SENDER_ID', 'PhilSMS')
+PHILSMS_API_URL = 'https://dashboard.philsms.com/api/v3/sms/send'
+
+# Sync engine logging — last N cycles are always visible on the console;
+# also kept in a small rotating file so `sync_worker` running unattended
+# still leaves a trail of what synced and what didn't.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'sync': {'format': '%(asctime)s %(levelname)s %(message)s'},
+    },
+    'handlers': {
+        'sync_console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'sync',
+        },
+        'sync_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'sync.log',
+            'maxBytes': 1024 * 1024,
+            'backupCount': 2,
+            'formatter': 'sync',
+        },
+    },
+    'loggers': {
+        'sync': {
+            'handlers': ['sync_console', 'sync_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'sms': {
+            'handlers': ['sync_console', 'sync_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}

@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useState } from "react";
-import CreateBatchForm from "../../../lib/remittance/createRemittance";
-import ViewRemittance from "../../../lib/remittance/viewRemittance";
-import { useRemittance } from "../../../lib/remittance/useRemittance";
+import { useLocation, useNavigate } from "react-router-dom";
+import CreateBatchForm from "./createRemittance";
+import ViewRemittance from "./viewRemittance";
+import { useRemittance } from "./useRemittance";
 import { useToast, useConfirm } from "../../../components/ui/ToastConfirmContext";
 import { apiService } from "../../../lib/api-service";
-import { today } from "../../../lib/report/reportHook";
-import EodReconciliation from "../../../lib/report/tables/EodReconciliation";
+import { getToday, useDebouncedSearchAll } from "../report/reportHook";
+import { getPhDateString } from "../../../lib/phDate";
+import EodReconciliation from "../report/tables/EodReconciliation";
+import Pager from "../report/tables/Pager";
 import "../../../styles/Remittance.css";
 import "../../../styles/Report.css";
 
@@ -14,13 +17,28 @@ const STATUS_COLOR = {
   CLOSED: "rem-status--closed",
 };
 
+const matchesBatch = (b, query) => {
+  const q = query.toLowerCase();
+  return (
+    (b.batch_code || "").toLowerCase().includes(q) ||
+    (b.id || "").toString().toLowerCase().includes(q) ||
+    (b.issued_by_name || "").toLowerCase().includes(q) ||
+    (b.status || "").toLowerCase().includes(q)
+  );
+};
+
 export default function Remittance() {
   const {
     showModal,
     setShowModal,
     batches,
+    meta,
+    tabCounts,
+    pageSize,
     loading,
     error,
+    loadPage,
+    fetchAllBatches,
     handleSaveBatch,
     handleArchiveBatch,
     handleRestoreBatch,
@@ -28,13 +46,121 @@ export default function Remittance() {
 
   const showToast = useToast();
   const showConfirm = useConfirm();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [viewBatch, setViewBatch] = useState(null);
-  const [eodDate, setEodDate] = useState(today);
+  const [eodDate, setEodDate] = useState(getToday);
   const [eod, setEod] = useState(null);
   const [eodLoading, setEodLoading] = useState(false);
   const [batchTab, setBatchTab] = useState("active");
+  const [page, setPage] = useState(1);
+  // Bumped after any archive/restore/create so a search already in progress
+  // re-fetches its full-record-set instead of showing stale rows.
+  const [searchRefreshKey, setSearchRefreshKey] = useState(0);
+  const isArchivedTab = batchTab === "archived";
+
+  // Late-remittance flow: lateTargetDate is null for a normal (today) batch,
+  // or a past date string when filing for a previously missed day.
+  const [lateTargetDate, setLateTargetDate] = useState(null);
+  const [showLatePicker, setShowLatePicker] = useState(false);
+  const [latePickerDate, setLatePickerDate] = useState(getPhDateString(-1));
+
+  // CreateBatchForm's duplicate-batch and batch-ID-collision checks need the
+  // *complete* batch history (both tabs), not just whatever page is on screen —
+  // fetched fresh each time the create modal opens.
+  const [existingBatchesForCheck, setExistingBatchesForCheck] = useState([]);
+  useEffect(() => {
+    if (!showModal) return;
+    let cancelled = false;
+    Promise.all([fetchAllBatches(false), fetchAllBatches(true)])
+      .then(([active, archived]) => {
+        if (!cancelled) setExistingBatchesForCheck([...active, ...archived]);
+      })
+      .catch(() => {
+        if (!cancelled) setExistingBatchesForCheck([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showModal, fetchAllBatches]);
+
+  // Arriving from the remittance-gap banner (via navigate state) jumps straight
+  // into the late-remittance flow, pre-filled with the specific missed date —
+  // consumed once, then cleared so a back/refresh doesn't reopen it.
+  useEffect(() => {
+    if (location.state?.lateDate) {
+      setLateTargetDate(location.state.lateDate);
+      setShowModal(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleCreateNewBatch = () => {
+    setLateTargetDate(null);
+    setShowModal(true);
+  };
+
+  const handleStartLateRemittance = () => {
+    setLatePickerDate(getPhDateString(-1));
+    setShowLatePicker(true);
+  };
+
+  const handleConfirmLateDate = () => {
+    setLateTargetDate(latePickerDate);
+    setShowLatePicker(false);
+    setShowModal(true);
+  };
+
+  // Page resets to 1 whenever the search term or active tab changes (see the
+  // effect below), so this just needs to flip the tab itself.
+  const handleTabChange = (tab) => setBatchTab(tab);
+
+  // Once there's an actual query, search the tab's complete record set
+  // instead of just the one page currently loaded on screen.
+  const fetchAllCurrentTab = useCallback(
+    () => fetchAllBatches(isArchivedTab),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fetchAllBatches, isArchivedTab, searchRefreshKey]
+  );
+  const trimmedSearch = searchTerm.trim();
+  const isSearching = trimmedSearch.length > 0;
+  const searchResults = useDebouncedSearchAll(fetchAllCurrentTab, searchTerm);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, batchTab]);
+
+  // Server-side page load: fires on first mount and whenever the tab or page
+  // changes — skipped while searching, since paging then is purely client-side
+  // over the already-fetched full-record-set (see displayedBatches below).
+  useEffect(() => {
+    if (isSearching) return;
+    loadPage(page, isArchivedTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, isArchivedTab, isSearching]);
+
+  const filteredAll = isSearching && searchResults
+    ? searchResults.filter((b) => matchesBatch(b, trimmedSearch))
+    : null;
+  // While the debounced full-set search is still in flight, fall back to
+  // filtering whatever page is already loaded so typing doesn't feel dead.
+  const displayedBatches = isSearching
+    ? (filteredAll || batches.filter((b) => matchesBatch(b, trimmedSearch))).slice(
+        (page - 1) * pageSize,
+        page * pageSize
+      )
+    : batches;
+  const displayedCount = isSearching
+    ? (filteredAll ? filteredAll.length : displayedBatches.length)
+    : meta.count;
+  const displayedTotalPages = isSearching
+    ? Math.max(Math.ceil(displayedCount / pageSize), 1)
+    : meta.totalPages;
+
+  const handlePageChange = (nextPage) => setPage(nextPage);
 
   const fetchEod = useCallback(async () => {
     setEodLoading(true);
@@ -58,7 +184,9 @@ export default function Remittance() {
     );
     if (!ok) return;
     try {
-      await handleArchiveBatch(batch.id);
+      const data = await handleArchiveBatch(batch.id, page, isArchivedTab);
+      if (data && data.page !== page) setPage(data.page);
+      setSearchRefreshKey((k) => k + 1);
       showToast("Remittance batch archived", "success");
     } catch {
       showToast("Failed to archive remittance batch", "info");
@@ -67,26 +195,14 @@ export default function Remittance() {
 
   const handleRestoreClick = async (batch) => {
     try {
-      await handleRestoreBatch(batch.id);
+      const data = await handleRestoreBatch(batch.id, page, isArchivedTab);
+      if (data && data.page !== page) setPage(data.page);
+      setSearchRefreshKey((k) => k + 1);
       showToast("Remittance batch restored", "success");
     } catch {
       showToast("Failed to restore remittance batch", "info");
     }
   };
-
-  const activeBatches = batches.filter((b) => !b.is_archived);
-  const archivedBatches = batches.filter((b) => b.is_archived);
-  const tabBatches = batchTab === "active" ? activeBatches : archivedBatches;
-
-  const filteredBatches = tabBatches.filter((b) => {
-    const q = searchTerm.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      (b.id || "").toString().toLowerCase().includes(q) ||
-      (b.issued_by_name || "").toLowerCase().includes(q) ||
-      (b.status || "").toLowerCase().includes(q)
-    );
-  });
 
   return (
     <div className="rem-page">
@@ -108,12 +224,19 @@ export default function Remittance() {
             </svg>
             <input
               className="rem-search"
-              placeholder="Search by ID, officer, or status…"
+              placeholder="Search by ID, officer, or status… (searches all records)"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <button className="rem-add-btn" onClick={() => setShowModal(true)}>
+          <button className="rem-add-btn rem-add-btn--secondary" onClick={handleStartLateRemittance}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            File Late Remittance
+          </button>
+          <button className="rem-add-btn" onClick={handleCreateNewBatch}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M5 12h14" />
               <path d="M12 5v14" />
@@ -122,6 +245,21 @@ export default function Remittance() {
           </button>
         </div>
       </div>
+
+      {showLatePicker && (
+        <div className="rem-alert rem-alert--info">
+          <span>File a late remittance covering which day?</span>
+          <input
+            type="date"
+            className="rem-input"
+            value={latePickerDate}
+            max={getPhDateString(-1)}
+            onChange={(e) => setLatePickerDate(e.target.value)}
+          />
+          <button className="rem-btn rem-btn--view" onClick={handleConfirmLateDate}>Continue</button>
+          <button className="rem-btn rem-btn--delete" onClick={() => setShowLatePicker(false)}>Cancel</button>
+        </div>
+      )}
 
       {error && (
         <div className="rem-alert">
@@ -148,21 +286,21 @@ export default function Remittance() {
           <button
             type="button"
             className={`rem-tab ${batchTab === "active" ? "rem-tab--active" : ""}`}
-            onClick={() => setBatchTab("active")}
+            onClick={() => handleTabChange("active")}
           >
             Active
-            {activeBatches.length > 0 && (
-              <span className="rem-tab-count">{activeBatches.length}</span>
+            {tabCounts.active > 0 && (
+              <span className="rem-tab-count">{tabCounts.active}</span>
             )}
           </button>
           <button
             type="button"
             className={`rem-tab ${batchTab === "archived" ? "rem-tab--active" : ""}`}
-            onClick={() => setBatchTab("archived")}
+            onClick={() => handleTabChange("archived")}
           >
             Archived
-            {archivedBatches.length > 0 && (
-              <span className="rem-tab-count">{archivedBatches.length}</span>
+            {tabCounts.archived > 0 && (
+              <span className="rem-tab-count">{tabCounts.archived}</span>
             )}
           </button>
         </div>
@@ -186,7 +324,7 @@ export default function Remittance() {
                     </div>
                   </td>
                 </tr>
-              ) : filteredBatches.length === 0 ? (
+              ) : displayedBatches.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="rem-table-state">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.3">
@@ -194,16 +332,16 @@ export default function Remittance() {
                       <polyline points="14 2 14 8 20 8" />
                     </svg>
                     <span>
-                      {tabBatches.length === 0
-                        ? batchTab === "archived"
+                      {isSearching
+                        ? `No results for "${searchTerm}"`
+                        : batchTab === "archived"
                           ? "No archived remittance batches"
-                          : "No remittance batches found"
-                        : `No results for "${searchTerm}"`}
+                          : "No remittance batches found"}
                     </span>
                   </td>
                 </tr>
               ) : (
-                filteredBatches.map((b) => (
+                displayedBatches.map((b) => (
                   <tr key={b.id} className="rem-row">
                     <td className="rem-td-meta">{b.batch_code || b.id}</td>
                     <td className="rem-td-meta">{b.issued_by_name}</td>
@@ -259,14 +397,29 @@ export default function Remittance() {
             </tbody>
           </table>
         </div>
+        <Pager
+          page={page}
+          totalPages={displayedTotalPages}
+          count={displayedCount}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
+        />
       </div>
 
       {/* Create Modal */}
       {showModal && (
         <CreateBatchForm
-          onClose={() => setShowModal(false)}
-          onSave={handleSaveBatch}
-          existingBatches={batches}
+          onClose={() => {
+            setShowModal(false);
+            setLateTargetDate(null);
+          }}
+          onSave={async (payload) => {
+            await handleSaveBatch(payload, page, isArchivedTab);
+            setSearchRefreshKey((k) => k + 1);
+            setLateTargetDate(null);
+          }}
+          existingBatches={existingBatchesForCheck}
+          targetDate={lateTargetDate}
         />
       )}
 

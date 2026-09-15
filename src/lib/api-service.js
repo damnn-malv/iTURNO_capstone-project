@@ -2,15 +2,136 @@
  * API Service - Centralized API request handling with error logging
  */
 
-const API_BASE_URL =
-  window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+// Set VITE_API_MODE=remote in the Vercel project's env vars. Locally/on the
+// LAN this is unset, so nothing here changes from before — this only
+// affects the deployed Vercel build, which can't reach the LAN Django
+// backend and instead talks to the /api/remote/* serverless functions
+// (same origin, no CORS needed) — see api/remote/ and api/_lib/.
+export const IS_REMOTE = import.meta.env.VITE_API_MODE === "remote";
+
+export const API_BASE_URL = IS_REMOTE
+  ? "/api/remote"
+  : window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
     ? "http://localhost:8000/api"
     : `http://${window.location.hostname}:8000/api`;
 // Backend stays HTTP — only frontend needs HTTPS for camera access
 
+// Maps the LAN (Django) paths that read-only modules already call through
+// apiService/request() to their /api/remote/* equivalent — this is the ONE
+// place that has to know both shapes, so none of the existing components/
+// hooks (queue, dispatch, vehicle, driver, remittance, requisition, etc.)
+// needed to change to work remotely. Order matters: prefix matches (ending
+// in "*") are checked after exact matches.
+// Remote endpoints are grouped into 5 functions, not 1-per-resource — a
+// deployment on Vercel's Hobby plan is capped at 12 Serverless Functions
+// total, so api/remote/{auth,resource,reports,settings,registry} each use
+// a Vercel dynamic-route file ([x].js) internally dispatching by URL
+// segment instead of being separate files. See api/remote/auth/[action].js
+// for the full explanation.
+const REMOTE_GET_MAP = {
+  "/vehicles/": "/resource/vehicles",
+  "/drivers/": "/resource/drivers",
+  "/tickets/": "/resource/tickets",
+  "/routes/": "/settings/routes",
+  "/users/": "/settings/users",
+  "/puvtypes/": "/settings/puv-types",
+  "/ticket-forms/": "/settings/ticket-forms",
+  "/roaming-logs/": "/resource/roaming-logs",
+  "/audit-logs/": "/resource/audit-logs",
+  "/requisitions/": "/resource/requisitions",
+  "/ticket-series/": "/resource/ticket-series",
+  "/settings/terminal-price/": "/settings/terminal-price",
+  "/report/remittance/": "/resource/remittance-batches",
+  "/report/summary/": "/reports/summary",
+  "/report/collections/": "/reports/collections",
+  "/report/chart/": "/reports/chart",
+  "/report/eod-reconciliation/": "/reports/eod-reconciliation",
+  "/dashboard/stats/": "/reports/dashboard-stats",
+  "/current-user/": "/auth/current-user",
+  "/settings/wip-mode/": "/settings/wip-mode",
+};
+
+// Everything writable remotely, and which HTTP methods are actually
+// allowed on each — SUPERADMIN-gated server-side in every case (see
+// CAN_EDIT_SETTINGS in api/_lib/auth.js), this table just avoids even
+// attempting a call that's guaranteed to be rejected (e.g. createVehicle,
+// which isn't allowed remotely — only editing an existing vehicle's
+// registry fields is; see api/remote/registry/[resource].js).
+const REMOTE_WRITABLE = [
+  // Public (no login yet) — handled by api/remote/auth/[action].js alongside token/refresh.
+  { prefix: "/auth/forgot-password/", remote: "/auth/forgot-password", methods: ["POST"] },
+  { prefix: "/auth/reset-password/", remote: "/auth/reset-password", methods: ["POST"] },
+  { prefix: "/routes/", remote: "/settings/routes", methods: ["POST", "PATCH", "PUT", "DELETE"] },
+  { prefix: "/users/", remote: "/settings/users", methods: ["POST", "PATCH", "PUT", "DELETE"] },
+  { prefix: "/puvtypes/", remote: "/settings/puv-types", methods: ["POST", "PATCH", "PUT", "DELETE"] },
+  { prefix: "/ticket-forms/", remote: "/settings/ticket-forms", methods: ["POST", "PATCH", "PUT", "DELETE"] },
+  { prefix: "/settings/terminal-price/", remote: "/settings/terminal-price", methods: ["PATCH", "PUT"], singleton: true },
+  { prefix: "/vehicles/", remote: "/registry/vehicles", methods: ["PATCH", "PUT"] },
+  { prefix: "/drivers/", remote: "/registry/drivers", methods: ["PATCH", "PUT"] },
+  // Doesn't create a Ticket directly (LAN is always authoritative for those —
+  // see sync/registry.py's PUSH_MODELS) — queues a RemoteBackfillRequest row
+  // instead, applied by the LAN's next sync cycle. Only accepted while
+  // WipMode is active (api/remote/settings/[resource].js enforces this).
+  { prefix: "/backfill/manual/", remote: "/settings/backfill", methods: ["POST"] },
+];
+
+// Exported for the few places that build fetch() URLs directly instead of
+// going through apiService (currently just the Reports module, which needs
+// several endpoints in parallel) — same translation apiService.request()
+// uses internally, so there's one source of truth for the path mapping.
+export function remotePath(endpoint, method = "GET") {
+  return translateForRemote(endpoint, method);
+}
+
+// Thin fetch() wrapper for callers that need the raw Response (Reports fires
+// several endpoints in parallel and does its own .json() handling instead of
+// apiService.request()'s parsed-data contract). Reuses the same remote path
+// translation and Authorization header attachment as request() — without
+// this, remote calls reach the serverless functions with no auth header and
+// requireAuth() in api/_lib/auth.js 401s every one of them.
+export function authFetch(endpoint, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const effectiveEndpoint = IS_REMOTE
+    ? translateForRemote(endpoint, method) ?? endpoint
+    : endpoint;
+
+  const token = sessionStorage.getItem("accessToken");
+  const headers = { ...options.headers };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  return fetch(`${API_BASE_URL}${effectiveEndpoint}`, { ...options, headers });
+}
+
+function translateForRemote(endpoint, method) {
+  const [path, query] = endpoint.split("?");
+  const qs = query ? `?${query}` : "";
+
+  if (method === "GET") {
+    const mapped = REMOTE_GET_MAP[path];
+    return mapped ? `${mapped}${qs}` : endpoint;
+  }
+
+  const resource = REMOTE_WRITABLE.find((r) => path.startsWith(r.prefix));
+  if (!resource || !resource.methods.includes(method)) return null; // not allowed remotely
+
+  if (resource.singleton) return resource.remote;
+  const idMatch = path.slice(resource.prefix.length).match(/^(\d+)\/?$/);
+  return idMatch ? `${resource.remote}?id=${idMatch[1]}` : resource.remote;
+}
+
 export const apiService = {
   async request(endpoint, options = {}) {
-    const url = `${API_BASE_URL}${endpoint}`;
+    let effectiveEndpoint = endpoint;
+    if (IS_REMOTE) {
+      const method = (options.method || "GET").toUpperCase();
+      const translated = translateForRemote(endpoint, method);
+      if (translated === null) {
+        throw new Error("This action isn't available remotely yet — it only works on the LAN terminal.");
+      }
+      effectiveEndpoint = translated;
+    }
+
+    const url = `${API_BASE_URL}${effectiveEndpoint}`;
     const defaultHeaders = {};
 
     //token
@@ -19,9 +140,25 @@ export const apiService = {
       defaultHeaders["Authorization"] = `Bearer ${token}`;
     }
 
-    const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+    // Some forms (driver/vehicle registry, for photo upload support) always
+    // build a FormData body, even when nothing but a text field changed.
+    // The remote serverless functions only parse JSON — no multipart
+    // parser there — so convert here. Files are dropped (photo upload
+    // isn't supported remotely; see known gaps in api/remote/registry/).
+    let effectiveBody = options.body;
+    if (IS_REMOTE && typeof FormData !== "undefined" && effectiveBody instanceof FormData) {
+      const plain = {};
+      for (const [key, value] of effectiveBody.entries()) {
+        if (value instanceof File) continue;
+        plain[key] = value;
+      }
+      effectiveBody = JSON.stringify(plain);
+    }
+
+    const isFormData = typeof FormData !== "undefined" && effectiveBody instanceof FormData;
     const fetchOptions = {
       ...options,
+      body: effectiveBody,
       headers: {
         ...defaultHeaders,
         ...options.headers,
@@ -86,8 +223,24 @@ export const apiService = {
 
       if (!response.ok) {
         console.error(`[API] Error Response:`, data);
+        // DRF field-validation errors come back as { field: ["message"] } rather
+        // than { detail: "message" } — surface the first field name + message as
+        // plain text instead of dumping raw JSON or an unattributed message.
+        let message = data?.detail;
+        if (!message && data && typeof data === "object") {
+          const [firstKey, firstValue] = Object.entries(data)[0] || [];
+          const text = Array.isArray(firstValue) ? firstValue[0] : firstValue;
+          if (firstKey && typeof text === "string") {
+            const label = firstKey
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase());
+            message = `${label}: ${text}`;
+          } else {
+            message = text;
+          }
+        }
         const error = new Error(
-          data.detail ||
+          message ||
             JSON.stringify(data) ||
             `HTTP ${response.status}: ${response.statusText}`,
         );
@@ -105,6 +258,17 @@ export const apiService = {
   },
 
   async refreshToken() {
+    // Several requests can 401 at once (e.g. Mobile Scan's fetchData fires 5 in
+    // parallel) — without sharing one in-flight refresh, each would fire its own
+    // /token/refresh/ call using the same refresh token.
+    if (this._refreshPromise) return this._refreshPromise;
+    this._refreshPromise = this._doRefreshToken().finally(() => {
+      this._refreshPromise = null;
+    });
+    return this._refreshPromise;
+  },
+
+  async _doRefreshToken() {
     const refresh = sessionStorage.getItem("refreshToken");
     if (!refresh) {
       this.logout();
@@ -112,7 +276,8 @@ export const apiService = {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/token/refresh/`, {
+      const refreshUrl = IS_REMOTE ? `${API_BASE_URL}/auth/token-refresh` : `${API_BASE_URL}/token/refresh/`;
+      const response = await fetch(refreshUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh }),
@@ -192,6 +357,15 @@ export const apiService = {
   dispatchTicket(vehicleId, { ticketFormId, quantity }) {
     return this.post("/tickets/dispatch/", {
       vehicle_id: vehicleId,
+      ticket_form_id: ticketFormId,
+      quantity,
+    });
+  },
+
+  roamTicket(vehicleId, driverId, { ticketFormId, quantity }) {
+    return this.post("/tickets/roam/", {
+      vehicle_id: vehicleId,
+      driver_id: driverId,
       ticket_form_id: ticketFormId,
       quantity,
     });
@@ -339,6 +513,75 @@ export const apiService = {
     return this.put("/settings/terminal-price/", data);
   },
 
+  // WIP mode: toggling stays LAN-only (see the model's docstring in
+  // backend/api/models.py) — a flag meant to block ticket issuance
+  // immediately can't tolerate the sync engine's pull-cycle latency.
+  // Reading it remotely is fine though (WipMode is pushed to Supabase for
+  // exactly this — see sync/registry.py), and gates remote backfill below.
+  getWipMode() {
+    return this.get("/settings/wip-mode/");
+  },
+
+  updateWipMode(isActive) {
+    if (IS_REMOTE) {
+      return Promise.reject(
+        new Error("WIP mode isn't available remotely — it only works on the LAN terminal."),
+      );
+    }
+    return this.put("/settings/wip-mode/", { is_active: isActive });
+  },
+
+  // Remotely (only while WIP is active — enforced server-side), this queues
+  // a RemoteBackfillRequest instead of creating the ticket outright, so
+  // `commit` is meaningless there: there's no remote preview, every call
+  // queues for real. See useTicketBackfill's IS_REMOTE branching.
+  submitManualBackfill(row, commit) {
+    return this.post("/backfill/manual/", { ...row, commit });
+  },
+
+  // Remote-only: recent RemoteBackfillRequest rows and their apply status,
+  // for the "queued" panel useTicketBackfill shows in place of a live
+  // preview. No LAN equivalent — the LAN applies these via sync, it doesn't
+  // need to list them.
+  getRemoteBackfillRequests() {
+    return this.get("/settings/backfill");
+  },
+
+  previewTicketBackfill(file, importReason) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("import_reason", importReason);
+    return this.post("/backfill/preview/", formData);
+  },
+
+  importTicketBackfill(file, importReason) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("import_reason", importReason);
+    return this.post("/backfill/import/", formData);
+  },
+
+  getBackfillHistory() {
+    return this.get("/backfill/history/");
+  },
+
+  async downloadBackfillCsv(id, filename) {
+    const token = sessionStorage.getItem("accessToken");
+    const res = await fetch(`${API_BASE_URL}/backfill/history/${id}/download/`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error(`Failed to download CSV (HTTP ${res.status})`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "backfill.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
   deleteRemittanceBatch(id) {
     return this.delete(`/remittance/${id}/`);
   },
@@ -371,6 +614,26 @@ export const apiService = {
     const a = document.createElement("a");
     a.href = url;
     a.download = filename || `backup.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  async downloadRemittanceXlsx(id, filename) {
+    const token = sessionStorage.getItem("accessToken");
+    const endpoint = IS_REMOTE
+      ? `${API_BASE_URL}/reports/remittance-xlsx?id=${id}`
+      : `${API_BASE_URL}/remittance/${id}/export-xlsx/`;
+    const res = await fetch(endpoint, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error(`Failed to export remittance report (HTTP ${res.status})`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "Remittance_Report.xlsx";
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -414,7 +677,7 @@ const roleLabel = (role) => {
     case "PERSONNEL":
       return "Personnel";
     default:
-      return "Super Admin";
+      return "Admin";
   }
 };
 
@@ -433,7 +696,10 @@ export const handleLogin = async (
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/token/`, {
+    const tokenUrl = IS_REMOTE ? `${API_BASE_URL}/auth/token` : `${API_BASE_URL}/token/`;
+    const currentUserUrl = IS_REMOTE ? `${API_BASE_URL}/auth/current-user` : `${API_BASE_URL}/current-user/`;
+
+    const response = await fetch(tokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
@@ -449,7 +715,7 @@ export const handleLogin = async (
 
     // Fetch current user to personalise welcome toast
     try {
-      const userRes = await fetch(`${API_BASE_URL}/current-user/`, {
+      const userRes = await fetch(currentUserUrl, {
         headers: { Authorization: `Bearer ${data.access}` },
       });
       if (userRes.ok) {
@@ -465,7 +731,9 @@ export const handleLogin = async (
       if (showToast) showToast("Welcome back!", "success");
     }
 
-    // ✅ Redirect to dashboard after successful login
+    // Remote (Vercel) reuses the same dashboard as the LAN — its data hooks
+    // route through apiService's remote-path translation (see IS_REMOTE /
+    // REMOTE_GET_MAP above) to read from Supabase instead of Django.
     navigate("/dashboard");
   } catch (err) {
     setError(err.message);

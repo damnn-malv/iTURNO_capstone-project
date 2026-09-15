@@ -1,41 +1,14 @@
 from datetime import datetime, timedelta
 
-from django.db.models import Sum, Count
+from django.db.models import Sum, Count, Min, Q
 from django.utils import timezone
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from ..models import Ticket, TicketPrice, Vehicle, Driver, Route, RemittanceBatch, Collection, Deposit, AuditLog, TerminalPrice, TicketSeries
+from ..models import Ticket, TicketPrice, Vehicle, Route, RemittanceBatch, Collection, Deposit, AuditLog, TerminalPrice, TicketSeries
 from ..serializers import TicketSerializer, RemittanceBatchSerializer, AuditLogSerializer, TerminalPriceSerializer
 from .helpers import summarize, parse_iso_datetime, record_audit_log, parse_date_start, parse_date_end, expire_stale_queue_tickets, paginate_request
-
-
-@api_view(['GET'])
-def transaction_logs(request):
-    show_all = request.query_params.get('all', 'false').lower() == 'true'
-
-    tickets = Ticket.objects.select_related('vehicle', 'driver', 'active_user').order_by('-created_at')
-
-    data = []
-    for t in tickets:
-        local_dt = t.created_at + timedelta(hours=8)
-        data.append({
-            'id': t.id,
-            'action': t.status,
-            'ticket_id': t.id,
-            'driver': str(t.driver) if t.driver else '',
-            'vehicle': t.vehicle.plate_number if t.vehicle else '',
-            'route': t.route_name,
-            'amount': float(t.collection_amount or 0),
-            'timestamp': local_dt.strftime('%Y-%m-%d %H:%M:%S'),
-            'user': t.active_user.get_full_name() or t.active_user.username if t.active_user else 'System',
-        })
-
-    total = len(data)
-    if not show_all:
-        data = data[:10]
-
-    return Response({'logs': data, 'total': total})
 
 
 @api_view(['GET'])
@@ -127,10 +100,14 @@ def dashboard_stats(request):
         daily[day_key]['total'] = round(daily[day_key]['total'] + amount, 2)
     chart_data = sorted(daily.values(), key=lambda x: x['date'])
 
-    # Ticket lifecycle mix for tickets issued within the range.
-    ticket_status_breakdown = {choice: 0 for choice, _ in Ticket.STATUS_CHOICES}
-    for row in range_issued.values('status').annotate(n=Count('id')):
-        ticket_status_breakdown[row['status']] = row['n']
+    # Ticket status breakdown for tickets issued within the range — cancelled
+    # tickets get their own bucket, while the still-live ones are split by
+    # mode (QUEUE/UNLOAD) to mirror the Collection Log / Roaming Vehicle Log
+    # tabs on the Transaction page instead of the QUEUED/COLLECTED statuses.
+    ticket_status_breakdown = {'QUEUE': 0, 'UNLOAD': 0, 'CANCELLED': 0}
+    for row in range_issued.values('mode', 'status').annotate(n=Count('id')):
+        key = 'CANCELLED' if row['status'] == 'CANCELLED' else row['mode']
+        ticket_status_breakdown[key] += row['n']
 
     # Live fleet snapshot — current state, not tied to the date filter.
     fleet_status = {choice: 0 for choice, _ in Vehicle.STATUS_CHOICES}
@@ -161,74 +138,29 @@ def dashboard_stats(request):
 
 
 @api_view(['GET'])
-def vehicle_records(request):
-    try:
-        vehicles = Vehicle.objects.select_related('route', 'active_driver').order_by('plate_number')
-
-        data = []
-        for v in vehicles:
-            try:
-                record = {
-                    'id': v.id,
-                    'plate_number': v.plate_number,
-                    'route': v.route.full_name if v.route else '—',
-                    'driver': v.active_driver.name if v.active_driver else '—',
-                    'status': v.get_status_display() if hasattr(v, 'get_status_display') else v.status,
-                }
-                data.append(record)
-            except Exception:
-                continue
-
-        return Response({'vehicles': data, 'total': len(data)})
-    except Exception as e:
-        return Response({'error': str(e), 'vehicles': [], 'total': 0}, status=500)
-
-
-@api_view(['GET'])
-def driver_records(request):
-    try:
-        drivers = Driver.objects.order_by('code')
-
-        data = []
-        for d in drivers:
-            try:
-                record = {
-                    'id': d.id,
-                    'code': d.code,
-                    'name': d.name,
-                    'contact_number': d.contact_number if d.contact_number else '—',
-                }
-                data.append(record)
-            except Exception:
-                continue
-
-        return Response({'drivers': data, 'total': len(data)})
-    except Exception as e:
-        return Response({'error': str(e), 'drivers': [], 'total': 0}, status=500)
-
-
-@api_view(['GET'])
+@permission_classes([AllowAny])
 def public_queue(request):
     expire_stale_queue_tickets()
-    vehicles_with_issued_tickets = Vehicle.objects.filter(
-        tickets__status='ISSUED',
+    vehicles_with_queued_tickets = Vehicle.objects.filter(
+        tickets__status='QUEUED',
         is_archived=False
-    ).distinct().select_related('route', 'active_driver')
+    ).distinct().select_related('route', 'active_driver').annotate(
+        _queue_time=Min('tickets__issued_at', filter=Q(tickets__status='QUEUED'))
+    ).order_by('_queue_time')
 
     data = []
-    for vehicle in vehicles_with_issued_tickets:
-        latest_ticket = vehicle.tickets.filter(status='ISSUED').order_by('-issued_at').first()
+    for vehicle in vehicles_with_queued_tickets:
+        route_name = vehicle.route.full_name if vehicle.route else 'No Route'
         departure_time = None
-        if latest_ticket:
-            local_dt = latest_ticket.issued_at + timedelta(hours=8)
+        if vehicle._queue_time:
+            local_dt = vehicle._queue_time + timedelta(hours=8)
             departure_time = local_dt.strftime('%I:%M %p')
 
         data.append({
             'id': vehicle.id,
             'plate_number': vehicle.plate_number,
-            'driver': vehicle.active_driver.name if vehicle.active_driver else '',
-            'route': vehicle.route.full_name if vehicle.route else '',
-            'status': vehicle.get_status_display(),
+            'driver': f"{vehicle.active_driver.last_name}, {vehicle.active_driver.first_name}".strip() if vehicle.active_driver else '',
+            'route': route_name,
             'departure_time': departure_time,
         })
 
@@ -270,6 +202,7 @@ def remittance_batches(request):
             issued_by=request.user if request.user.is_authenticated else None,
             total_amount=data.get('total_amount', 0),
             status=data.get('status', 'OPEN'),
+            covers_date=data.get('covers_date') or None,
         )
         for c in data.get('collections', []):
             Collection.objects.create(
@@ -290,6 +223,10 @@ def remittance_batches(request):
         return Response({'id': batch.id, 'status': 'created'}, status=201)
 
     batches = RemittanceBatch.objects.select_related('issued_by').order_by('-issued_at')
+
+    is_archived = request.query_params.get('is_archived')
+    if is_archived is not None:
+        batches = batches.filter(is_archived=is_archived.lower() in ('1', 'true', 'yes'))
 
     start_date = request.query_params.get('start_date')
     end_date = request.query_params.get('end_date')

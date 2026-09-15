@@ -15,9 +15,6 @@ export function useMobileScan() {
   const [scannedVehicle, setScannedVehicle] = useState(null);
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [mode, setMode] = useState("QUEUE");
-  const [selectedSeriesId, setSelectedSeriesId] = useState(
-    () => localStorage.getItem("lastSelectedSeriesId") || ""
-  );
   const [ticketQuantity, setTicketQuantity] = useState(1);
 
   // Dispatch (check-out) settings — denomination is remembered across sessions,
@@ -34,6 +31,22 @@ export function useMobileScan() {
     }
   };
   const [dispatchQuantity, setDispatchQuantity] = useState(1);
+
+  // Roam settings — same denomination-pick-and-quantity shape as Dispatch;
+  // the server draws the physical numbers FIFO (see roamTicket), so Mobile
+  // never has to know which series/range is currently active.
+  const LAST_ROAM_TICKET_FORM_KEY = "mobile:lastRoamTicketFormId";
+  const [roamTicketFormId, setRoamTicketFormIdState] = useState(
+    () => localStorage.getItem(LAST_ROAM_TICKET_FORM_KEY) || ""
+  );
+  const setRoamTicketFormId = (value) => {
+    setRoamTicketFormIdState(value);
+    if (value) {
+      localStorage.setItem(LAST_ROAM_TICKET_FORM_KEY, value);
+    } else {
+      localStorage.removeItem(LAST_ROAM_TICKET_FORM_KEY);
+    }
+  };
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
@@ -55,7 +68,7 @@ export function useMobileScan() {
       apiService.getDrivers(),
       apiService.getTicketForms(),
       apiService.request("/ticket-series/"),
-      apiService.getTickets(),
+      apiService.getTickets({ status: "QUEUED" }),
     ]);
     setVehicles(v);
     setDrivers(d);
@@ -65,6 +78,10 @@ export function useMobileScan() {
   }, []);
 
   useEffect(() => {
+    if (!sessionStorage.getItem("accessToken")) {
+      apiService.logout();
+      return;
+    }
     fetchData()
       .catch(() => setError("Failed to load data. Check your connection."))
       .finally(() => setLoading(false));
@@ -75,23 +92,10 @@ export function useMobileScan() {
     [drivers]
   );
 
-  const availableSeries = useMemo(() => {
-    return ticketSeries
-      .map((s) => ({
-        ...s,
-        pcs: (parseInt(s.end_no) || 0) - (parseInt(s.start_no) || 0) + 1,
-      }))
-      .filter((s) => s.pcs > 0)
-      .sort((a, b) => (parseInt(a.start_no) || 0) - (parseInt(b.start_no) || 0));
-  }, [ticketSeries]);
-
-  const ticketFee = useMemo(() => {
-    const series = availableSeries.find((s) => String(s.id) === String(selectedSeriesId));
-    return Number(series?.ticket_form_price || 0);
-  }, [availableSeries, selectedSeriesId]);
-
   // Remaining stock per denomination (ticket form) — same computation Dispatch uses
-  // to populate its denomination dropdown.
+  // to populate its denomination dropdown. `s.remaining` (from the backend) already
+  // accounts for tickets issued so far; falling back to the full span only covers
+  // series the API hasn't annotated yet.
   const denominationOptions = useMemo(() => {
     return ticketForms
       .map((form) => {
@@ -100,12 +104,18 @@ export function useMobileScan() {
           .reduce((sum, s) => {
             const start = parseInt(s.start_no) || 0;
             const end = parseInt(s.end_no) || 0;
-            return sum + Math.max(end - start + 1, 0);
+            const total = Math.max(end - start + 1, 0);
+            return sum + (s.remaining ?? total);
           }, 0);
         return { ...form, remaining };
       })
       .filter((form) => form.remaining > 0);
   }, [ticketForms, ticketSeries]);
+
+  const ticketFee = useMemo(() => {
+    const form = denominationOptions.find((f) => String(f.id) === String(roamTicketFormId));
+    return Number(form?.price || 0);
+  }, [denominationOptions, roamTicketFormId]);
 
   // 1-based position of a QUEUED vehicle within its route's FIFO line, or null
   // if it isn't currently queued. Mirrors the ordering dispatch.jsx uses.
@@ -122,7 +132,7 @@ export function useMobileScan() {
         )
         .map((v) => {
           const ticket = tickets.find(
-            (t) => t.vehicle?.id === v.id && t.status === "ISSUED"
+            (t) => t.vehicle?.id === v.id && t.status === "QUEUED"
           );
           return {
             id: v.id,
@@ -212,8 +222,8 @@ export function useMobileScan() {
       }
     } else {
       if (!selectedDriver) return setError("Select a driver.");
-      if (mode === "ROAM" && !selectedSeriesId) {
-        return setError("Select a ticket series to issue a ticket.");
+      if (mode === "ROAM" && !roamTicketFormId) {
+        return setError("Select a denomination to issue a ticket.");
       }
       if (selectedDriver.status !== "ACTIVE") {
         return setError("Selected driver is not active.");
@@ -243,12 +253,12 @@ export function useMobileScan() {
         await fetchData();
       } else if (mode === "QUEUE") {
         // Check-in only — denomination/quantity are chosen later, at Dispatch.
-        if (!["AVAILABLE", "DISPATCHED"].includes(scannedVehicle.status)) {
+        if (scannedVehicle.status !== "AVAILABLE") {
           throw new Error(`Vehicle is ${scannedVehicle.status} — cannot check in.`);
         }
 
         const driverHasActiveTicket = tickets.some(
-          (t) => t.driver?.id === selectedDriver.id && t.status === "ISSUED"
+          (t) => t.driver?.id === selectedDriver.id && t.status === "QUEUED"
         );
         if (driverHasActiveTicket) {
           throw new Error("This driver already has an active ticket.");
@@ -259,7 +269,7 @@ export function useMobileScan() {
           vehicle_id: scannedVehicle.id,
           driver_id: selectedDriver.id,
           route: scannedVehicle.route_detail?.id || null,
-          status: "ISSUED",
+          status: "QUEUED",
           mode: "QUEUE",
           is_verified: false,
         });
@@ -267,46 +277,30 @@ export function useMobileScan() {
         setResult(`Vehicle checked into queue (ticket ${newTicket.id}).`);
         await fetchData();
       } else if (mode === "ROAM") {
-        if (!["AVAILABLE", "DISPATCHED"].includes(scannedVehicle.status)) {
+        if (scannedVehicle.status !== "AVAILABLE") {
           throw new Error(`Vehicle is ${scannedVehicle.status} — cannot issue ticket.`);
         }
 
-        const series = availableSeries.find((s) => String(s.id) === String(selectedSeriesId));
-        if (!series) throw new Error("Selected series not found or depleted.");
-
         const quantity = Math.max(1, parseInt(ticketQuantity) || 1);
-        if (quantity > series.pcs) {
-          throw new Error(`Only ${series.pcs} ticket(s) remaining in this series.`);
-        }
-
         const cap = Number(terminalPrice?.amount || 0);
-        if (cap > 0 && ticketFee * quantity !== cap) {
+        const totalCollected = ticketFee * quantity;
+        // Compare in whole centavos — ticketFee/cap come from backend decimal strings,
+        // and multiplying them in floating point (e.g. 10.10 * 5) can land a hair off
+        // an exact peso amount, which would wrongly block a legitimate match.
+        if (cap > 0 && Math.round(totalCollected * 100) !== Math.round(cap * 100)) {
           throw new Error(
-            `Total collection amount (₱${(ticketFee * quantity).toFixed(2)}) must match the terminal price of ₱${cap.toFixed(2)}.`
+            `Total collection amount (₱${totalCollected.toFixed(2)}) must match the terminal price of ₱${cap.toFixed(2)}.`
           );
         }
 
-        let nextStartNo = parseInt(series.start_no);
-        const issuedIds = [];
-        const issuanceGroup = crypto.randomUUID();
-        for (let i = 0; i < quantity; i++) {
-          const payload = {
-            id: `${nextStartNo}`,
-            vehicle_id: scannedVehicle.id,
-            driver_id: selectedDriver.id,
-            route: scannedVehicle.route_detail?.id || null,
-            series_id: parseInt(selectedSeriesId),
-            status: "ISSUED",
-            mode: "UNLOAD",
-            is_verified: false,
-            issuance_group: issuanceGroup,
-          };
-          if (ticketFee > 0) payload.collection_amount = ticketFee;
-
-          const ticket = await apiService.createTicket(payload);
-          issuedIds.push(ticket.id);
-          nextStartNo += 1;
-        }
+        // Server draws the physical numbers FIFO across series (same mechanism
+        // Dispatch uses), so stock depletion and numbering stay in sync — see
+        // roam_ticket / _consume_series_fifo (backend/api/views/viewsets.py).
+        const issued = await apiService.roamTicket(scannedVehicle.id, selectedDriver.id, {
+          ticketFormId: roamTicketFormId,
+          quantity,
+        });
+        const issuedIds = issued.map((t) => t.id);
 
         setResult(
           quantity > 1
@@ -319,6 +313,7 @@ export function useMobileScan() {
       setScannedVehicle(null);
       setSelectedDriver(null);
       setTicketQuantity(1);
+      setDispatchQuantity(1);
     } catch (err) {
       setError(err.message || "Submission failed");
     } finally {
@@ -332,6 +327,7 @@ export function useMobileScan() {
     setError(null);
     setResult(null);
     setTicketQuantity(1);
+    setDispatchQuantity(1);
   };
 
   return {
@@ -341,12 +337,11 @@ export function useMobileScan() {
     mode,
     setMode,
     queuePosition,
-    selectedSeriesId,
-    setSelectedSeriesId,
+    roamTicketFormId,
+    setRoamTicketFormId,
     ticketQuantity,
     setTicketQuantity,
     activeDrivers,
-    availableSeries,
     ticketFee,
     denominationOptions,
     dispatchTicketFormId,

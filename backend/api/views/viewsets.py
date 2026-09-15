@@ -11,13 +11,15 @@ from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, BasePermission, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, RemittanceBatch, TicketForm, Requisition, TicketSeries, RoamingLog, TerminalPrice
+from ..models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, RemittanceBatch, TicketForm, Requisition, TicketSeries, RoamingLog, TerminalPrice, WipMode
 from ..serializers import UserSerializer, DriverSerializer, VehicleSerializer, RouteSerializer, TicketSerializer, TicketPriceSerializer, PUVTypeSerializer, RemittanceBatchSerializer, TicketFormSerializer, RequisitionSerializer, TicketSeriesSerializer, RoamingLogSerializer
+from ..sms import send_sms_async, queue_next_message
 from .helpers import record_audit_log, expire_stale_queue_tickets, parse_date_start, parse_date_end, paginate_request
+from .remittance_export import remittance_xlsx_response
 
 
 class AuditLogMixin:
@@ -59,6 +61,29 @@ class AuditLogMixin:
         instance.delete()
 
 
+class IsSuperAdminOrReadOnly(BasePermission):
+    """Any authenticated user may view the staff registry; only Admins may create/update/delete accounts."""
+
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+        return bool(request.user and request.user.is_authenticated and request.user.role == 'SUPERADMIN')
+
+
+class IsSupervisorOrAdminForWrite(BasePermission):
+    """Backfill/WIP-mode: transactional territory, so SUPERVISOR and SUPERADMIN both
+    qualify (unlike the System tab's backup/restore, which stays SUPERADMIN-only).
+    Reads are open to any authenticated user so the WIP-mode banner works for every
+    role — only toggling/importing is restricted."""
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return request.user.role in ('SUPERVISOR', 'SUPERADMIN')
+
+
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -70,6 +95,7 @@ class CurrentUserView(APIView):
 class UserViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated, IsSuperAdminOrReadOnly]
 
     def perform_create(self, serializer):
         instance = super().perform_create(serializer)
@@ -83,7 +109,7 @@ class UserViewSet(AuditLogMixin, viewsets.ModelViewSet):
         login_link = settings.FRONTEND_URL
         text_body = (
             f"Hi {user_name},\n\n"
-            "An account was created for you on the iTURNO terminal management system.\n\n"
+            "An account was created for you on the North Central Terminal management system.\n\n"
             f"Email: {user.username}\n"
             f"Temporary password: {raw_password}\n\n"
             "Sign in and you'll be asked to choose your own password right away.\n"
@@ -96,7 +122,7 @@ class UserViewSet(AuditLogMixin, viewsets.ModelViewSet):
             'login_link': login_link,
         })
         email = EmailMultiAlternatives(
-            subject='Your iTURNO account has been created',
+            subject='Your North Central Terminal account has been created',
             body=text_body,
             from_email=settings.DEFAULT_FROM_EMAIL,
             to=[user.username],
@@ -123,7 +149,7 @@ class RouteViewSet(AuditLogMixin, viewsets.ModelViewSet):
 
 
 class VehicleViewSet(AuditLogMixin, viewsets.ModelViewSet):
-    queryset = Vehicle.objects.select_related('route', 'active_driver', 'transportation_id').all()
+    queryset = Vehicle.objects.select_related('route', 'active_driver', 'owner_driver', 'transportation_id').all()
     serializer_class = VehicleSerializer
 
     def get_queryset(self):
@@ -155,21 +181,30 @@ def _consume_series_fifo(ticket_form_id, quantity):
     """Assign `quantity` physical ticket numbers to a denomination, drawing from the
     oldest ticket series first and spilling into the next-oldest one as each depletes.
 
-    Remaining stock per series is derived from how many Ticket rows already
-    reference it (start_no/end_no are the original allotted range and must stay
-    fixed, or the "remaining" count computed elsewhere would double-subtract).
+    Which numbers are already taken is looked up directly (which Ticket rows
+    reference this series), not derived from a count — a paper backfill can claim
+    a specific number in the middle of a series' range (see backfill.py), so the
+    next number handed out here must skip whatever's actually taken rather than
+    assuming issuance is contiguous from start_no, or it could hand out a number
+    a backfill already claimed.
+
+    Locks the TicketSeries rows for this denomination (must be called inside
+    transaction.atomic()) so two concurrent dispatches drawing from the same
+    denomination — even for different vehicles/routes — serialize instead of
+    both reading the same "remaining" set and handing out the same physical
+    ticket number twice.
 
     Returns a list of (series, ticket_id) pairs of length `quantity`.
     Raises ValidationError if stock runs out.
     """
     series_list = list(
-        TicketSeries.objects.filter(ticket_form_id=ticket_form_id).order_by('requisition_id', 'id')
+        TicketSeries.objects.select_for_update()
+        .filter(ticket_form_id=ticket_form_id, requisition__is_archived=False)
+        .order_by('requisition_id', 'id')
     )
-    already_issued = {
-        s.id: s.tickets.count() for s in series_list
-    }
+    taken_by_series = {s.id: set(s.tickets.values_list('id', flat=True)) for s in series_list}
     total_available = sum(
-        max(int(s.end_no) - int(s.start_no) + 1 - already_issued[s.id], 0) for s in series_list
+        max(int(s.end_no) - int(s.start_no) + 1 - len(taken_by_series[s.id]), 0) for s in series_list
     )
     if quantity > total_available:
         raise ValidationError({
@@ -181,12 +216,15 @@ def _consume_series_fifo(ticket_form_id, quantity):
     for series in series_list:
         if remaining <= 0:
             break
-        start = int(series.start_no) + already_issued[series.id]
+        taken = taken_by_series[series.id]
+        n = int(series.start_no)
         end = int(series.end_no)
-        while remaining > 0 and start <= end:
-            units.append((series, str(start)))
-            start += 1
-            remaining -= 1
+        while remaining > 0 and n <= end:
+            candidate = str(n)
+            if candidate not in taken:
+                units.append((series, candidate))
+                remaining -= 1
+            n += 1
 
     return units
 
@@ -206,6 +244,9 @@ class TicketViewSet(viewsets.ModelViewSet):
         mode_param = self.request.query_params.get('mode')
         if mode_param:
             qs = qs.filter(mode__in=[m.strip() for m in mode_param.split(',') if m.strip()])
+        vehicle_id = self.request.query_params.get('vehicle_id')
+        if vehicle_id:
+            qs = qs.filter(vehicle_id=vehicle_id)
         start_date = self.request.query_params.get('start_date')
         end_date = self.request.query_params.get('end_date')
         if start_date:
@@ -218,9 +259,34 @@ class TicketViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(created_at__lte=parse_date_end(end_date))
             except ValueError:
                 pass
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            # Matches the Ticket ID / Vehicle / Driver / Issued By columns actually
+            # shown in the Collection Log table (src/app/dashboard/collection),
+            # plus the same fuzzy status-substring shortcut the old client-side
+            # filter had (typing "cancel" finds cancelled tickets, etc).
+            condition = (
+                Q(id__icontains=search)
+                | Q(vehicle__plate_number__icontains=search)
+                | Q(driver__first_name__icontains=search)
+                | Q(driver__last_name__icontains=search)
+                | Q(active_user_name__icontains=search)
+            )
+            lowered = search.lower()
+            # Prefix match (not "is search a substring of the word", which was backwards
+            # and made any short substring of "cancelled" like "an"/"el" pull in every
+            # cancelled ticket) — min length 3 so it only kicks in once the term is
+            # unambiguously heading toward one of these two words.
+            if len(lowered) >= 3 and 'cancelled'.startswith(lowered):
+                condition |= Q(status='CANCELLED')
+            if len(lowered) >= 3 and 'collected'.startswith(lowered):
+                condition |= ~Q(status='CANCELLED')
+            qs = qs.filter(condition)
         return qs
 
     def perform_create(self, serializer):
+        if WipMode.get_solo().is_active:
+            raise ValidationError({"detail": "Ticket issuance is temporarily paused for a data backfill."})
         if self.request.user and self.request.user.is_authenticated:
             serializer.save(active_user=self.request.user)
         else:
@@ -248,6 +314,9 @@ class TicketViewSet(viewsets.ModelViewSet):
         """Give out the physical ticket(s) for a queued vehicle: the dispatcher picks a
         denomination and quantity, and this auto-draws the oldest stock (FIFO across
         series) instead of letting a specific series be hand-picked."""
+        if WipMode.get_solo().is_active:
+            raise ValidationError({"detail": "Ticket issuance is temporarily paused for a data backfill."})
+
         vehicle_id = request.data.get('vehicle_id')
         ticket_form_id = request.data.get('ticket_form_id')
 
@@ -269,7 +338,7 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             placeholder = Ticket.objects.select_for_update().filter(
-                vehicle=vehicle, status='ISSUED',
+                vehicle=vehicle, status='QUEUED',
             ).order_by('issued_at').first()
             if not placeholder:
                 raise ValidationError({"vehicle_id": "No open ticket found for this vehicle."})
@@ -316,6 +385,98 @@ class TicketViewSet(viewsets.ModelViewSet):
             vehicle.status = 'AVAILABLE'
             vehicle.save(update_fields=['status', 'updated_at'])
 
+            # Whoever is now first in line for this route (if anyone) just
+            # became #1 as a result of this dispatch — let them know. Sent
+            # async, after commit, so this request doesn't block on
+            # PhilSMS's HTTP round trip.
+            if route:
+                new_first = Ticket.objects.filter(
+                    route=route, mode='QUEUE', status='QUEUED',
+                ).order_by('issued_at').first()
+                if new_first:
+                    message = queue_next_message(route.full_name)
+                    transaction.on_commit(lambda: send_sms_async(new_first.driver.contact, message))
+
+        return Response(
+            TicketSerializer(new_tickets, many=True, context={'request': request}).data
+        )
+
+    @action(detail=False, methods=['post'], url_path='roam')
+    def roam_ticket(self, request):
+        """Issue ticket(s) for a vehicle that's roaming, not queued: the toll is paid
+        on the spot, so the ticket is born already COLLECTED. Draws physical ticket
+        numbers the same FIFO way dispatch does, so the two paths can't hand out
+        the same number — see _consume_series_fifo."""
+        if WipMode.get_solo().is_active:
+            raise ValidationError({"detail": "Ticket issuance is temporarily paused for a data backfill."})
+
+        vehicle_id = request.data.get('vehicle_id')
+        driver_id = request.data.get('driver_id')
+        ticket_form_id = request.data.get('ticket_form_id')
+
+        if not vehicle_id or not driver_id or not ticket_form_id:
+            raise ValidationError({"vehicle_id": "vehicle_id, driver_id, and ticket_form_id are required."})
+        try:
+            quantity = max(1, int(request.data.get('quantity')))
+        except (TypeError, ValueError):
+            raise ValidationError({"quantity": "Quantity must be a whole number."})
+
+        try:
+            vehicle = Vehicle.objects.get(id=vehicle_id)
+        except Vehicle.DoesNotExist:
+            raise ValidationError({"vehicle_id": "Vehicle not found."})
+        try:
+            driver = Driver.objects.get(id=driver_id)
+        except Driver.DoesNotExist:
+            raise ValidationError({"driver_id": "Driver not found."})
+        try:
+            ticket_form = TicketForm.objects.get(id=ticket_form_id)
+        except TicketForm.DoesNotExist:
+            raise ValidationError({"ticket_form_id": "Ticket form not found."})
+
+        if vehicle.status != 'AVAILABLE':
+            raise ValidationError({"vehicle_id": f"Vehicle is {vehicle.status} — cannot issue ticket."})
+        if driver.status != 'ACTIVE':
+            raise ValidationError({"driver_id": "Selected driver is not active."})
+
+        price = ticket_form.price or 0
+        terminal_price = TerminalPrice.get_solo().amount
+        if terminal_price and price * quantity != terminal_price:
+            raise ValidationError({
+                "quantity": (
+                    f"Total collection amount (₱{price * quantity:.2f}) must match "
+                    f"the terminal price of ₱{terminal_price:.2f}."
+                )
+            })
+
+        with transaction.atomic():
+            units = _consume_series_fifo(ticket_form.id, quantity)
+
+            dispatched_at = timezone.now()
+            issuance_group = uuid.uuid4().hex
+            active_user = request.user if request.user.is_authenticated else None
+
+            new_tickets = [
+                Ticket.objects.create(
+                    id=ticket_id,
+                    vehicle=vehicle,
+                    driver=driver,
+                    active_user=active_user,
+                    route=vehicle.route,
+                    mode='UNLOAD',
+                    series=series,
+                    status='COLLECTED',
+                    is_verified=True,
+                    collection_amount=price,
+                    dispatched_at=dispatched_at,
+                    issuance_group=issuance_group,
+                )
+                for series, ticket_id in units
+            ]
+
+            vehicle.active_driver = driver
+            vehicle.save(update_fields=['active_driver', 'updated_at'])
+
         return Response(
             TicketSerializer(new_tickets, many=True, context={'request': request}).data
         )
@@ -331,16 +492,16 @@ class TicketViewSet(viewsets.ModelViewSet):
                 action='UPDATE',
                 model_name='Ticket',
                 object_id=ticket.id,
-                object_repr=f"Verified ticket {ticket.id}",
+                object_repr=f"Verified {ticket}",
                 changes={'is_verified': True, 'status': ticket.status},
             )
 
     @action(detail=True, methods=['post'])
     def reassign_driver(self, request, pk=None):
-        """Swap the driver on a vehicle that's still waiting in queue (open/ISSUED ticket)."""
+        """Swap the driver on a vehicle that's still waiting in queue (open/QUEUED ticket)."""
         ticket = self.get_object()
-        if ticket.status != 'ISSUED':
-            raise ValidationError("Only an open (ISSUED) ticket's driver can be reassigned.")
+        if ticket.status != 'QUEUED':
+            raise ValidationError("Only an open (QUEUED) ticket's driver can be reassigned.")
 
         driver_id = request.data.get('driver_id')
         if not driver_id:
@@ -354,7 +515,7 @@ class TicketViewSet(viewsets.ModelViewSet):
         if new_driver.status != 'ACTIVE':
             raise ValidationError({"driver_id": "Selected driver is not active and cannot be assigned."})
 
-        conflict = Ticket.objects.filter(driver=new_driver, status='ISSUED').exclude(vehicle=ticket.vehicle).exists()
+        conflict = Ticket.objects.filter(driver=new_driver, status='QUEUED').exclude(vehicle=ticket.vehicle).exists()
         if conflict:
             raise ValidationError({"driver_id": "This driver already has an active ticket on another vehicle."})
 
@@ -362,7 +523,7 @@ class TicketViewSet(viewsets.ModelViewSet):
         vehicle = ticket.vehicle
 
         with transaction.atomic():
-            siblings = Ticket.objects.filter(vehicle=vehicle, status='ISSUED')
+            siblings = Ticket.objects.filter(vehicle=vehicle, status='QUEUED')
             if ticket.issuance_group:
                 siblings = siblings.filter(issuance_group=ticket.issuance_group)
             else:
@@ -377,7 +538,7 @@ class TicketViewSet(viewsets.ModelViewSet):
             action='UPDATE',
             model_name='Ticket',
             object_id=ticket.id,
-            object_repr=f"Reassigned driver on ticket {ticket.id}",
+            object_repr=f"Reassigned driver on {ticket}",
             changes={'driver': f"{old_driver} -> {new_driver}"},
         )
 
@@ -418,6 +579,9 @@ class RequisitionViewSet(AuditLogMixin, viewsets.ModelViewSet):
                 qs = qs.filter(date_requested__lte=parse_date_end(end_date))
             except ValueError:
                 pass
+        is_archived = self.request.query_params.get('is_archived')
+        if is_archived is not None:
+            qs = qs.filter(is_archived=is_archived.lower() in ('1', 'true', 'yes'))
         return qs
 
     def list(self, request, *args, **kwargs):
@@ -445,7 +609,9 @@ class TicketSeriesViewSet(AuditLogMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         today = date.today()
-        return TicketSeries.objects.select_related('ticket_form', 'issued_to').annotate(
+        return TicketSeries.objects.filter(requisition__is_archived=False).select_related(
+            'ticket_form', 'issued_to'
+        ).annotate(
             _total_issued=Count('tickets'),
             _issued_before_today=Count('tickets', filter=Q(tickets__issued_at__date__lt=today)),
         )
@@ -465,3 +631,9 @@ class RoamingLogViewSet(viewsets.ModelViewSet):
 class RemittanceBatchViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = RemittanceBatch.objects.all()
     serializer_class = RemittanceBatchSerializer
+
+    @action(detail=True, methods=["get"], url_path="export-xlsx")
+    def export_xlsx(self, request, pk=None):
+        batch = self.get_object()
+        serialized = self.get_serializer(batch).data
+        return remittance_xlsx_response(batch, serialized)

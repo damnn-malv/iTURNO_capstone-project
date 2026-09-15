@@ -3,53 +3,33 @@ import { apiService } from "../../../lib/api-service";
 import { useToast, useConfirm } from "../../../components/ui/ToastConfirmContext";
 import { useTerminalPrice } from "../../../lib/useTerminalPrice";
 import SettingsModal from "../../../components/ui/settingsModal";
+import TicketBackfillTab from "./backfill/TicketBackfillTab";
 import "../../../styles/Settings.css";
 
 const TABS = [
   {
-    key: "puv",
-    label: "PUV Types",
-    description: "Vehicle classifications used across the system",
+    key: "general",
+    label: "General",
+    description: "PUV types, routes, ticket forms, and terminal price",
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="1" y="3" width="15" height="13" rx="1" />
-        <path d="M16 8h4l3 3v5h-7V8z" />
-        <circle cx="5.5" cy="18.5" r="2.5" />
-        <circle cx="18.5" cy="18.5" r="2.5" />
+        <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+        <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+        <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+        <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
       </svg>
     ),
   },
   {
-    key: "routes",
-    label: "Routes",
-    description: "Origin points connected to the terminal",
+    key: "backfill",
+    label: "Ticket Backfill",
+    description: "Manually enter or CSV-import missed tickets, and pause live issuance during import",
+    allowedRoles: ["SUPERADMIN", "SUPERVISOR"],
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="10" r="3" />
-        <path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z" />
-      </svg>
-    ),
-  },
-  {
-    key: "ticketForms",
-    label: "Ticket Forms",
-    description: "Ticket types and their corresponding prices",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-      </svg>
-    ),
-  },
-  {
-    key: "terminalPrice",
-    label: "Terminal Price",
-    description: "Maximum total collection amount allowed per issued ticket",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 6v12" />
-        <path d="M15 9.5c0-1.38-1.34-2.5-3-2.5s-3 1.12-3 2.5 1.34 2.5 3 2.5 3 1.12 3 2.5-1.34 2.5-3 2.5-3-1.12-3-2.5" />
+        <path d="M12 21V9" />
+        <path d="M7 14l5-5 5 5" />
+        <path d="M4 3h16" />
       </svg>
     ),
   },
@@ -57,6 +37,7 @@ const TABS = [
     key: "system",
     label: "System",
     description: "Backup, restore, and roll back the entire system",
+    allowedRoles: ["SUPERADMIN"],
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <ellipse cx="12" cy="5" rx="9" ry="3" />
@@ -114,16 +95,18 @@ const formatBytes = (bytes) => {
 };
 
 function Settings() {
-  const [activeTab, setActiveTab] = useState("puv");
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [activeTab, setActiveTab] = useState("general");
+  const [userRole, setUserRole] = useState("");
 
   useEffect(() => {
     apiService.getCurrentUser()
-      .then((user) => setIsAdmin((user?.role || "").toUpperCase() === "SUPERADMIN"))
+      .then((user) => setUserRole((user?.role || "").toUpperCase()))
       .catch((err) => console.error("Failed to load current user:", err));
   }, []);
 
-  const visibleTabs = isAdmin ? TABS : TABS.filter(tab => tab.key !== "system");
+  const isAdmin = userRole === "SUPERADMIN";
+  const canManageBackfill = ["SUPERADMIN", "SUPERVISOR"].includes(userRole);
+  const visibleTabs = TABS.filter(tab => !tab.allowedRoles || tab.allowedRoles.includes(userRole));
 
   const [puvTypes, setPuvTypes] = useState([]);
   const [newType, setNewType] = useState("");
@@ -137,8 +120,15 @@ function Settings() {
 
   const showToast = useToast();
 
-  const [search, setSearch] = useState("");
-  const [addModalOpen, setAddModalOpen] = useState(false);
+  // General is now four stacked sections rather than tabs a click apart, so
+  // each needs its own independent search/add-modal state instead of one
+  // shared pair keyed off whichever tab used to be active.
+  const [puvSearch, setPuvSearch] = useState("");
+  const [puvModalOpen, setPuvModalOpen] = useState(false);
+  const [routesSearch, setRoutesSearch] = useState("");
+  const [routeModalOpen, setRouteModalOpen] = useState(false);
+  const [ticketFormsSearch, setTicketFormsSearch] = useState("");
+  const [ticketFormModalOpen, setTicketFormModalOpen] = useState(false);
 
   const {
     terminalPrice,
@@ -174,14 +164,18 @@ function Settings() {
   }, []);
 
   const handleAddPUVType = async () => {
-    if (!newType.trim()) return;
+    if (!newType.trim()) {
+      showToast?.("Name is required", "info");
+      return;
+    }
     try {
       const created = await apiService.createPUVType({ name: newType });
       setPuvTypes([...puvTypes, created]);
       setNewType("");
-      setAddModalOpen(false);
+      setPuvModalOpen(false);
     } catch (err) {
       console.error("Failed to create:", err);
+      showToast?.(err.message || "Failed to create PUV type", "info");
     }
   };
 
@@ -201,14 +195,18 @@ function Settings() {
   }, []);
 
   const handleAddRoute = async () => {
-    if (!newOrigin.trim()) return;
+    if (!newOrigin.trim()) {
+      showToast?.("Route origin is required", "info");
+      return;
+    }
     try {
       const created = await apiService.createRoute({ origin: newOrigin });
       setRoutes([...routes, created]);
       setNewOrigin("");
-      setAddModalOpen(false);
+      setRouteModalOpen(false);
     } catch (err) {
       console.error("Failed to create route:", err);
+      showToast?.(err.message || "Failed to create route", "info");
     }
   };
 
@@ -228,15 +226,23 @@ function Settings() {
   }, []);
 
   const handleAddTicketForm = async () => {
-    if (!newTicketForm.trim()) return;
+    if (!newTicketForm.trim()) {
+      showToast?.("Name is required", "info");
+      return;
+    }
+    if (!newTicketFormPrice.trim() || isNaN(parseFloat(newTicketFormPrice))) {
+      showToast?.("Price is required", "info");
+      return;
+    }
     try {
-      const created = await apiService.createTicketForm({ name: newTicketForm, price: parseFloat(newTicketFormPrice) || 0 });
+      const created = await apiService.createTicketForm({ name: newTicketForm, price: parseFloat(newTicketFormPrice) });
       setTicketForms([...ticketForms, created]);
       setNewTicketForm("");
       setNewTicketFormPrice("");
-      setAddModalOpen(false);
+      setTicketFormModalOpen(false);
     } catch (err) {
       console.error("Failed to create ticket form:", err);
+      showToast?.(err.message || "Failed to create ticket form", "info");
     }
   };
 
@@ -368,18 +374,20 @@ function Settings() {
     }
   };
 
-  // reset search when switching tabs
-  const switchTab = (key) => {
-    setActiveTab(key);
-    setSearch("");
-    setAddModalOpen(false);
-  };
+  const switchTab = (key) => setActiveTab(key);
 
-  const q = search.trim().toLowerCase();
-
-  const filteredPuvTypes = puvTypes.filter(pt => !q || pt.name?.toLowerCase().includes(q));
-  const filteredRoutes = routes.filter(r => !q || r.full_name?.toLowerCase().includes(q));
-  const filteredTicketForms = ticketForms.filter(tf => !q || tf.name?.toLowerCase().includes(q));
+  const filteredPuvTypes = puvTypes.filter(pt => {
+    const q = puvSearch.trim().toLowerCase();
+    return !q || pt.name?.toLowerCase().includes(q);
+  });
+  const filteredRoutes = routes.filter(r => {
+    const q = routesSearch.trim().toLowerCase();
+    return !q || r.full_name?.toLowerCase().includes(q);
+  });
+  const filteredTicketForms = ticketForms.filter(tf => {
+    const q = ticketFormsSearch.trim().toLowerCase();
+    return !q || tf.name?.toLowerCase().includes(q);
+  });
 
   const counts = {
     puv: puvTypes.length,
@@ -419,183 +427,243 @@ function Settings() {
 
       {/* Panel */}
       <div className="set-panel">
-        <div className="set-panel-toolbar">
-          <div className="set-panel-heading">
-            <h2 className="set-panel-title">{TABS.find(t => t.key === activeTab)?.label}</h2>
-
-          </div>
-          {activeTab !== "terminalPrice" && activeTab !== "system" && (
-            <div className="set-toolbar-actions">
-              <button className="set-add-btn" onClick={() => setAddModalOpen(true)}>
-                <PlusIcon />
-                Add
-              </button>
-              <div className="set-search">
-                <SearchIcon />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={`Search ${TABS.find(t => t.key === activeTab)?.label.toLowerCase()}...`}
-                />
+        {/* General: PUV Types, Routes, Ticket Forms, and Terminal Price as
+            stacked sections on one scrolling page — no clicks needed to move
+            between them, just scroll. */}
+        {activeTab === "general" && (
+          <>
+            {/* PUV Types */}
+            <div className="set-section">
+              <div className="set-panel-toolbar">
+                <div className="set-panel-heading">
+                  <h2 className="set-panel-title">PUV Types</h2>
+                </div>
+                <div className="set-toolbar-actions">
+                  <button className="set-add-btn" onClick={() => setPuvModalOpen(true)}>
+                    <PlusIcon />
+                    Add
+                  </button>
+                  <div className="set-search">
+                    <SearchIcon />
+                    <input
+                      type="text"
+                      value={puvSearch}
+                      onChange={(e) => setPuvSearch(e.target.value)}
+                      placeholder="Search PUV types..."
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="set-table-wrap">
+                <table className="set-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th className="set-th-actions">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPuvTypes.length === 0 ? (
+                      <tr>
+                        <td colSpan="2" className="set-table-state">
+                          {puvTypes.length === 0 ? "No PUV types configured" : "No matches found"}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredPuvTypes.map(pt => (
+                        <tr key={pt.id} className="set-row">
+                          <td className="set-cell-label">{pt.name}</td>
+                          <td className="set-cell-actions">
+                            <button className="set-delete-btn" onClick={() => handleDeletePUVType(pt.id)}>
+                              <DeleteIcon />
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
-          )}
-        </div>
 
-        {/* PUV Types */}
-        {activeTab === "puv" && (
-          <>
-            <div className="set-table-wrap">
-              <table className="set-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th className="set-th-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredPuvTypes.length === 0 ? (
-                    <tr>
-                      <td colSpan="2" className="set-table-state">
-                        {puvTypes.length === 0 ? "No PUV types configured" : "No matches found"}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredPuvTypes.map(pt => (
-                      <tr key={pt.id} className="set-row">
-                        <td className="set-cell-label">{pt.name}</td>
-                        <td className="set-cell-actions">
-                          <button className="set-delete-btn" onClick={() => handleDeletePUVType(pt.id)}>
-                            <DeleteIcon />
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-        {/* Routes */}
-        {activeTab === "routes" && (
-          <>
-            <div className="set-table-wrap">
-              <table className="set-table">
-                <thead>
-                  <tr>
-                    <th>Route</th>
-                    <th className="set-th-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRoutes.length === 0 ? (
-                    <tr>
-                      <td colSpan="2" className="set-table-state">
-                        {routes.length === 0 ? "No routes configured" : "No matches found"}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredRoutes.map(route => (
-                      <tr key={route.id} className="set-row">
-                        <td className="set-cell-label">{route.full_name}</td>
-                        <td className="set-cell-actions">
-                          <button className="set-delete-btn" onClick={() => handleDeleteRoute(route.id)}>
-                            <DeleteIcon />
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-        {/* Ticket Forms */}
-        {activeTab === "ticketForms" && (
-          <>
-            <div className="set-table-wrap">
-              <table className="set-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Price</th>
-                    <th className="set-th-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredTicketForms.length === 0 ? (
-                    <tr>
-                      <td colSpan="3" className="set-table-state">
-                        {ticketForms.length === 0 ? "No ticket forms configured" : "No matches found"}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredTicketForms.map(tf => (
-                      <tr key={tf.id} className="set-row">
-                        <td className="set-cell-label">{tf.name}</td>
-                        <td className="set-cell-meta">₱{Number(tf.price || 0).toFixed(2)}</td>
-                        <td className="set-cell-actions">
-                          <button className="set-delete-btn" onClick={() => handleDeleteTicketForm(tf.id)}>
-                            <DeleteIcon />
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-        {/* Terminal Price */}
-        {activeTab === "terminalPrice" && (
-          <div className="set-rewards-form">
-            <p className="set-rewards-note">
-              The terminal price is the maximum total collection amount (ticket price × quantity)
-              allowed when issuing a ticket. Leave it at 0 to disable the limit.
-            </p>
-            {terminalPriceLoading ? (
-              <p className="set-rewards-note">Loading terminal price...</p>
-            ) : (
-              <div className="set-add-row">
-                <label className="set-field">
-                  <span className="set-field-label">Terminal Price (₱)</span>
-                  <input
-                    type="number"
-                    className="set-input"
-                    min={0}
-                    step="0.01"
-                    value={terminalPriceInput}
-                    onChange={(e) => setTerminalPriceInput(e.target.value)}
-                    placeholder="0"
-                  />
-                </label>
+            {/* Routes */}
+            <div className="set-section">
+              <div className="set-panel-toolbar">
+                <div className="set-panel-heading">
+                  <h2 className="set-panel-title">Routes</h2>
+                </div>
+                <div className="set-toolbar-actions">
+                  <button className="set-add-btn" onClick={() => setRouteModalOpen(true)}>
+                    <PlusIcon />
+                    Add
+                  </button>
+                  <div className="set-search">
+                    <SearchIcon />
+                    <input
+                      type="text"
+                      value={routesSearch}
+                      onChange={(e) => setRoutesSearch(e.target.value)}
+                      placeholder="Search routes..."
+                    />
+                  </div>
+                </div>
               </div>
-            )}
-            {terminalPriceError && (
-              <p className="set-rewards-note" style={{ color: "#c0392b" }}>{terminalPriceError}</p>
-            )}
-            <div className="set-add-row">
-              <button className="set-add-btn" onClick={handleSaveTerminalPrice} disabled={savingTerminalPrice || terminalPriceLoading}>
-                <PlusIcon />
-                {savingTerminalPrice ? "Saving..." : "Save Terminal Price"}
-              </button>
+              <div className="set-table-wrap">
+                <table className="set-table">
+                  <thead>
+                    <tr>
+                      <th>Route</th>
+                      <th className="set-th-actions">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRoutes.length === 0 ? (
+                      <tr>
+                        <td colSpan="2" className="set-table-state">
+                          {routes.length === 0 ? "No routes configured" : "No matches found"}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredRoutes.map(route => (
+                        <tr key={route.id} className="set-row">
+                          <td className="set-cell-label">{route.full_name}</td>
+                          <td className="set-cell-actions">
+                            <button className="set-delete-btn" onClick={() => handleDeleteRoute(route.id)}>
+                              <DeleteIcon />
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
+
+            {/* Ticket Forms */}
+            <div className="set-section">
+              <div className="set-panel-toolbar">
+                <div className="set-panel-heading">
+                  <h2 className="set-panel-title">Ticket Forms</h2>
+                </div>
+                <div className="set-toolbar-actions">
+                  <button className="set-add-btn" onClick={() => setTicketFormModalOpen(true)}>
+                    <PlusIcon />
+                    Add
+                  </button>
+                  <div className="set-search">
+                    <SearchIcon />
+                    <input
+                      type="text"
+                      value={ticketFormsSearch}
+                      onChange={(e) => setTicketFormsSearch(e.target.value)}
+                      placeholder="Search ticket forms..."
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="set-table-wrap">
+                <table className="set-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Price</th>
+                      <th className="set-th-actions">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredTicketForms.length === 0 ? (
+                      <tr>
+                        <td colSpan="3" className="set-table-state">
+                          {ticketForms.length === 0 ? "No ticket forms configured" : "No matches found"}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredTicketForms.map(tf => (
+                        <tr key={tf.id} className="set-row">
+                          <td className="set-cell-label">{tf.name}</td>
+                          <td className="set-cell-meta">₱{Number(tf.price || 0).toFixed(2)}</td>
+                          <td className="set-cell-actions">
+                            <button className="set-delete-btn" onClick={() => handleDeleteTicketForm(tf.id)}>
+                              <DeleteIcon />
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Terminal Price */}
+            <div className="set-section">
+              <div className="set-panel-toolbar">
+                <div className="set-panel-heading">
+                  <h2 className="set-panel-title">Terminal Price</h2>
+                </div>
+              </div>
+              <div className="set-rewards-form">
+                <p className="set-rewards-note">
+                  The terminal price is the maximum total collection amount (ticket price × quantity)
+                  allowed when issuing a ticket. Leave it at 0 to disable the limit.
+                </p>
+                {terminalPriceLoading ? (
+                  <p className="set-rewards-note">Loading terminal price...</p>
+                ) : (
+                  <div className="set-add-row">
+                    <label className="set-field">
+                      <span className="set-field-label">Terminal Price (₱)</span>
+                      <input
+                        type="number"
+                        className="set-input"
+                        min={0}
+                        step="0.01"
+                        value={terminalPriceInput}
+                        onChange={(e) => setTerminalPriceInput(e.target.value)}
+                        placeholder="0"
+                      />
+                    </label>
+                  </div>
+                )}
+                {terminalPriceError && (
+                  <p className="set-rewards-note" style={{ color: "#c0392b" }}>{terminalPriceError}</p>
+                )}
+                <div className="set-add-row">
+                  <button className="set-add-btn" onClick={handleSaveTerminalPrice} disabled={savingTerminalPrice || terminalPriceLoading}>
+                    <PlusIcon />
+                    {savingTerminalPrice ? "Saving..." : "Save Terminal Price"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Ticket Backfill (manual entry + CSV) + WIP mode */}
+        {activeTab === "backfill" && canManageBackfill && (
+          <div className="set-section">
+            <div className="set-panel-toolbar">
+              <div className="set-panel-heading">
+                <h2 className="set-panel-title">Ticket Backfill</h2>
+              </div>
+            </div>
+            <TicketBackfillTab />
           </div>
         )}
 
         {/* System Backup / Restore / Rollback */}
         {activeTab === "system" && isAdmin && (
-          <div className="set-rewards-form">
+          <div className="set-section">
+            <div className="set-panel-toolbar">
+              <div className="set-panel-heading">
+                <h2 className="set-panel-title">System</h2>
+              </div>
+            </div>
+            <div className="set-rewards-form">
             <p className="set-rewards-note">
               A backup captures the entire system — drivers, vehicles, tickets, routes,
               remittances, users, and every other record. Restoring or rolling back
@@ -689,53 +757,48 @@ function Settings() {
                 </tbody>
               </table>
             </div>
+            </div>
           </div>
         )}
       </div>
 
-      {activeTab === "puv" && (
-        <SettingsModal
-          open={addModalOpen}
-          title="Add PUV Type"
-          fields={[{ name: "name", label: "Name", placeholder: "New PUV Type" }]}
-          values={{ name: newType }}
-          onChange={(_, value) => setNewType(value)}
-          onClose={() => setAddModalOpen(false)}
-          onSubmit={handleAddPUVType}
-          submitLabel="Add"
-        />
-      )}
+      <SettingsModal
+        open={puvModalOpen}
+        title="Add PUV Type"
+        fields={[{ name: "name", label: "Name", placeholder: "New PUV Type" }]}
+        values={{ name: newType }}
+        onChange={(_, value) => setNewType(value)}
+        onClose={() => setPuvModalOpen(false)}
+        onSubmit={handleAddPUVType}
+        submitLabel="Add"
+      />
 
-      {activeTab === "routes" && (
-        <SettingsModal
-          open={addModalOpen}
-          title="Add Route"
-          fields={[{ name: "origin", label: "Route Origin", placeholder: "New Route Origin" }]}
-          values={{ origin: newOrigin }}
-          onChange={(_, value) => setNewOrigin(value)}
-          onClose={() => setAddModalOpen(false)}
-          onSubmit={handleAddRoute}
-          submitLabel="Add Route"
-        />
-      )}
+      <SettingsModal
+        open={routeModalOpen}
+        title="Add Route"
+        fields={[{ name: "origin", label: "Route Origin", placeholder: "New Route Origin" }]}
+        values={{ origin: newOrigin }}
+        onChange={(_, value) => setNewOrigin(value)}
+        onClose={() => setRouteModalOpen(false)}
+        onSubmit={handleAddRoute}
+        submitLabel="Add Route"
+      />
 
-      {activeTab === "ticketForms" && (
-        <SettingsModal
-          open={addModalOpen}
-          title="Add Ticket Form"
-          fields={[
-            { name: "name", label: "Name", placeholder: "e.g. Cash Ticket @2" },
-            { name: "price", label: "Price", type: "number", placeholder: "Price", min: "0", step: "0.01" },
-          ]}
-          values={{ name: newTicketForm, price: newTicketFormPrice }}
-          onChange={(field, value) =>
-            field === "name" ? setNewTicketForm(value) : setNewTicketFormPrice(value)
-          }
-          onClose={() => setAddModalOpen(false)}
-          onSubmit={handleAddTicketForm}
-          submitLabel="Add Ticket Form"
-        />
-      )}
+      <SettingsModal
+        open={ticketFormModalOpen}
+        title="Add Ticket Form"
+        fields={[
+          { name: "name", label: "Name", placeholder: "e.g. Cash Ticket @2" },
+          { name: "price", label: "Price", type: "number", placeholder: "Price", min: "0", step: "0.01" },
+        ]}
+        values={{ name: newTicketForm, price: newTicketFormPrice }}
+        onChange={(field, value) =>
+          field === "name" ? setNewTicketForm(value) : setNewTicketFormPrice(value)
+        }
+        onClose={() => setTicketFormModalOpen(false)}
+        onSubmit={handleAddTicketForm}
+        submitLabel="Add Ticket Form"
+      />
     </div>
   );
 }

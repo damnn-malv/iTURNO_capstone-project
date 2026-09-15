@@ -4,6 +4,11 @@
   min-height: 100vh;
   font-family: 'Inter', 'Segoe UI', sans-serif;
   transition: background 0.25s;
+  --chart-bar: var(--navy);
+}
+
+.dark .dashboard-page {
+  --chart-bar: var(--gold);
 }
 
 .dashboard-header {
@@ -115,29 +120,110 @@
   padding: 6px 8px;
 }
 
+.dashboard-scan-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 8px;
+  background: var(--navy);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s, box-shadow 0.18s;
+}
+
+.dashboard-scan-btn:hover {
+  background: var(--navy-hover, #1a2744);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.dark .dashboard-scan-btn {
+  background: var(--gold);
+  color: #1a1a2e;
+}
+
+.dark .dashboard-scan-btn:hover {
+  background: var(--gold-hover, #d4af37);
+}
+
 .dashboard-date-filter input[type="date"]:focus {
   outline: none;
   border-color: var(--gold);
 }
 
-.stat-cards-row {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
+/* Overview: Collections as a tall featured card on the left, with the four
+   Check-Ins/Live-Status cards as a 2x2 quad on the right (top row = check-ins,
+   bottom row = live status) — matches the grid stretching the featured card
+   to the quad's full height. */
+.dashboard-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(0, 2.3fr);
+  gap: 12px;
   margin-bottom: 4px;
+}
+
+.stat-cards-quad {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quad-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.quad-group-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+
+.quad-group-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  flex: 1;
+}
+
+@media (max-width: 720px) {
+  .dashboard-overview-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .stat-card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 18px 20px 16px;
-  flex: 1;
-  min-width: 155px;
+  border-radius: 10px;
+  padding: 12px 14px 11px;
   position: relative;
   overflow: hidden;
   box-shadow: var(--shadow-sm);
   transition: box-shadow 0.15s, transform 0.15s, background 0.25s, border-color 0.25s;
+}
+
+.stat-card--featured {
+  padding: 18px 20px 16px;
+}
+
+.stat-card--featured .stat-card-label {
+  font-size: 11.5px;
+}
+
+.stat-card--featured .stat-card-value {
+  font-size: 32px;
+}
+
+.stat-card--featured .stat-card-sub {
+  font-size: 13px;
 }
 
 .stat-card:hover {
@@ -151,9 +237,9 @@
   left: 0;
   top: 0;
   bottom: 0;
-  width: 4px;
+  width: 3px;
   background: var(--navy);
-  border-radius: 12px 0 0 12px;
+  border-radius: 10px 0 0 10px;
 }
 
 .dark .stat-card::before {
@@ -170,50 +256,32 @@
   color: #ef4444;
 }
 
-.stat-card-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 8px;
-}
-
 .stat-card-label {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.07em;
-}
-
-.stat-card-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  flex-shrink: 0;
+  letter-spacing: 0.06em;
+  line-height: 1.25;
+  margin-bottom: 8px;
 }
 
 .stat-card-value {
-  font-size: 26px;
+  font-size: 21px;
   font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   line-height: 1;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .stat-card-sub {
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--gold);
-}
-
-.dashboard-section {
-  margin-top: 24px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chart-card {
@@ -238,6 +306,14 @@
   font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
+}
+
+/* Badge under the title instead of beside it — for cards where a full-width
+   right-aligned badge would otherwise leave a lopsided gap under the title. */
+.chart-card-header--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .chart-card-badge {
@@ -527,7 +603,7 @@
   white-space: nowrap;
 }
 
-/* ── Ticket-status / fleet-status breakdown cards ── */
+/* ── Ticket Status Breakdown + Recent Activity, side by side ── */
 .dashboard-insights-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

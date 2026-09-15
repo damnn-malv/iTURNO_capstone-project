@@ -6,7 +6,8 @@ from django.utils import timezone
 from django.utils.crypto import get_random_string
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
-from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Requisition, TicketSeries, RoamingLog, AuditLog, BackupRecord, TerminalPrice
+from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Requisition, TicketSeries, RoamingLog, AuditLog, BackupRecord, BackfillRecord, TerminalPrice, WipMode
+from .sms import send_sms_async, queue_position_message
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -72,6 +73,7 @@ class RouteSerializer(serializers.ModelSerializer):
 
 class VehicleSerializer(serializers.ModelSerializer):
     active_driver_name = serializers.SerializerMethodField()
+    owner_driver_name = serializers.SerializerMethodField()
     route_detail = RouteSerializer(source='route', read_only=True)
     transportation_name = serializers.CharField(source='transportation_id.name', read_only=True, allow_null=True)
 
@@ -80,7 +82,7 @@ class VehicleSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'plate_number', 'transportation_id', 'transportation_name', 'franchise_number',
             'route', 'route_detail', 'operator_address', 'qr_code',
-            'status', 'active_driver', 'active_driver_name',
+            'status', 'owner_driver', 'owner_driver_name', 'active_driver', 'active_driver_name',
             'is_archived', 'created_at', 'updated_at',
         ]
 
@@ -88,6 +90,20 @@ class VehicleSerializer(serializers.ModelSerializer):
         if obj.active_driver:
             return f"{obj.active_driver.last_name}, {obj.active_driver.first_name}".strip()
         return None
+
+    def get_owner_driver_name(self, obj):
+        if obj.owner_driver:
+            return f"{obj.owner_driver.last_name}, {obj.owner_driver.first_name}".strip()
+        return None
+
+    def create(self, validated_data):
+        # A freshly-registered vehicle has no shift history yet, so its
+        # current driver starts out as its owner (mirrors the pre-split
+        # behavior where setting "Active Operator" at creation applied
+        # immediately) — unless the caller explicitly supplied one.
+        if 'active_driver' not in validated_data and validated_data.get('owner_driver'):
+            validated_data['active_driver'] = validated_data['owner_driver']
+        return super().create(validated_data)
 
 
 class TicketSeriesBriefSerializer(serializers.ModelSerializer):
@@ -100,6 +116,13 @@ class TicketSeriesBriefSerializer(serializers.ModelSerializer):
 
 
 class TicketSerializer(serializers.ModelSerializer):
+    # Declared explicitly (instead of letting ModelSerializer auto-generate it)
+    # to skip DRF's automatic UniqueValidator — when series_id is given, create()
+    # recomputes and overwrites this with the true next number anyway, so
+    # validating the client's guess against the DB here would reject requests
+    # that create() would have gone on to handle correctly.
+    id = serializers.CharField(max_length=50)
+
     # For writing (creating): accept just IDs
     vehicle_id = serializers.IntegerField(write_only=True, required=True)
     driver_id = serializers.IntegerField(write_only=True, required=True)
@@ -142,7 +165,7 @@ class TicketSerializer(serializers.ModelSerializer):
 
             driver = Driver.objects.get(id=driver_id)
 
-            open_tickets = list(Ticket.objects.filter(vehicle=vehicle, status='ISSUED'))
+            open_tickets = list(Ticket.objects.filter(vehicle=vehicle, status='QUEUED'))
             # A quantity>1 issuance makes several sequential create() calls that share one
             # issuance_group — those are the same check-in, not a duplicate one.
             is_continuation = bool(issuance_group) and open_tickets and all(
@@ -155,7 +178,7 @@ class TicketSerializer(serializers.ModelSerializer):
                 )
 
             if not is_continuation:
-                if vehicle.status not in ('AVAILABLE', 'DISPATCHED'):
+                if vehicle.status != 'AVAILABLE':
                     raise serializers.ValidationError(
                         {"vehicle_id": f"Vehicle is currently {vehicle.status} and cannot be checked in."}
                     )
@@ -166,27 +189,41 @@ class TicketSerializer(serializers.ModelSerializer):
 
             series = None
             if series_id:
-                series = TicketSeries.objects.get(id=series_id)
-                start = int(series.start_no)
+                # start_no/end_no are the original allotted range and stay fixed —
+                # remaining stock is derived from how many Ticket rows already
+                # reference this series, same convention as _consume_series_fifo
+                # (dispatch) uses, so the two paths can't hand out the same number.
+                series = TicketSeries.objects.select_for_update().get(id=series_id)
+                original_start = int(series.start_no)
                 end = int(series.end_no)
-                if start >= end:
+                next_no = original_start + series.tickets.count()
+                if next_no > end:
                     raise serializers.ValidationError({"series_id": "This ticket series is depleted."})
-                series.start_no = str(start + 1)
-                series.save(update_fields=['start_no', 'updated_at'])
+                validated_data['id'] = str(next_no)
 
             if is_roam:
-                # Roam check-in is also check-out — dispatch is automatic,
-                # so the ticket is born already dispatched with no queue step.
-                validated_data['status'] = 'DISPATCHED'
+                # Roam check-in is also check-out — the toll is paid on the spot
+                # and the vehicle roams off again, so the ticket is born already
+                # collected with no queue/dispatch step.
+                validated_data['status'] = 'COLLECTED'
+                validated_data['is_verified'] = True
                 validated_data['dispatched_at'] = timezone.now()
             elif not is_continuation:
                 # Queue check-ins get a route-acronym + daily bay number
                 # (e.g. "SJ-1"), counted per route and reset every midnight.
                 route = vehicle.route
                 if route:
-                    today = timezone.localtime().date()
+                    # PH local day boundaries, not server-local (server TIME_ZONE is UTC)
+                    # or issued_at__date (which extracts the date in the active/UTC
+                    # timezone, not PH) — matches parse_date_start/parse_date_end in
+                    # views/helpers.py.
+                    now_ph = timezone.now() + timedelta(hours=8)
+                    day_start = timezone.make_aware(
+                        datetime(now_ph.year, now_ph.month, now_ph.day) - timedelta(hours=8)
+                    )
+                    day_end = day_start + timedelta(days=1)
                     count_today = Ticket.objects.filter(
-                        mode='QUEUE', route=route, issued_at__date=today,
+                        mode='QUEUE', route=route, issued_at__gte=day_start, issued_at__lt=day_end,
                     ).count()
                     validated_data['queue_code'] = f"{route.acronym}-{count_today + 1}"
 
@@ -199,6 +236,20 @@ class TicketSerializer(serializers.ModelSerializer):
                 vehicle.status = 'QUEUED'
                 vehicle.active_driver = driver
                 vehicle.save(update_fields=['status', 'active_driver', 'updated_at'])
+
+                # One SMS per check-in (not per physical ticket unit, so a
+                # quantity>1 continuation doesn't resend it), telling the
+                # driver their spot in line. Skipped at position 1 — that
+                # vehicle is already heading straight to the loading bay.
+                # Sent async, after commit, so the check-in request doesn't
+                # block on PhilSMS's HTTP round trip.
+                if not is_continuation and route:
+                    position = Ticket.objects.filter(
+                        route=route, mode='QUEUE', status='QUEUED',
+                    ).count()
+                    if position > 1:
+                        message = queue_position_message(position, route.full_name)
+                        transaction.on_commit(lambda: send_sms_async(driver.contact, message))
 
         return ticket
 
@@ -272,6 +323,11 @@ class TerminalPriceSerializer(serializers.ModelSerializer):
     class Meta:
         model = TerminalPrice
         fields = ['id', 'amount', 'updated_at']
+
+class WipModeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WipMode
+        fields = ['id', 'is_active', 'updated_at']
 
 class DepositSerializer(serializers.ModelSerializer):
     class Meta:
@@ -409,6 +465,21 @@ class BackupRecordSerializer(serializers.ModelSerializer):
             return 'System'
         full = f"{user.first_name} {user.last_name}".strip()
         return full or user.username
+
+
+class BackfillRecordSerializer(serializers.ModelSerializer):
+    source_display = serializers.CharField(source='get_source_display', read_only=True)
+    has_csv = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BackfillRecord
+        fields = [
+            'id', 'source', 'source_display', 'created_by', 'created_by_name',
+            'ticket_count', 'reason', 'issued_at', 'csv_filename', 'has_csv', 'created_at',
+        ]
+
+    def get_has_csv(self, obj):
+        return bool(obj.csv_file)
 
 
 class RemittanceBatchSerializer(serializers.ModelSerializer):
