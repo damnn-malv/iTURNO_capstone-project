@@ -534,18 +534,20 @@ function User({ userRole }) {
                       <option value="SUPERADMIN">Admin</option>
                     </select>
                   </Field>
-                  <Field label="Status">
-                    <select
-                      className={inputCls}
-                      value={form.is_active ? "true" : "false"}
-                      onChange={(e) =>
-                        setForm({ ...form, is_active: e.target.value === "true" })
-                      }
-                    >
-                      <option value="true">Active</option>
-                      <option value="false">Inactive</option>
-                    </select>
-                  </Field>
+                  {editing && (
+                    <Field label="Status">
+                      <select
+                        className={inputCls}
+                        value={form.is_active ? "true" : "false"}
+                        onChange={(e) =>
+                          setForm({ ...form, is_active: e.target.value === "true" })
+                        }
+                      >
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                      </select>
+                    </Field>
+                  )}
                 </div>
               </div>
 

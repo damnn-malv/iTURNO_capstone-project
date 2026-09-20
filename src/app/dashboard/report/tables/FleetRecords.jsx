@@ -1,6 +1,7 @@
 import { DataTable } from "../../../../components/ui/dataTable";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ReportTableModal from "./ReportTableModal";
+import Pager from "./Pager";
 import { matchesVehicleRow, matchesDriverRow } from "../reportHook";
 
 const VEHICLE_COLUMNS = [
@@ -26,11 +27,13 @@ export default function FleetRecords({
   visibleDrivers,
   handleExportDriversCSV,
   handleExportDriversPDF,
+  pageSize = 30,
 }) {
   const [activeTab, setActiveTab] = useState("vehicles");
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [modalSearch, setModalSearch] = useState("");
+  const [modalPage, setModalPage] = useState(1);
 
   const isVehicles = activeTab === "vehicles";
 
@@ -80,17 +83,26 @@ export default function FleetRecords({
   const modalSearchedDrivers = searchedDrivers.filter((d) => matchesDriverRow(d, modalSearch));
 
   const modalData = isVehicles ? modalSearchedVehicles : modalSearchedDrivers;
+  const modalTotalPages = Math.max(Math.ceil(modalData.length / pageSize), 1);
+  const modalPageData = modalData.slice((modalPage - 1) * pageSize, modalPage * pageSize);
+
+  // A fresh modal search should start back at page 1.
+  useEffect(() => {
+    setModalPage(1);
+  }, [modalSearch]);
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     setSearch("");
     setModalSearch("");
+    setModalPage(1);
     setShowModal(false);
   };
 
   const handleViewAll = () => {
     if (isVehicles) setShowAllVehicles(true);
     else setShowAllDrivers(true);
+    setModalPage(1);
     setShowModal(true);
   };
 
@@ -180,11 +192,20 @@ export default function FleetRecords({
           searchValue={modalSearch}
           onSearchChange={setModalSearch}
           searchPlaceholder={isVehicles ? "Search vehicles…" : "Search drivers…"}
+          footer={
+            <Pager
+              page={modalPage}
+              totalPages={modalTotalPages}
+              count={modalData.length}
+              pageSize={pageSize}
+              onPageChange={setModalPage}
+            />
+          }
         >
           {isVehicles ? (
-            <DataTable columns={VEHICLE_COLUMNS} data={modalData} rowRenderer={renderVehicleRow} />
+            <DataTable columns={VEHICLE_COLUMNS} data={modalPageData} rowRenderer={renderVehicleRow} />
           ) : (
-            <DataTable columns={DRIVER_COLUMNS} data={modalData} rowRenderer={renderDriverRow} />
+            <DataTable columns={DRIVER_COLUMNS} data={modalPageData} rowRenderer={renderDriverRow} />
           )}
         </ReportTableModal>
       )}

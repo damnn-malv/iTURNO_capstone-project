@@ -12,6 +12,7 @@ function PublicView() {
   const [queue,          setQueue]          = useState([]);
   const [loadingQueue,   setLoadingQueue]   = useState(false);
   const [headerScrolled, setHeaderScrolled] = useState(false);
+  const [now,            setNow]            = useState(new Date());
   const hasLoadedOnce = useRef(false);
 
   useEffect(() => {
@@ -21,6 +22,11 @@ function PublicView() {
     return () => {
       window.removeEventListener('scroll', handleScroll);
     };
+  }, []);
+
+  useEffect(() => {
+    const clockTimer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(clockTimer);
   }, []);
 
   // ── Core queue loader ──────────────────────────────────────────────────────
@@ -78,6 +84,14 @@ function PublicView() {
               <span className="lp-header__title">North Central Terminal</span>
               <span className="lp-header__sub">City Government of San Fernando</span>
             </div>
+          </div>
+          <div className="lp-header__clock">
+            <span className="lp-header__clock-time">
+              {now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+            <span className="lp-header__clock-date">
+              {now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            </span>
           </div>
         </div>
       </header>
@@ -144,7 +158,6 @@ function PublicView() {
                         <th>#</th>
                         <th>Plate Number</th>
                         <th>Driver</th>
-                        <th>Status</th>
                         <th>Est. Departure</th>
                       </tr>
                     </thead>
@@ -154,11 +167,6 @@ function PublicView() {
                           <td className="lp-td--num">{idx + 1}</td>
                           <td><span className="lp-plate">{v.plate_number}</span></td>
                           <td>{v.driver || <span className="lp-na">Unassigned</span>}</td>
-                          <td>
-                            <span className={`lp-status ${idx === 0 ? 'lp-status--available' : ''}`}>
-                              {idx === 0 ? 'Active' : 'Queued'}
-                            </span>
-                          </td>
                           <td className="lp-td--time">
                             {idx === 0 && v.departure_time ? v.departure_time : '—'}
                           </td>

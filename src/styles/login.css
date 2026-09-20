@@ -137,6 +137,35 @@ body {
   margin-top: 1px;
 }
 
+.lp-header__clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.lp-header__clock-time {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--white);
+  line-height: 1.2;
+  letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lp-header__clock-date {
+  font-size: 10.5px;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  font-weight: 500;
+  margin-top: 1px;
+}
+
+@media (max-width: 640px) {
+  .lp-header__clock-date { display: none; }
+}
+
 /* ============================================================
    BUTTONS
    ============================================================ */

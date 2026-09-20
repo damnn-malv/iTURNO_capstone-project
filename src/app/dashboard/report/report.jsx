@@ -5,7 +5,7 @@ import {
   getToday,
   getYearStart,
   exportCSV,
-  matchesLogRow,
+  matchesQueueRow,
   matchesRoamingRow,
   matchesRequisitionRow,
   matchesRemittanceRow,
@@ -17,7 +17,7 @@ import {
 } from "./reportHook";
 import { exportTablePDF } from "./exportPDF";
 
-import TransactionLogs from "./tables/TransactionLogs";
+import QueueLog from "./tables/QueueLog";
 import AuditTrail from "./tables/AuditTrail";
 import FleetRecords from "./tables/FleetRecords";
 import RequisitionRemittance from "./tables/RequisitionRemittance";
@@ -28,7 +28,7 @@ import "../../../styles/Report.css";
 const PAGE_SIZE = 30;
 const EMPTY_PAGE_META = { count: 0, totalPages: 1 };
 
-// Shapes a raw Ticket record into the flat row TransactionLogs/export expect.
+// Shapes a raw Ticket record into the flat row QueueLog/export expect.
 // ticket_id mirrors getTicketDisplayId() (queue/useQueue.jsx) so cancelled queue
 // tickets show their friendly bay code (e.g. "NA-2") instead of the raw
 // placeholder id they keep until a real ticket number is assigned at dispatch.
@@ -49,8 +49,8 @@ export default function Report() {
     startDate: getYearStart(),
     endDate: getToday(),
   });
-  const [transactionData, setTransactionData] = useState([]);
-  const [transactionMeta, setTransactionMeta] = useState(EMPTY_PAGE_META);
+  const [queueData, setQueueData] = useState([]);
+  const [queueMeta, setQueueMeta] = useState(EMPTY_PAGE_META);
 
   const [roamingData, setRoamingData] = useState([]);
   const [roamingMeta, setRoamingMeta] = useState(EMPTY_PAGE_META);
@@ -86,7 +86,7 @@ export default function Report() {
   // Raw page fetchers — return data instead of touching state, so the "View All"
   // modal in each table can browse further pages without disturbing the
   // top-30 preview shown on the main card.
-  const fetchTransactionRaw = useCallback(async (page = 1) => {
+  const fetchQueueRaw = useCallback(async (page = 1) => {
     const qs = buildParams();
     const res = await authFetch(
       `/tickets/?mode=QUEUE&page=${page}&page_size=${PAGE_SIZE}${qs ? `&${qs}` : ""}`,
@@ -132,16 +132,16 @@ export default function Report() {
     };
   }, [buildParams]);
 
-  const fetchTransactionPage = useCallback(async () => {
+  const fetchQueuePage = useCallback(async () => {
     try {
-      const data = await fetchTransactionRaw(1);
-      setTransactionData(data.results);
-      setTransactionMeta({ count: data.count, totalPages: data.totalPages });
+      const data = await fetchQueueRaw(1);
+      setQueueData(data.results);
+      setQueueMeta({ count: data.count, totalPages: data.totalPages });
     } catch {
-      console.error("Failed to load transaction logs");
+      console.error("Failed to load queue log");
       setError("Failed to load report data. Check your API connection.");
     }
-  }, [fetchTransactionRaw]);
+  }, [fetchQueueRaw]);
 
   const fetchRoamingPage = useCallback(async () => {
     try {
@@ -239,7 +239,7 @@ export default function Report() {
 
   // Full date-filtered range, ignoring pagination — used only when exporting,
   // so CSV/PDF stay complete even though the on-screen table only loads one page.
-  const fetchTransactionExportRows = useCallback(async () => {
+  const fetchQueueExportRows = useCallback(async () => {
     const qs = buildParams();
     const res = await authFetch(`/tickets/?mode=QUEUE${qs ? `&${qs}` : ""}`);
     const data = await res.json();
@@ -282,7 +282,7 @@ export default function Report() {
   useEffect(() => {
     setLoading(true);
     setError("");
-    Promise.all([fetchTransactionPage(), fetchRoamingPage(), fetchAuditPage()]).finally(() =>
+    Promise.all([fetchQueuePage(), fetchRoamingPage(), fetchAuditPage()]).finally(() =>
       setLoading(false),
     );
     fetchVehicles();
@@ -314,7 +314,7 @@ export default function Report() {
     setLoading(true);
     setError("");
     Promise.all([
-      fetchTransactionPage(),
+      fetchQueuePage(),
       fetchRoamingPage(),
       fetchAuditPage(),
       fetchRequisitionPage(),
@@ -426,17 +426,17 @@ export default function Report() {
     User: l.user,
   });
 
-  const handleExportLogsCSV = async (search = "") => {
-    const rows = await fetchTransactionExportRows();
+  const handleExportQueueCSV = async (search = "") => {
+    const rows = await fetchQueueExportRows();
     exportCSV(
-      rows.filter((l) => matchesLogRow(l, search)).map(buildLogExportRow),
-      `transaction_logs_${Date.now()}.csv`,
+      rows.filter((l) => matchesQueueRow(l, search)).map(buildLogExportRow),
+      `terminal_queue_log_${Date.now()}.csv`,
     );
   };
 
-  const handleExportLogsPDF = async (search = "") => {
-    const rows = await fetchTransactionExportRows();
-    exportTablePDF(rows.filter((l) => matchesLogRow(l, search)).map(buildLogExportRow), "Transaction Logs");
+  const handleExportQueuePDF = async (search = "") => {
+    const rows = await fetchQueueExportRows();
+    exportTablePDF(rows.filter((l) => matchesQueueRow(l, search)).map(buildLogExportRow), "Terminal Queue Log");
   };
 
   const buildRoamingExportRow = (t) => ({
@@ -575,18 +575,18 @@ export default function Report() {
         </div>
       </div>
 
-      <TransactionLogs
-        logsData={transactionData}
-        logsMeta={transactionMeta}
-        onLogsFetchPage={fetchTransactionRaw}
-        onExportLogsCSV={handleExportLogsCSV}
-        onExportLogsPDF={handleExportLogsPDF}
+      <QueueLog
+        queueData={queueData}
+        queueMeta={queueMeta}
+        onQueueFetchPage={fetchQueueRaw}
+        onExportQueueCSV={handleExportQueueCSV}
+        onExportQueuePDF={handleExportQueuePDF}
         roamingData={roamingData}
         roamingMeta={roamingMeta}
         onRoamingFetchPage={fetchRoamingRaw}
         onExportRoamingCSV={handleExportRoamingCSV}
         onExportRoamingPDF={handleExportRoamingPDF}
-        onLogsFetchAll={fetchTransactionExportRows}
+        onQueueFetchAll={fetchQueueExportRows}
         onRoamingFetchAll={fetchRoamingExportRows}
         STATUS_COLORS={STATUS_COLORS}
         pageSize={PAGE_SIZE}
@@ -625,6 +625,7 @@ export default function Report() {
         visibleDrivers={showAllDrivers ? drivers : drivers.slice(0, 5)}
         handleExportDriversCSV={handleExportDriversCSV}
         handleExportDriversPDF={handleExportDriversPDF}
+        pageSize={PAGE_SIZE}
       />
 
       <AuditTrail

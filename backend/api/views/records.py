@@ -137,6 +137,10 @@ def dashboard_stats(request):
     })
 
 
+# Used when a route has no manually configured estimated_loading_minutes.
+DEFAULT_ESTIMATED_LOADING_MINUTES = 5
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def public_queue(request):
@@ -145,15 +149,27 @@ def public_queue(request):
         tickets__status='QUEUED',
         is_archived=False
     ).distinct().select_related('route', 'active_driver').annotate(
-        _queue_time=Min('tickets__issued_at', filter=Q(tickets__status='QUEUED'))
+        _queue_time=Min('tickets__issued_at', filter=Q(tickets__status='QUEUED')),
+        # Set only for whichever vehicle is currently first-in-line for its
+        # route (see promote_queue_front in views/helpers.py) — that's the one
+        # actually in the loading zone, so its estimate should count from here,
+        # not from when it originally joined the queue. Falls back to
+        # _queue_time below for legacy rows queued before this field existed.
+        _loading_started=Min('tickets__loading_started_at', filter=Q(tickets__status='QUEUED')),
     ).order_by('_queue_time')
 
     data = []
     for vehicle in vehicles_with_queued_tickets:
         route_name = vehicle.route.full_name if vehicle.route else 'No Route'
         departure_time = None
-        if vehicle._queue_time:
-            local_dt = vehicle._queue_time + timedelta(hours=8)
+        loading_start = vehicle._loading_started or vehicle._queue_time
+        if loading_start:
+            est_minutes = (
+                vehicle.route.estimated_loading_minutes
+                if vehicle.route and vehicle.route.estimated_loading_minutes
+                else DEFAULT_ESTIMATED_LOADING_MINUTES
+            )
+            local_dt = loading_start + timedelta(minutes=est_minutes) + timedelta(hours=8)
             departure_time = local_dt.strftime('%I:%M %p')
 
         data.append({

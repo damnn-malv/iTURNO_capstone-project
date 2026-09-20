@@ -669,20 +669,8 @@
 
 .drv-profile-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
   gap: 12px;
-}
-
-@media (max-width: 620px) {
-  .drv-profile-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (max-width: 480px) {
-  .drv-profile-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* ── Photo lightbox ── */

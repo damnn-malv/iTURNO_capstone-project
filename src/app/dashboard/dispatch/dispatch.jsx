@@ -21,6 +21,8 @@ function Dispatch() {
 
   const [swapTarget, setSwapTarget] = useState(null);
   const [swapDriverId, setSwapDriverId] = useState("");
+  const [swapDriverQuery, setSwapDriverQuery] = useState("");
+  const [showSwapDriverDropdown, setShowSwapDriverDropdown] = useState(false);
   const [swapError, setSwapError] = useState("");
   const [swapping, setSwapping] = useState(false);
 
@@ -166,9 +168,14 @@ function Dispatch() {
   // Server already filters to status=ACTIVE — see fetchData().
   const activeDrivers = drivers;
 
+  const swapDriverResults = activeDrivers.filter((d) =>
+    d.name.toLowerCase().includes(swapDriverQuery.toLowerCase()),
+  );
+
   const openSwapModal = (vehicle) => {
     setSwapTarget(vehicle);
     setSwapDriverId("");
+    setSwapDriverQuery("");
     setSwapError("");
   };
 
@@ -176,7 +183,16 @@ function Dispatch() {
     if (swapping) return;
     setSwapTarget(null);
     setSwapDriverId("");
+    setSwapDriverQuery("");
+    setShowSwapDriverDropdown(false);
     setSwapError("");
+  };
+
+  const selectSwapDriver = (driver) => {
+    setSwapDriverId(driver.id);
+    setSwapDriverQuery(driver.name);
+    setShowSwapDriverDropdown(false);
+    if (swapError) setSwapError("");
   };
 
   const handleConfirmSwap = async () => {
@@ -768,22 +784,43 @@ function Dispatch() {
                 <label className="dispatch-modal-label">
                   New Driver <span className="dispatch-modal-required">*</span>
                 </label>
-                <select
-                  className="dispatch-modal-select"
-                  value={swapDriverId}
-                  onChange={(e) => {
-                    setSwapDriverId(e.target.value);
-                    if (swapError) setSwapError("");
-                  }}
-                  disabled={swapping}
-                >
-                  <option value="">— Select a driver —</option>
-                  {activeDrivers.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="dispatch-driver-combobox">
+                  <input
+                    type="text"
+                    className="dispatch-modal-select"
+                    placeholder="Type to search drivers…"
+                    value={swapDriverQuery}
+                    onChange={(e) => {
+                      setSwapDriverQuery(e.target.value);
+                      setShowSwapDriverDropdown(true);
+                      if (swapDriverId) setSwapDriverId("");
+                    }}
+                    onFocus={() => setShowSwapDriverDropdown(true)}
+                    onBlur={() =>
+                      setTimeout(() => setShowSwapDriverDropdown(false), 150)
+                    }
+                    disabled={swapping}
+                  />
+                  {showSwapDriverDropdown && (
+                    <div className="dispatch-driver-dropdown">
+                      {swapDriverResults.length === 0 ? (
+                        <div className="dispatch-driver-dropdown-empty">
+                          No matching drivers
+                        </div>
+                      ) : (
+                        swapDriverResults.map((d) => (
+                          <div
+                            key={d.id}
+                            className="dispatch-driver-dropdown-item"
+                            onMouseDown={() => selectSwapDriver(d)}
+                          >
+                            {d.name}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
                 {swapError && (
                   <span className="dispatch-modal-field-error">
                     {swapError}
