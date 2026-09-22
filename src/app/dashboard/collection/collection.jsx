@@ -327,7 +327,7 @@ function Collection() {
                         "Vehicle",
                         "Driver",
                         "Issued By",
-                        "Verified",
+                        
                       ].map((h) => (
                         <th key={h}>{h}</th>
                       ))}
@@ -384,19 +384,7 @@ function Collection() {
                               <span className="col-na">N/A</span>
                             )}
                           </td>
-                          <td>
-                            <span
-                              className={`col-verified ${
-                                ticket.status === "CANCELLED"
-                                  ? "col-verified--cancelled"
-                                  : "col-verified--yes"
-                              }`}
-                            >
-                              {ticket.status === "CANCELLED"
-                                ? "✗ Cancelled"
-                                : "✓ Collected"}
-                            </span>
-                          </td>
+                         
                         </tr>
                       ))
                     )}

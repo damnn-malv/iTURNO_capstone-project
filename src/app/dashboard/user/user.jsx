@@ -124,8 +124,10 @@ function User({ userRole }) {
       if (!userData) throw new Error("Failed to save user");
       fetchUsers();
       closeModal();
+      showToast(editing ? "Staff account updated successfully" : "Staff account registered successfully");
     } catch (err) {
       setError(err.message);
+      showToast(err.message || "Failed to save staff account", "info");
     }
   };
 
