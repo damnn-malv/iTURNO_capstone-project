@@ -33,8 +33,8 @@ function Collection() {
   } = useCollection();
 
   const today = getTodayDateString(new Date());
-  const [activeTab, setActiveTab] = useState("collection");
-  const activeError = activeTab === "collection" ? error : roamingError;
+  const [activeTab, setActiveTab] = useState("queue");
+  const activeError = activeTab === "queue" ? error : roamingError;
 
   return (
     <div className="col-page">
@@ -74,14 +74,14 @@ function Collection() {
           {/* Tab bar */}
           <div className="col-tabs">
             <button
-              className={`col-tab ${activeTab === "collection" ? "col-tab--active" : ""}`}
-              onClick={() => setActiveTab("collection")}
+              className={`col-tab ${activeTab === "queue" ? "col-tab--active" : ""}`}
+              onClick={() => setActiveTab("queue")}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
               </svg>
-              Collection Log
+              Terminal Queue Log
             </button>
             <button
               className={`col-tab ${activeTab === "roaming" ? "col-tab--active" : ""}`}
@@ -130,12 +130,12 @@ function Collection() {
             )}
           </div>
 
-          {/* ── Collection Log Tab ── */}
-          {activeTab === "collection" && (
+          {/* ── Terminal Queue Log Tab ── */}
+          {activeTab === "queue" && (
             <>
               <div className="col-card-header col-card-header--color col-log-header">
                 <div>
-                  <span className="col-card-title">Collection Log</span>
+                  <span className="col-card-title">Terminal Queue Log</span>
                   <p className="col-card-desc">
                     Recent collections and verification status
                   </p>
@@ -327,7 +327,7 @@ function Collection() {
                         "Vehicle",
                         "Driver",
                         "Issued By",
-                        "Verified",
+                        
                       ].map((h) => (
                         <th key={h}>{h}</th>
                       ))}
@@ -384,19 +384,7 @@ function Collection() {
                               <span className="col-na">N/A</span>
                             )}
                           </td>
-                          <td>
-                            <span
-                              className={`col-verified ${
-                                ticket.status === "CANCELLED"
-                                  ? "col-verified--cancelled"
-                                  : "col-verified--yes"
-                              }`}
-                            >
-                              {ticket.status === "CANCELLED"
-                                ? "✗ Cancelled"
-                                : "✓ Collected"}
-                            </span>
-                          </td>
+                         
                         </tr>
                       ))
                     )}

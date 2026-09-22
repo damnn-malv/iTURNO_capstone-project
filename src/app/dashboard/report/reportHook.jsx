@@ -94,7 +94,7 @@ function fieldsMatch(fields, query) {
   return fields.some((v) => v != null && String(v).toLowerCase().includes(q));
 }
 
-export const matchesLogRow = (l, query) =>
+export const matchesQueueRow = (l, query) =>
   fieldsMatch([l.timestamp, l.ticket_id, l.action, l.driver, l.vehicle, l.route, l.user], query);
 
 export const matchesRoamingRow = (t, query) =>

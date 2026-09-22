@@ -1,7 +1,7 @@
 """Wipe transactional/fleet data and reseed North Central Terminal (San Fernando,
-La Union) with a dummy fleet: 40 vehicles, 50 drivers, routes for real La Union
-jeepney lines into the terminal, and ~4 months of backdated ticket history for
-scale/stress testing.
+La Union) with a dummy fleet: 40 vehicles, 50 drivers, spread across whatever
+routes are currently registered and active, and ~4 months of backdated ticket
+history for scale/stress testing.
 
 Leaves User/Route(existing)/PUVType/TicketForm/TerminalPrice/WipMode untouched —
 those are the Supabase-authoritative PULL_MODELS (see api/sync/registry.py),
@@ -39,20 +39,6 @@ from api.models import (
     AuditLog, Collection, Deposit, Driver, PUVType, RemittanceBatch, Requisition,
     Route, SyncQueue, Ticket, TicketForm, TicketSeries, User, Vehicle,
 )
-
-TOWNS = [
-    "Bauang", "Agoo", "Aringay", "Caba", "Naguilian", "San Juan", "Bacnotan",
-    "Luna", "Rosario", "Santo Tomas", "Tubao", "San Gabriel", "Balaoan",
-    "Bagulin", "Sudipen", "Santol", "Pugo", "Burgos", "Bangar",
-]
-
-# Closer/busier towns get proportionally more vehicles on their route.
-ROUTE_WEIGHTS = {
-    "Bauang": 5, "Agoo": 4, "Naguilian": 4, "San Juan": 4, "Bacnotan": 4,
-    "Aringay": 3, "Caba": 3, "Rosario": 3, "Santo Tomas": 2, "Luna": 2,
-    "Tubao": 2, "San Gabriel": 1, "Balaoan": 2, "Bagulin": 1, "Sudipen": 1,
-    "Santol": 1, "Pugo": 1, "Burgos": 1, "Bangar": 1,
-}
 
 BARANGAYS = [
     "Poblacion", "San Vicente", "San Isidro", "San Jose", "Santa Rita",
@@ -94,8 +80,13 @@ def _rand_plate(used):
             return plate
 
 
+# Fixed test-number pool -- matches the numbers actually used for testing
+# instead of generating unreachable random ones.
+CONTACT_NUMBERS = ["09763317056", "09953658074", "09456780183"]
+
+
 def _rand_contact():
-    return f"09{random.randint(100000000, 999999999)}"
+    return random.choice(CONTACT_NUMBERS)
 
 
 def _denominate(total):
@@ -124,13 +115,21 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--dry-run", action="store_true", help="Print what would happen without writing anything.")
         parser.add_argument("--months", type=int, default=4, help="How many months of ticket history to backdate.")
-        parser.add_argument("--daily-avg", type=int, default=300, help="Approximate average weekday ticket count.")
+        parser.add_argument(
+            "--daily-avg", type=int, default=170,
+            help="Average daily tickets, combining roaming (UNLOAD) and queueing (QUEUE) modes.",
+        )
+        parser.add_argument(
+            "--daily-cap", type=int, default=300,
+            help="Hard cap on tickets per day, matching the terminal's observed busiest days.",
+        )
         parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducible runs.")
 
     def handle(self, *args, **options):
         dry_run = options["dry_run"]
         months = options["months"]
         daily_avg = options["daily_avg"]
+        daily_cap = options["daily_cap"]
         if options["seed"] is not None:
             random.seed(options["seed"])
 
@@ -138,7 +137,7 @@ class Command(BaseCommand):
         with transaction.atomic():
             ctx = self._setup(dry_run)
             if ctx is not None and not dry_run:
-                ticket_stats = self._generate_history(ctx, months, daily_avg)
+                ticket_stats = self._generate_history(ctx, months, daily_avg, daily_cap)
             if dry_run:
                 transaction.set_rollback(True)
 
@@ -164,12 +163,14 @@ class Command(BaseCommand):
 
         ticket_forms = list(TicketForm.objects.all())
         puv_types = list(PUVType.objects.all())
+        jeepney = next((p for p in puv_types if p.name == "Jeepney"), puv_types[0] if puv_types else None)
+        routes = list(Route.objects.filter(is_active=True))
         admin_user = User.objects.filter(role="SUPERADMIN").first() or User.objects.first()
         staff_users = list(User.objects.filter(role__in=["PERSONNEL", "SUPERVISOR", "MANAGER"])) or [admin_user]
 
-        if not ticket_forms or not puv_types or not admin_user:
+        if not ticket_forms or not puv_types or not admin_user or not routes:
             self.stderr.write(self.style.ERROR(
-                "Missing reference data (TicketForm/PUVType/User) -- run this after normal app setup, not on a bare DB."
+                "Missing reference data (TicketForm/PUVType/Route/User) -- run this after normal app setup, not on a bare DB."
             ))
             return None
 
@@ -190,18 +191,17 @@ class Command(BaseCommand):
         Requisition.objects.all().delete()
         AuditLog.objects.all().delete()
 
-        # --- Routes -----------------------------------------------------
-        routes_by_town = {}
-        for town in TOWNS:
-            route, _ = Route.objects.get_or_create(origin=town)
-            routes_by_town[town] = route
+        # --- Routes -- reuse whatever's currently registered and active,
+        # instead of a hardcoded town list that drifts out of sync with it.
+        routes_by_town = {r.origin: r for r in routes}
+        towns = list(routes_by_town.keys())
 
         # --- Drivers (50) -------------------------------------------------
         drivers = []
         for i in range(1, 51):
             gender = random.choice(["MALE", "MALE", "FEMALE"])  # jeepney driving skews male, not exclusively
             first, middle, last = _rand_name(gender)
-            town = random.choice(TOWNS)
+            town = random.choice(towns)
             driver = Driver(
                 iwp_number=f"IWP-{2024 + (i % 3)}-{i:04d}",
                 first_name=first,
@@ -225,7 +225,6 @@ class Command(BaseCommand):
                 d.save(update_fields=["qr_code"])
 
         # --- Vehicles (40) --------------------------------------------------
-        weighted_towns = [t for t, w in ROUTE_WEIGHTS.items() for _ in range(w)]
         used_plates = set()
         vehicles = []
         # Only ACTIVE drivers get assigned as a vehicle's active_driver -- an
@@ -234,12 +233,11 @@ class Command(BaseCommand):
         # leave that vehicle unable to ever queue.
         assignable_drivers = [d for d in drivers if d.status == "ACTIVE"]
         for i in range(40):
-            town = random.choice(weighted_towns)
-            puv = puv_types[0] if random.random() < 0.85 and any(p.name == "Jeepney" for p in puv_types) else random.choice(puv_types)
+            town = random.choice(towns)
             driver = assignable_drivers[i] if i < len(assignable_drivers) else None
             vehicle = Vehicle(
                 plate_number=_rand_plate(used_plates),
-                transportation_id=puv,
+                transportation_id=jeepney,  # the fleet is Jeepney-only in practice
                 franchise_number=f"{random.randint(2018, 2025)}-LTFRB-{random.randint(10000, 99999)}",
                 route=routes_by_town[town],
                 operator_address=f"{random.choice(BARANGAYS)}, {town}, La Union",
@@ -308,9 +306,10 @@ class Command(BaseCommand):
             "staff_users": staff_users,
             "vehicles": vehicles,
             "series_list": series_list,
+            "route_count": len(towns),
         }
 
-    def _generate_history(self, ctx, months, daily_avg):
+    def _generate_history(self, ctx, months, daily_avg, daily_cap):
         ticket_forms = ctx["ticket_forms"]
         staff_users = ctx["staff_users"]
         series_list = ctx["series_list"]
@@ -330,18 +329,18 @@ class Command(BaseCommand):
         while day <= today:
             with transaction.atomic():
                 self._generate_day(
-                    day, today, daily_avg, available_vehicles, ticket_forms, staff_users,
+                    day, today, daily_avg, daily_cap, available_vehicles, ticket_forms, staff_users,
                     series_cursor, series_by_form, ticket_stats,
                 )
             day += timedelta(days=1)
 
         return ticket_stats
 
-    def _generate_day(self, day, today, daily_avg, available_vehicles, ticket_forms, staff_users,
+    def _generate_day(self, day, today, daily_avg, daily_cap, available_vehicles, ticket_forms, staff_users,
                        series_cursor, series_by_form, ticket_stats):
         is_weekend = day.weekday() >= 5
         base = daily_avg * (0.5 if is_weekend else 1.0)
-        day_count = max(1, int(random.gauss(base, base * 0.15)))
+        day_count = min(daily_cap, max(1, int(random.gauss(base, base * 0.15))))
 
         day_tickets = []
         day_form_totals = {}  # form_id -> [amount_sum, min_no, max_no]
@@ -448,7 +447,7 @@ class Command(BaseCommand):
             f"{'[DRY RUN] ' if dry_run else ''}"
             f"Wiped: {before['vehicles']} vehicles, {before['drivers']} drivers, {before['tickets']} tickets, "
             f"{before['requisitions']} requisitions, {before['remittance_batches']} remittance batches.\n"
-            f"Reseeded: {len(TOWNS)} routes, 50 drivers, 40 vehicles, "
+            f"Reseeded: {ctx['route_count']} routes, 50 drivers, 40 vehicles, "
             f"{len(requisitions)} requisitions (ids {old_max_requisition_id + 1}-{old_max_requisition_id + len(requisitions)}), "
             f"{ticket_stats['created']} tickets across {ticket_stats['days']} days."
         ))

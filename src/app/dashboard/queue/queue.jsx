@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQueue, formatTime, getTicketDisplayId } from "./useQueue";
 import "../../../styles/Queue.css";
 import {
@@ -82,6 +82,16 @@ function Queue({ userRole }) {
       selectVehicleById(null);
     }
   };
+
+  // Ticket issuance clears the selected vehicle/driver in the hook, but the
+  // plate/driver search inputs are local text state here — clear them too so
+  // the fields are ready for the next entry instead of showing stale text.
+  useEffect(() => {
+    if (successMessage) {
+      setVehicleSearch("");
+      setDriverSearch("");
+    }
+  }, [successMessage]);
 
 
   const cancelledTickets = filteredTickets.filter((t) => t.status === "CANCELLED");

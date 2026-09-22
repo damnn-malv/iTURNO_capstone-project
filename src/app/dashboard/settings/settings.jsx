@@ -113,6 +113,8 @@ function Settings() {
 
   const [routes, setRoutes] = useState([]);
   const [newOrigin, setNewOrigin] = useState("");
+  const [routeEstimateInputs, setRouteEstimateInputs] = useState({});
+  const [savingRouteEstimateId, setSavingRouteEstimateId] = useState(null);
 
   const [ticketForms, setTicketForms] = useState([]);
   const [newTicketForm, setNewTicketForm] = useState("");
@@ -216,6 +218,29 @@ function Settings() {
       setRoutes(routes.filter(r => r.id !== id));
     } catch (err) {
       console.error("Failed to delete route:", err);
+    }
+  };
+
+  const handleSaveRouteEstimate = async (route) => {
+    const raw = routeEstimateInputs[route.id];
+    const minutes = raw === "" || raw == null ? null : parseInt(raw, 10);
+    if (raw !== "" && raw != null && (isNaN(minutes) || minutes < 0)) {
+      showToast?.("Estimated loading time must be a whole number of minutes", "info");
+      return;
+    }
+    setSavingRouteEstimateId(route.id);
+    try {
+      const updated = await apiService.updateRoute(route.id, {
+        origin: route.origin,
+        estimated_loading_minutes: minutes,
+      });
+      setRoutes(routes.map(r => (r.id === route.id ? updated : r)));
+      showToast?.("Estimated loading time saved", "success");
+    } catch (err) {
+      console.error("Failed to save estimated loading time:", err);
+      showToast?.(err.message || "Failed to save estimated loading time", "info");
+    } finally {
+      setSavingRouteEstimateId(null);
     }
   };
 
@@ -514,28 +539,61 @@ function Settings() {
                   <thead>
                     <tr>
                       <th>Route</th>
+                      <th>Est. Loading Time (min)</th>
                       <th className="set-th-actions">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredRoutes.length === 0 ? (
                       <tr>
-                        <td colSpan="2" className="set-table-state">
+                        <td colSpan="3" className="set-table-state">
                           {routes.length === 0 ? "No routes configured" : "No matches found"}
                         </td>
                       </tr>
                     ) : (
-                      filteredRoutes.map(route => (
-                        <tr key={route.id} className="set-row">
-                          <td className="set-cell-label">{route.full_name}</td>
-                          <td className="set-cell-actions">
-                            <button className="set-delete-btn" onClick={() => handleDeleteRoute(route.id)}>
-                              <DeleteIcon />
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                      filteredRoutes.map(route => {
+                        const draft = routeEstimateInputs[route.id];
+                        const inputValue = draft !== undefined ? draft : (route.estimated_loading_minutes ?? "");
+                        return (
+                          <tr key={route.id} className="set-row">
+                            <td className="set-cell-label">{route.full_name}</td>
+                            <td className="set-cell-meta">
+                              <div className="set-add-row" style={{ gap: 8 }}>
+                                <input
+                                  type="number"
+                                  className="set-input"
+                                  style={{ width: 90 }}
+                                  min={0}
+                                  step={1}
+                                  placeholder={`Default ${5}`}
+                                  value={inputValue}
+                                  onChange={(e) =>
+                                    setRouteEstimateInputs({ ...routeEstimateInputs, [route.id]: e.target.value })
+                                  }
+                                />
+                                <button
+                                  className="set-add-btn"
+                                  onClick={() => handleSaveRouteEstimate(route)}
+                                  disabled={savingRouteEstimateId === route.id}
+                                >
+                                  {savingRouteEstimateId === route.id ? "Saving..." : "Save"}
+                                </button>
+                                {route.avg_loading_minutes != null && (
+                                  <span className="set-rewards-note" style={{ margin: 0 }}>
+                                    Recent avg: {route.avg_loading_minutes} min
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="set-cell-actions">
+                              <button className="set-delete-btn" onClick={() => handleDeleteRoute(route.id)}>
+                                <DeleteIcon />
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>

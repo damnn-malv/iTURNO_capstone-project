@@ -18,7 +18,7 @@ from rest_framework.views import APIView
 from ..models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, RemittanceBatch, TicketForm, Requisition, TicketSeries, RoamingLog, TerminalPrice, WipMode
 from ..serializers import UserSerializer, DriverSerializer, VehicleSerializer, RouteSerializer, TicketSerializer, TicketPriceSerializer, PUVTypeSerializer, RemittanceBatchSerializer, TicketFormSerializer, RequisitionSerializer, TicketSeriesSerializer, RoamingLogSerializer
 from ..sms import send_sms_async, queue_next_message
-from .helpers import record_audit_log, expire_stale_queue_tickets, parse_date_start, parse_date_end, paginate_request
+from .helpers import record_audit_log, expire_stale_queue_tickets, parse_date_start, parse_date_end, paginate_request, promote_queue_front
 from .remittance_export import remittance_xlsx_response
 
 
@@ -360,6 +360,7 @@ class TicketViewSet(viewsets.ModelViewSet):
             driver = placeholder.driver
             route = placeholder.route
             mode = placeholder.mode
+            loading_started_at = placeholder.loading_started_at
             active_user = request.user if request.user.is_authenticated else None
 
             placeholder.delete()
@@ -377,6 +378,7 @@ class TicketViewSet(viewsets.ModelViewSet):
                     is_verified=True,
                     collection_amount=price,
                     dispatched_at=dispatched_at,
+                    loading_started_at=loading_started_at,
                     issuance_group=issuance_group,
                 )
                 for series, ticket_id in units
@@ -386,10 +388,12 @@ class TicketViewSet(viewsets.ModelViewSet):
             vehicle.save(update_fields=['status', 'updated_at'])
 
             # Whoever is now first in line for this route (if anyone) just
-            # became #1 as a result of this dispatch — let them know. Sent
-            # async, after commit, so this request doesn't block on
+            # reached the loading zone as a result of this dispatch — start
+            # their estimated-departure clock now, and let them know. The SMS
+            # is sent async, after commit, so this request doesn't block on
             # PhilSMS's HTTP round trip.
             if route:
+                promote_queue_front(route)
                 new_first = Ticket.objects.filter(
                     route=route, mode='QUEUE', status='QUEUED',
                 ).order_by('issued_at').first()
@@ -483,8 +487,16 @@ class TicketViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         was_verified = serializer.instance.is_verified
+        was_queued = serializer.instance.status == 'QUEUED'
+        route = serializer.instance.route
         ticket = serializer.save()
-        # Ticket issuance/status changes already appear in Transaction Logs —
+
+        # A cancelled front-of-line ticket frees up the loading zone for
+        # whoever's next — same promotion that happens on dispatch.
+        if was_queued and ticket.status == 'CANCELLED' and route:
+            promote_queue_front(route)
+
+        # Ticket issuance/status changes already appear in the Terminal Queue Log —
         # the audit trail only needs to capture who verified/collected a ticket.
         if ticket.is_verified and not was_verified:
             record_audit_log(

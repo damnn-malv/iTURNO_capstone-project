@@ -702,37 +702,38 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                       <p className="drv-field-error">{fieldErrors.contact}</p>
                     )}
                   </div>
-                  <div className="drv-field">
-                    <label className="drv-label">Status</label>
-                    <select
-                      className="drv-select"
-                      value={form.status}
-                      onChange={(e) => setForm({ ...form, status: e.target.value })}
-                    >
-                      <option value="ACTIVE">Active</option>
-                      <option value="INACTIVE">Inactive</option>
-                    </select>
-                    {editing &&
-                      isDriverOnActiveTicket(editing.id) &&
-                      form.status === "INACTIVE" && (
-                        <p className="drv-warn-text">
-                          <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                          >
-                            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
-                            <path d="M12 9v4" />
-                            <path d="M12 17h.01" />
-                          </svg>
-                          This driver has an active ticket and cannot be set to
-                          Inactive.
-                        </p>
-                      )}
-                  </div>
+                  {editing && (
+                    <div className="drv-field">
+                      <label className="drv-label">Status</label>
+                      <select
+                        className="drv-select"
+                        value={form.status}
+                        onChange={(e) => setForm({ ...form, status: e.target.value })}
+                      >
+                        <option value="ACTIVE">Active</option>
+                        <option value="INACTIVE">Inactive</option>
+                      </select>
+                      {isDriverOnActiveTicket(editing.id) &&
+                        form.status === "INACTIVE" && (
+                          <p className="drv-warn-text">
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                              <path d="M12 9v4" />
+                              <path d="M12 17h.01" />
+                            </svg>
+                            This driver has an active ticket and cannot be set to
+                            Inactive.
+                          </p>
+                        )}
+                    </div>
+                  )}
                 </div>
               </div>
 

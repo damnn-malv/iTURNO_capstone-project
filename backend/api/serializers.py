@@ -251,6 +251,15 @@ class TicketSerializer(serializers.ModelSerializer):
                         message = queue_position_message(position, route.full_name)
                         transaction.on_commit(lambda: send_sms_async(driver.contact, message))
 
+            # Imported here (not at module level) to avoid a circular import —
+            # views/helpers.py doesn't depend on serializers, but api.views'
+            # package __init__ pulls in viewsets.py, which does. Uses
+            # vehicle.route (not the local `route`, which is only bound in the
+            # non-continuation branch above) so this is safe for every case.
+            if not is_roam and vehicle.route:
+                from .views.helpers import promote_queue_front
+                promote_queue_front(vehicle.route)
+
         return ticket
 
 class TicketPriceSerializer(serializers.ModelSerializer):
@@ -267,13 +276,31 @@ class RouteSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     checked_in_today = serializers.SerializerMethodField()
     revenue_in_range = serializers.SerializerMethodField()
+    avg_loading_minutes = serializers.SerializerMethodField()
 
     class Meta:
         model = Route
-        fields = ['id', 'origin', 'is_active', 'created_at', 'updated_at', 'full_name', 'checked_in_today', 'revenue_in_range']
+        fields = [
+            'id', 'origin', 'is_active', 'created_at', 'updated_at', 'full_name',
+            'checked_in_today', 'revenue_in_range', 'estimated_loading_minutes',
+            'avg_loading_minutes',
+        ]
 
     def get_full_name(self, obj):
         return f"{obj.origin} - San Fernando"
+
+    def get_avg_loading_minutes(self, obj):
+        # Recent-history reference for whoever is setting estimated_loading_minutes —
+        # computed on demand from the last 50 dispatches instead of a stored/rolling
+        # average, so this stays cheap no matter how much ticket history piles up.
+        recent = Ticket.objects.filter(
+            route=obj, status='COLLECTED',
+            loading_started_at__isnull=False, dispatched_at__isnull=False,
+        ).order_by('-dispatched_at').values_list('dispatched_at', 'loading_started_at')[:50]
+        durations = [(dispatched - started).total_seconds() for dispatched, started in recent]
+        if not durations:
+            return None
+        return round((sum(durations) / len(durations)) / 60, 1)
 
     def _get_range(self):
         now_ph = timezone.now() + timedelta(hours=8)

@@ -99,6 +99,11 @@ class Route(models.Model):
 
     origin = models.CharField(max_length=100, unique=True, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    # Manually configured turnaround estimate (minutes) used to project the next
+    # departure time once a vehicle reaches the front of this route's queue.
+    # Null falls back to a global default — see DEFAULT_ESTIMATED_LOADING_MINUTES
+    # in views/records.py.
+    estimated_loading_minutes = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -196,6 +201,12 @@ class Ticket(models.Model):
     collection_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True)
     is_verified = models.BooleanField(default=False, db_index=True)
     issued_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    # Set once this ticket's vehicle becomes first-in-line for its route (i.e.
+    # reaches the loading zone) — see promote_queue_front() in views/helpers.py.
+    # Carried over to the dispatched ticket so dispatched_at - loading_started_at
+    # gives the actual loading duration for that trip, without needing a
+    # separate duration column or table.
+    loading_started_at = models.DateTimeField(null=True, blank=True, db_index=True)
     dispatched_at = models.DateTimeField(null=True, blank=True)
     nullified_at = models.DateTimeField(null=True, blank=True)
     reason = models.TextField(blank=True)

@@ -4,7 +4,7 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
-from ..models import Ticket, TicketPrice, AuditLog, Vehicle
+from ..models import Ticket, TicketPrice, AuditLog, Vehicle, Route
 
 
 def parse_date_start(date_str):
@@ -66,6 +66,7 @@ def expire_stale_queue_tickets(actor=None):
             return
 
         vehicle_ids = set()
+        routes = set()
         reason = 'Auto-cancelled: vehicle was not dispatched before end of day.'
         now = timezone.now()
         logs = []
@@ -74,6 +75,8 @@ def expire_stale_queue_tickets(actor=None):
             ticket.reason = reason
             ticket.updated_at = now  # bulk_update bypasses auto_now, so set it explicitly
             vehicle_ids.add(ticket.vehicle_id)
+            if ticket.route_id:
+                routes.add(ticket.route_id)
             logs.append(AuditLog(
                 user=actor if actor and getattr(actor, 'is_authenticated', False) else None,
                 action='UPDATE',
@@ -92,6 +95,31 @@ def expire_stale_queue_tickets(actor=None):
         Vehicle.objects.filter(id__in=vehicle_ids, status='QUEUED').update(
             status='AVAILABLE', active_driver=F('owner_driver'), updated_at=timezone.now()
         )
+
+        # Whoever was behind an auto-cancelled front ticket just became first
+        # in line for their route.
+        for route in Route.objects.filter(id__in=routes):
+            promote_queue_front(route)
+
+
+def promote_queue_front(route):
+    """Mark whichever QUEUED ticket is now earliest-in-line for `route` as having
+    reached the loading zone, if it isn't marked already.
+
+    Call this right after a ticket is queued (it may already be the front) and
+    right after the previous front ticket leaves the queue (dispatch/cancel/
+    expiry), so the next vehicle's estimated-departure clock starts when it
+    actually reaches the front of the line — not back when it originally
+    joined the queue.
+    """
+    if not route:
+        return
+    front = Ticket.objects.filter(
+        route=route, mode='QUEUE', status='QUEUED',
+    ).order_by('issued_at').first()
+    if front and front.loading_started_at is None:
+        front.loading_started_at = timezone.now()
+        front.save(update_fields=['loading_started_at'])
 
 
 def record_audit_log(user, action, model_name, object_id='', object_repr='', changes=None):

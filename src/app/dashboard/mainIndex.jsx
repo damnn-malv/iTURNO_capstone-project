@@ -78,7 +78,6 @@ const ROLE_NAV = {
     "/dashboard/Collections",
     "/dashboard/Remittance",
     "/dashboard/Registry",
-    "/dashboard/StaffRegistry",
     "/dashboard/Reports",
     "/dashboard/Settings",
   ],
