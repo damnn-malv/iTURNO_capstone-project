@@ -185,9 +185,7 @@ function User({ userRole }) {
           <div className="usr-header-accent" />
           <div>
             <h1 className="usr-title">Staff Registry</h1>
-            <p className="usr-subtitle">
-              Manage system accounts and personnel roles
-            </p>
+            
           </div>
         </div>
         <div className="usr-header-right">

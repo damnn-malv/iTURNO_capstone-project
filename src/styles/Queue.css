@@ -330,13 +330,7 @@
   flex-wrap: wrap;
 }
 
-.queue-card-header--color {
-  border-left-color: var(--navy);
-}
 
-.dark .queue-card-header--color {
-  border-left-color: var(--gold);
-}
 
 .queue-card-title {
   display: block;

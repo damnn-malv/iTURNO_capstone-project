@@ -105,40 +105,11 @@
     border-color 0.25s;
 }
 
-.col-card-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-soft);
-  border-left: 4px solid transparent;
-}
-
-.col-card-header--color {
-  border-left-color: var(--navy);
-}
-
-.dark .col-card-header--color {
-  border-left-color: var(--gold);
-}
-
 .col-card-body {
   padding: 16px 20px;
 }
 .col-card-body--tight {
   padding: 14px 20px;
-}
-
-.col-card-title {
-  display: block;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-  margin-bottom: 3px;
-}
-
-.col-card-desc {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin: 0;
 }
 
 /* ── Revenue card ── */
@@ -233,19 +204,14 @@
   border-bottom-color: var(--gold);
 }
 
-/* ── Log card header ── */
-.col-log-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
 /* ── Search ── */
 .col-search-wrap {
   position: relative;
   flex-shrink: 0;
+}
+
+.col-date-search {
+  margin-left: auto;
 }
 
 .col-search-icon {
@@ -1151,9 +1117,9 @@
     padding: 20px 16px;
   }
 
-  .col-log-header {
-    flex-direction: column;
-    align-items: flex-start;
+  .col-date-search {
+    margin-left: 0;
+    width: 100%;
   }
 
   .col-search {

@@ -270,7 +270,7 @@ export default function Dashboard() {
           <div className="col-header-accent" />
           <div>
             <h1 className="col-title">Dashboard</h1>
-            <p className="col-subtitle">Overview of collection and activity</p>
+          
           </div>
         </div>
         <div className="col-header-right">
