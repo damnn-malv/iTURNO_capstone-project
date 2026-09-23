@@ -176,12 +176,7 @@ function PublicView() {
               {currentPage.map(([routeName, vehicles]) => (
                 <div className="lp-queue-card" key={routeName}>
                   <div className="lp-route-label-wrap">
-<<<<<<< HEAD
-                    <div className="lp-route-label-badge lp-route-label-badge--active">                      
-=======
                     <div className="lp-route-label-badge lp-route-label-badge--active">
-                      
->>>>>>> ddf855e3c7ddfbbc30bf31c8cace5c796b9e9659
                       {routeName}
                     </div>
                   </div>
