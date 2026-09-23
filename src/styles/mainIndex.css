@@ -133,6 +133,12 @@
 .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
 .sidebar-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
+.sidebar-nav-divider {
+  height: 1px;
+  margin: 8px 6px;
+  background: var(--border);
+}
+
 /* Nav link */
 .nav-link {
   display: flex;
@@ -427,4 +433,63 @@
   .sidebar {
     width: 84vw;
   }
+}
+
+/* Floating quick-scan button — desktop already has the header's "Mobile
+   Scan" button, so the FAB only exists at the mobile breakpoint. Bottom-right
+   is the default spot, but that's also where pagination/save controls tend
+   to sit, so the button is draggable (Assistive-Touch / Messenger-chat-head
+   style, wired in mainIndex.jsx): drag it once, it snaps to the nearest
+   edge and stays there on that device. It also dims itself while the page
+   scrolls so it doesn't sit at full strength over content being read. */
+.mobile-scan-fab {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .mobile-scan-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: none;
+    background: var(--navy);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    cursor: grab;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    z-index: 25;
+    opacity: 0.92;
+    transform: scale(1);
+    transition: opacity 0.25s ease, transform 0.25s ease, background 0.18s;
+  }
+
+  .mobile-scan-fab:active {
+    transform: scale(0.9);
+  }
+
+  .mobile-scan-fab-dimmed {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+
+  .mobile-scan-fab-dragging {
+    cursor: grabbing;
+    opacity: 1;
+    transition: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    transform: scale(1.08);
+  }
+}
+
+.dark .mobile-scan-fab {
+  background: var(--gold);
+  color: #1a1a2e;
 }

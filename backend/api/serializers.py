@@ -46,6 +46,11 @@ class UserSerializer(serializers.ModelSerializer):
 
 class DriverSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
+    iwp_number = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        validators=[UniqueValidator(queryset=Driver.objects.all(), message='A driver with that IWP number already exists.')],
+    )
 
     class Meta:
         model = Driver

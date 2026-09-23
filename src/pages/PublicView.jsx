@@ -8,11 +8,16 @@ import sfcLogo   from '../pictures/sfc-nobg-logo.png';
 import sfcBanner from '../pictures/sfc-nobg-banner.png';
 import sfcMain   from '../pictures/sfc-main.jpg';
 
+const ROUTES_PER_PAGE = 2;
+const ROTATE_INTERVAL_MS = 15000;
+
 function PublicView() {
   const [queue,          setQueue]          = useState([]);
   const [loadingQueue,   setLoadingQueue]   = useState(false);
   const [headerScrolled, setHeaderScrolled] = useState(false);
   const [now,            setNow]            = useState(new Date());
+  const [pageIndex,      setPageIndex]      = useState(0);
+  const [pageVisible,    setPageVisible]    = useState(true);
   const hasLoadedOnce = useRef(false);
 
   useEffect(() => {
@@ -69,6 +74,35 @@ function PublicView() {
   }, {});
   const queueGroupEntries = Object.entries(queueGrouped);
 
+  // Split the route tables into pages of ROUTES_PER_PAGE so the board can
+  // rotate through them like a revolving belt instead of cramming every
+  // route onto the screen at once.
+  const pages = [];
+  for (let i = 0; i < queueGroupEntries.length; i += ROUTES_PER_PAGE) {
+    pages.push(queueGroupEntries.slice(i, i + ROUTES_PER_PAGE));
+  }
+
+  // Keep the current page in range when the route count shrinks/grows
+  // (e.g. a route empties out and drops off the board).
+  useEffect(() => {
+    if (pageIndex >= pages.length) setPageIndex(0);
+  }, [pages.length, pageIndex]);
+
+  // Auto-advance the page on an interval, with a brief fade between pages.
+  useEffect(() => {
+    if (pages.length <= 1) return;
+    const rotateTimer = setInterval(() => {
+      setPageVisible(false);
+      setTimeout(() => {
+        setPageIndex((prev) => (prev + 1) % pages.length);
+        setPageVisible(true);
+      }, 250);
+    }, ROTATE_INTERVAL_MS);
+    return () => clearInterval(rotateTimer);
+  }, [pages.length]);
+
+  const currentPage = pages[pageIndex] || [];
+
   return (
     <div className="lp-root" style={{ backgroundImage: `url(${sfcMain})` }}>
 
@@ -108,14 +142,7 @@ function PublicView() {
             </div>
           </div>
 
-          {/* ── ROUTE QUEUES ── */}
-          <div className="lp-next-header">
-            <div className="lp-board-label">
-              <div className="lp-board-label__dot lp-board-label__dot--active" />
-              Route Queues
-            </div>
-          </div>
-
+        
           {loadingQueue ? (
             <div className="lp-queue-card">
               <div className="lp-queue-loading">
@@ -136,48 +163,62 @@ function PublicView() {
               </div>
             </div>
           ) : (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                gap: 20,
-              }}
-            >
-            {queueGroupEntries.map(([routeName, vehicles]) => (
-              <div className="lp-queue-card" key={routeName}>
-                <div className="lp-route-label-badge lp-route-label-badge--active" style={{ margin: '14px 16px' }}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
-                    <path d="M3 12h18M13 6l6 6-6 6"/>
-                  </svg>
-                  {routeName}
-                </div>
-                <div className="lp-table-wrap">
-                  <table className="lp-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Plate Number</th>
-                        <th>Driver</th>
-                        <th>Est. Departure</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {vehicles.map((v, idx) => (
-                        <tr key={v.id}>
-                          <td className="lp-td--num">{idx + 1}</td>
-                          <td><span className="lp-plate">{v.plate_number}</span></td>
-                          <td>{v.driver || <span className="lp-na">Unassigned</span>}</td>
-                          <td className="lp-td--time">
-                            {idx === 0 && v.departure_time ? v.departure_time : '—'}
-                          </td>
+            <>
+              <div
+                className="lp-carousel"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gap: 20,
+                  opacity: pageVisible ? 1 : 0,
+                }}
+              >
+              {currentPage.map(([routeName, vehicles]) => (
+                <div className="lp-queue-card" key={routeName}>
+                  <div className="lp-route-label-wrap">
+                    <div className="lp-route-label-badge lp-route-label-badge--active">                      
+                      {routeName}
+                    </div>
+                  </div>
+                  <div className="lp-table-wrap">
+                    <table className="lp-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Plate Number</th>
+                          <th>Driver</th>
+                          <th>Est. Departure</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {vehicles.map((v, idx) => (
+                          <tr key={v.id}>
+                            <td className="lp-td--num">{idx + 1}</td>
+                            <td><span className="lp-plate">{v.plate_number}</span></td>
+                            <td>{v.driver || <span className="lp-na">Unassigned</span>}</td>
+                            <td className="lp-td--time">
+                              {idx === 0 && v.departure_time ? v.departure_time : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
+              ))}
               </div>
-            ))}
-            </div>
+
+              {pages.length > 1 && (
+                <div className="lp-carousel-dots">
+                  {pages.map((_, idx) => (
+                    <span
+                      key={idx}
+                      className={`lp-carousel-dot ${idx === pageIndex ? 'lp-carousel-dot--active' : ''}`}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
         </div>

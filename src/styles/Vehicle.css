@@ -119,6 +119,12 @@
   color: #b91c1c;
 }
 
+.veh-alert--inline {
+  margin-bottom: 0;
+  padding: 10px 14px;
+  font-size: 12.5px;
+}
+
 /* ── Table card ── */
 .veh-card {
   background: var(--bg-surface);
