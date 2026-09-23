@@ -794,4 +794,7 @@
   .dashboard-chart-panel { flex: none; width: 100%; }
   .dashboard-routes-sidebar { flex: none; width: 100%; }
   .dashboard-insights-row { grid-template-columns: 1fr; }
+  /* Replaced by the always-on-top floating scan button (mainIndex.css) so
+     it stays reachable without hunting through the wrapped header row. */
+  .dashboard-scan-btn--mobile-scan { display: none; }
 }

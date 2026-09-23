@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Routes, Route, NavLink, useLocation } from "react-router-dom";
+import React, { useState, useEffect, useRef } from "react";
+import { Routes, Route, NavLink, useLocation, useNavigate } from "react-router-dom";
 import Dashboard from "./Dashboard";
 import Dispatch from "./dispatch/dispatch";
 import Requisition from "./requisition/requisition"
@@ -29,18 +29,40 @@ import GlobalNotices from "../../components/notices/GlobalNotices";
 import "./../../styles/mainIndex.css";
 import sfcLogo from "../../pictures/sfc-nobg-logo.png";
 
-const NAV_ITEMS = [
-  { to: "/dashboard", label: "Dashboard", Icon: DashboardIcon },
-  { to: "/dashboard/Requisition", label: "Ticket Requisition", Icon: RequisitionIcon },
-  { to: "/dashboard/Queue", label: "Queue Management", Icon: QueueIcon },
-  { to: "/dashboard/Dispatch", label: "Dispatch", Icon: DispatchIcon },
-  { to: "/dashboard/Collections", label: "Transaction", Icon: CollectionsIcon },
-  { to: "/dashboard/Remittance", label: "Remittance", Icon: RemittanceIcon },
-  { to: "/dashboard/Registry", label: "Fleet & Driver", Icon: VehicleIcon },
-  { to: "/dashboard/StaffRegistry", label: "User Management", Icon: UserIcon },
-  { to: "/dashboard/Reports", label: "Reports", Icon: ReportIcon },
-  { to: "/dashboard/Settings", label: "Settings", Icon: SettingsIcon },
+const NAV_GROUPS = [
+  [{ to: "/dashboard", label: "Dashboard", Icon: DashboardIcon }],
+  [
+    { to: "/dashboard/Requisition", label: "Ticket Requisition", Icon: RequisitionIcon },
+    { to: "/dashboard/Remittance", label: "Remittance", Icon: RemittanceIcon },
+  ],
+  [
+    { to: "/dashboard/Queue", label: "Queue Management", Icon: QueueIcon },
+    { to: "/dashboard/Dispatch", label: "Dispatch", Icon: DispatchIcon },
+    { to: "/dashboard/Collections", label: "Transaction", Icon: CollectionsIcon },
+  ],
+  [
+    { to: "/dashboard/Registry", label: "Fleet & Driver", Icon: VehicleIcon },
+    { to: "/dashboard/StaffRegistry", label: "User Management", Icon: UserIcon },
+  ],
+  [{ to: "/dashboard/Reports", label: "Reports", Icon: ReportIcon }],
+  [{ to: "/dashboard/Settings", label: "Settings", Icon: SettingsIcon }],
 ];
+
+// Scan FAB drag-to-reposition (Assistive-Touch / Messenger-chat-head style —
+// see mainIndex() below for why a fixed corner isn't enough on its own).
+const FAB_SIZE = 52;
+const FAB_MARGIN = 16;
+const FAB_TOP_MIN = 64; // clears the 56px mobile header
+const FAB_POS_KEY = "mobileScanFabPos";
+
+function clampFabPos({ x, y }) {
+  const maxX = window.innerWidth - FAB_SIZE - FAB_MARGIN;
+  const maxY = window.innerHeight - FAB_SIZE - FAB_MARGIN;
+  return {
+    x: Math.min(Math.max(x, FAB_MARGIN), Math.max(maxX, FAB_MARGIN)),
+    y: Math.min(Math.max(y, FAB_TOP_MIN), Math.max(maxY, FAB_TOP_MIN)),
+  };
+}
 
 const ROLE_LABELS = {
   SUPERADMIN: "Admin",
@@ -99,10 +121,106 @@ function mainIndex() {
   const showToast = useToast();
   const showConfirm = useConfirm();
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     setMobileNavOpen(false);
   }, [location.pathname]);
+
+  // Scan FAB dims itself while the page is being scrolled (same idea as
+  // Gmail/Twitter's mobile compose button) so it doesn't sit at full
+  // opacity over content the user is actively reading, then fades back in
+  // once scrolling settles.
+  const [fabDimmed, setFabDimmed] = useState(false);
+  const mainContentRef = useRef(null);
+  useEffect(() => {
+    const el = mainContentRef.current;
+    if (!el) return;
+    let hideTimer;
+    const handleScroll = () => {
+      setFabDimmed(true);
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => setFabDimmed(false), 900);
+    };
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", handleScroll);
+      clearTimeout(hideTimer);
+    };
+  }, []);
+
+  // A fixed corner covers whatever that page already puts there (pagination
+  // "Next" buttons, save bars, etc.), so the FAB is draggable instead —
+  // same idea as Android's Assistive Touch or Messenger's chat heads: the
+  // user drags it out of the way once, it snaps to the nearest edge, and
+  // the spot is remembered per device from then on.
+  const [fabPos, setFabPos] = useState(null); // null = default CSS corner
+  const [fabDragging, setFabDragging] = useState(false);
+  const fabDragRef = useRef({ moved: false });
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(FAB_POS_KEY));
+      if (saved && typeof saved.x === "number" && typeof saved.y === "number") {
+        setFabPos(clampFabPos(saved));
+      }
+    } catch {
+      // ignore malformed/blocked storage
+    }
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => setFabPos((pos) => (pos ? clampFabPos(pos) : pos));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const handleFabPointerDown = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    fabDragRef.current = {
+      moved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setFabDragging(true);
+  };
+
+  const handleFabPointerMove = (e) => {
+    const drag = fabDragRef.current;
+    if (!drag || e.buttons === 0) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) > 6) drag.moved = true;
+    if (drag.moved) {
+      setFabPos(clampFabPos({ x: e.clientX - drag.offsetX, y: e.clientY - drag.offsetY }));
+    }
+  };
+
+  const handleFabPointerUp = () => {
+    const drag = fabDragRef.current;
+    setFabDragging(false);
+    if (drag.moved) {
+      setFabPos((pos) => {
+        if (!pos) return pos;
+        const snappedX =
+          pos.x + FAB_SIZE / 2 < window.innerWidth / 2
+            ? FAB_MARGIN
+            : window.innerWidth - FAB_SIZE - FAB_MARGIN;
+        const snapped = clampFabPos({ x: snappedX, y: pos.y });
+        try {
+          localStorage.setItem(FAB_POS_KEY, JSON.stringify(snapped));
+        } catch {
+          // ignore blocked storage
+        }
+        return snapped;
+      });
+    } else {
+      navigate("/mobile-scan");
+    }
+  };
 
   // dark/light
   useEffect(() => {
@@ -234,21 +352,28 @@ function mainIndex() {
         {/* Nav links */}
         <nav className="sidebar-nav">
           <div className="sidebar-nav-label">Navigation</div>
-          {NAV_ITEMS.filter((item) =>
-            ROLE_NAV[userRole]?.includes(item.to),
-          ).map(({ to, label, Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === "/dashboard"}
-              className={({ isActive }) =>
-                isActive ? "nav-link nav-link-active" : "nav-link"
-              }
-            >
-              <Icon className="nav-link-icon" />
-              {label}
-            </NavLink>
-          ))}
+          {NAV_GROUPS.map((group) =>
+            group.filter((item) => ROLE_NAV[userRole]?.includes(item.to)),
+          )
+            .filter((group) => group.length > 0)
+            .map((group, idx) => (
+              <React.Fragment key={idx}>
+                {idx > 0 && <div className="sidebar-nav-divider" />}
+                {group.map(({ to, label, Icon }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={to === "/dashboard"}
+                    className={({ isActive }) =>
+                      isActive ? "nav-link nav-link-active" : "nav-link"
+                    }
+                  >
+                    <Icon className="nav-link-icon" />
+                    {label}
+                  </NavLink>
+                ))}
+              </React.Fragment>
+            ))}
         </nav>
 
         {/* User footer */}
@@ -329,7 +454,7 @@ function mainIndex() {
         </div>
       </aside>
 
-      <main className="main-content">
+      <main className="main-content" ref={mainContentRef}>
         <GlobalNotices canViewRemittance={canViewRemittance} />
         <Routes>
           <Route index element={<Dashboard />} />
@@ -354,6 +479,40 @@ function mainIndex() {
           <Route path="Settings" element={<Settings />} />
         </Routes>
       </main>
+
+      {/* Mobile-only quick access to the scanner — draggable FAB, not the
+          header button, so it stays reachable from any dashboard page and
+          any scroll position without permanently covering content. */}
+      {!mobileNavOpen && (
+        <button
+          type="button"
+          className={`mobile-scan-fab${fabDimmed ? " mobile-scan-fab-dimmed" : ""}${fabDragging ? " mobile-scan-fab-dragging" : ""}`}
+          style={fabPos ? { left: fabPos.x, top: fabPos.y, right: "auto", bottom: "auto" } : undefined}
+          onPointerDown={handleFabPointerDown}
+          onPointerMove={handleFabPointerMove}
+          onPointerUp={handleFabPointerUp}
+          onPointerCancel={handleFabPointerUp}
+          aria-label="Open mobile scan (drag to move)"
+          title="Mobile Scan — drag to move"
+        >
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+            <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+            <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+            <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+            <rect x="7" y="7" width="10" height="10" rx="1" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

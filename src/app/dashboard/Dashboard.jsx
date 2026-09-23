@@ -270,7 +270,7 @@ export default function Dashboard() {
           <div className="col-header-accent" />
           <div>
             <h1 className="col-title">Dashboard</h1>
-            <p className="col-subtitle">Overview of collection and activity</p>
+          
           </div>
         </div>
         <div className="col-header-right">
@@ -305,7 +305,10 @@ export default function Dashboard() {
             </svg>
             Public View
           </button>
-          <button className="dashboard-scan-btn" onClick={() => navigate("/mobile-scan")}>
+          <button
+            className="dashboard-scan-btn dashboard-scan-btn--mobile-scan"
+            onClick={() => navigate("/mobile-scan")}
+          >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M3 7V5a2 2 0 0 1 2-2h2" />
               <path d="M17 3h2a2 2 0 0 1 2 2v2" />

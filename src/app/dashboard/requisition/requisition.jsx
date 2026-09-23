@@ -68,9 +68,7 @@ function Requisition() {
           <div className="req-header-accent" />
           <div>
             <h1 className="req-title">Requisition & Issue Voucher</h1>
-            <p className="req-subtitle">
-              Ticket inventory ledger — stock receipts and availability
-            </p>
+            
           </div>
         </div>
         <button
@@ -107,8 +105,8 @@ function Requisition() {
       ) : (
         <>
           {/* Inventory Summary Cards */}
-          {denomOptions.length > 0 && (
-            <div className="req-filter-wrap" style={{ marginBottom: 14, justifyContent: "flex-end" }}>
+          {/* {denomOptions.length > 0 && (
+            <div className="req-filter-wrap" style={{ marginBottom: 14, justifyContent: "flex-start" }}>
               <label className="req-inv-card-label" style={{ marginRight: 4 }}>
                 Viewing
               </label>
@@ -125,7 +123,7 @@ function Requisition() {
                 ))}
               </select>
             </div>
-          )}
+          )} */}
           <div className="req-inventory-grid">
             <div className={`req-inv-card ${displayInventory.hasStock ? "req-inv-card--ok" : "req-inv-card--empty"}`}>
               <span className="req-inv-card-label">Total Stock</span>
@@ -181,7 +179,6 @@ function Requisition() {
           <div className="req-table-wrap">
             <div className="req-report-section-header">
               <h3 className="req-report-section-label">COLLECTIONS & DEPOSITS</h3>
-              <span className="req-report-section-sub">Use the "Viewing" dropdown above to filter by denomination</span>
             </div>
             <table className="req-table">
               <thead>

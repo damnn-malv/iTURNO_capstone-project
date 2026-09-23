@@ -121,9 +121,7 @@ function Queue({ userRole }) {
           <div className="queue-header-accent" />
           <div>
             <h1 className="queue-title">Queue Management</h1>
-            <p className="queue-subtitle">
-              Check vehicles into the queue and issue roaming tickets
-            </p>
+            
           </div>
         </div>
       </div>
@@ -132,18 +130,7 @@ function Queue({ userRole }) {
       <div className="queue-single-col">
         {/* Issue New Ticket Card */}
         <div className="queue-card">
-          <div className="queue-card-header queue-card-header--color">
-            <div>
-              <span className="queue-card-title">
-                {issuanceType === "ROAM" ? "Issue New Ticket" : "Check In Vehicle"}
-              </span>
-              <p className="queue-card-desc">
-                {issuanceType === "ROAM"
-                  ? "Only available vehicles and active drivers may be selected."
-                  : "Only available vehicles and active drivers may be selected. Denomination and quantity are chosen at Dispatch."}
-              </p>
-            </div>
-          </div>
+          
 
           <div className="queue-card-body">
             {/* Issuance type radio group */}

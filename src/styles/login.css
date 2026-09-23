@@ -62,9 +62,9 @@ body {
 
 /* ─── Layout util ─── */
 .lp-container {
-  max-width: 1160px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 0 32px;
+  padding: 0 26px;
   position: relative;
   z-index: 2;
 }
@@ -94,7 +94,7 @@ body {
 
 .lp-header__inner {
   width: 100%;
-  max-width: 1160px;
+  max-width: 1440px;
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -493,6 +493,31 @@ body {
   background: rgba(255,255,255,0.88);
 }
 
+/* ── Rotating route carousel ── */
+.lp-carousel {
+  transition: opacity 0.25s ease;
+}
+
+.lp-carousel-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.lp-carousel-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.3);
+  transition: background 0.25s ease, transform 0.25s ease;
+}
+
+.lp-carousel-dot--active {
+  background: var(--gold);
+  transform: scale(1.3);
+}
+
 .lp-queue-loading,
 .lp-queue-empty {
   padding: 52px;
@@ -624,8 +649,8 @@ body {
   display: grid;
   grid-template-columns: 1.6fr 1fr;
   gap: 60px;
-  padding: 52px 32px 40px;
-  max-width: 1160px;
+  padding: 52px 26px 40px;
+  max-width: 1440px;
   margin: 0 auto;
 }
 
@@ -674,11 +699,11 @@ body {
 
 .lp-footer__bottom {
   border-top: 1px solid rgba(255,255,255,0.07);
-  padding: 18px 32px;
+  padding: 18px 26px;
   text-align: center;
   font-size: 12px;
   color: rgba(255,255,255,0.28);
-  max-width: 1160px;
+  max-width: 1440px;
   margin: 0 auto;
 }
 
@@ -734,15 +759,20 @@ body {
 }
 .lp-row--route-label:hover { background: transparent !important; }
 
+.lp-route-label-wrap {
+  text-align: center;
+  padding: 16px 16px 10px;
+}
+
 .lp-route-label-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 10.5px;
+  gap: 7px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 1.1px;
-  padding: 3px 10px 3px 7px;
+  letter-spacing: 1.2px;
+  padding: 6px 16px;
   border-radius: 20px;
 }
 

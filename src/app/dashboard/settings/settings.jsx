@@ -87,6 +87,37 @@ const RollbackIcon = () => (
   </svg>
 );
 
+const BusIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <rect x="3" y="6" width="18" height="11" rx="2" />
+    <path d="M3 12h18" />
+    <circle cx="7.5" cy="19" r="1.5" />
+    <circle cx="16.5" cy="19" r="1.5" />
+  </svg>
+);
+
+const RouteIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M12 21s-7-7.58-7-12a7 7 0 0 1 14 0c0 4.42-7 12-7 12z" />
+    <circle cx="12" cy="9" r="2.5" />
+  </svg>
+);
+
+const TicketIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V8z" />
+    <line x1="12" y1="6" x2="12" y2="18" strokeDasharray="2 2" />
+  </svg>
+);
+
+const WalletIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <rect x="3" y="6" width="18" height="13" rx="2" />
+    <path d="M3 10h18" />
+    <circle cx="17" cy="14" r="1.3" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 const formatBytes = (bytes) => {
   if (!bytes) return "0 KB";
   const kb = bytes / 1024;
@@ -430,7 +461,6 @@ function Settings() {
           <div className="set-header-accent" />
           <div>
             <h1 className="set-title">Settings</h1>
-            <p className="set-subtitle">Manage PUV types, routes, ticket forms, and denominations</p>
           </div>
         </div>
       </div>
@@ -451,17 +481,127 @@ function Settings() {
       </div>
 
       {/* Panel */}
-      <div className="set-panel">
-        {/* General: PUV Types, Routes, Ticket Forms, and Terminal Price as
-            stacked sections on one scrolling page — no clicks needed to move
-            between them, just scroll. */}
+      <div className={activeTab === "general" ? "set-general-grid" : "set-panel"}>
+        {/* General: PUV Types, Routes, Ticket Forms, and Terminal Price as a
+            2-column grid of cards — no clicks needed to move between them. */}
         {activeTab === "general" && (
           <>
+            {/* Ticket Forms */}
+            <div className="set-section">
+              <div className="set-panel-toolbar">
+                <div className="set-panel-heading">
+                  <span className="set-panel-icon"><TicketIcon /></span>
+                  <div>
+                    <h2 className="set-panel-title">Ticket Forms</h2>
+                    <p className="set-panel-desc">Ticket price variants used at checkout</p>
+                  </div>
+                </div>
+                <div className="set-toolbar-actions">
+                  <button className="set-add-btn" onClick={() => setTicketFormModalOpen(true)}>
+                    <PlusIcon />
+                    Add
+                  </button>
+                  <div className="set-search">
+                    <SearchIcon />
+                    <input
+                      type="text"
+                      value={ticketFormsSearch}
+                      onChange={(e) => setTicketFormsSearch(e.target.value)}
+                      placeholder="Search ticket forms..."
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="set-table-wrap">
+                <table className="set-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Price</th>
+                      <th className="set-th-actions">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredTicketForms.length === 0 ? (
+                      <tr>
+                        <td colSpan="3" className="set-table-state">
+                          {ticketForms.length === 0 ? "No ticket forms configured" : "No matches found"}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredTicketForms.map(tf => (
+                        <tr key={tf.id} className="set-row">
+                          <td className="set-cell-label">{tf.name}</td>
+                          <td className="set-cell-meta">₱{Number(tf.price || 0).toFixed(2)}</td>
+                          <td className="set-cell-actions">
+                            <button className="set-delete-btn" onClick={() => handleDeleteTicketForm(tf.id)}>
+                              <DeleteIcon />
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Terminal Price */}
+            <div className="set-section">
+              <div className="set-panel-toolbar">
+                <div className="set-panel-heading">
+                  <span className="set-panel-icon"><WalletIcon /></span>
+                  <div>
+                    <h2 className="set-panel-title">Terminal Price</h2>
+                    <p className="set-panel-desc">Maximum collection ceiling allowed per ticket</p>
+                  </div>
+                </div>
+              </div>
+              <div className="set-rewards-form">
+                <p className="set-rewards-note">
+                  The terminal price is the maximum total collection amount (ticket price × quantity)
+                  allowed when issuing a ticket. Leave it at 0 to disable the limit.
+                </p>
+                {terminalPriceLoading ? (
+                  <p className="set-rewards-note">Loading terminal price...</p>
+                ) : (
+                  <div className="set-add-row">
+                    <label className="set-field">
+                      <span className="set-field-label">Terminal Price (₱)</span>
+                      <input
+                        type="number"
+                        className="set-input"
+                        min={0}
+                        step="0.01"
+                        value={terminalPriceInput}
+                        onChange={(e) => setTerminalPriceInput(e.target.value)}
+                        placeholder="0"
+                      />
+                    </label>
+                  </div>
+                )}
+                {terminalPriceError && (
+                  <p className="set-rewards-note" style={{ color: "#c0392b" }}>{terminalPriceError}</p>
+                )}
+                <div className="set-add-row">
+                  <button className="set-add-btn" onClick={handleSaveTerminalPrice} disabled={savingTerminalPrice || terminalPriceLoading}>
+                    <PlusIcon />
+                    {savingTerminalPrice ? "Saving..." : "Save Terminal Price"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* PUV Types */}
             <div className="set-section">
               <div className="set-panel-toolbar">
                 <div className="set-panel-heading">
-                  <h2 className="set-panel-title">PUV Types</h2>
+                  <span className="set-panel-icon"><BusIcon /></span>
+                  <div>
+                    <h2 className="set-panel-title">PUV Types</h2>
+                    <p className="set-panel-desc">Vehicle categories available for dispatch</p>
+                  </div>
                 </div>
                 <div className="set-toolbar-actions">
                   <button className="set-add-btn" onClick={() => setPuvModalOpen(true)}>
@@ -516,7 +656,11 @@ function Settings() {
             <div className="set-section">
               <div className="set-panel-toolbar">
                 <div className="set-panel-heading">
-                  <h2 className="set-panel-title">Routes</h2>
+                  <span className="set-panel-icon"><RouteIcon /></span>
+                  <div>
+                    <h2 className="set-panel-title">Routes</h2>
+                    <p className="set-panel-desc">Terminal-to-terminal routes and loading time defaults</p>
+                  </div>
                 </div>
                 <div className="set-toolbar-actions">
                   <button className="set-add-btn" onClick={() => setRouteModalOpen(true)}>
@@ -597,105 +741,6 @@ function Settings() {
                     )}
                   </tbody>
                 </table>
-              </div>
-            </div>
-
-            {/* Ticket Forms */}
-            <div className="set-section">
-              <div className="set-panel-toolbar">
-                <div className="set-panel-heading">
-                  <h2 className="set-panel-title">Ticket Forms</h2>
-                </div>
-                <div className="set-toolbar-actions">
-                  <button className="set-add-btn" onClick={() => setTicketFormModalOpen(true)}>
-                    <PlusIcon />
-                    Add
-                  </button>
-                  <div className="set-search">
-                    <SearchIcon />
-                    <input
-                      type="text"
-                      value={ticketFormsSearch}
-                      onChange={(e) => setTicketFormsSearch(e.target.value)}
-                      placeholder="Search ticket forms..."
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="set-table-wrap">
-                <table className="set-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Price</th>
-                      <th className="set-th-actions">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTicketForms.length === 0 ? (
-                      <tr>
-                        <td colSpan="3" className="set-table-state">
-                          {ticketForms.length === 0 ? "No ticket forms configured" : "No matches found"}
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredTicketForms.map(tf => (
-                        <tr key={tf.id} className="set-row">
-                          <td className="set-cell-label">{tf.name}</td>
-                          <td className="set-cell-meta">₱{Number(tf.price || 0).toFixed(2)}</td>
-                          <td className="set-cell-actions">
-                            <button className="set-delete-btn" onClick={() => handleDeleteTicketForm(tf.id)}>
-                              <DeleteIcon />
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Terminal Price */}
-            <div className="set-section">
-              <div className="set-panel-toolbar">
-                <div className="set-panel-heading">
-                  <h2 className="set-panel-title">Terminal Price</h2>
-                </div>
-              </div>
-              <div className="set-rewards-form">
-                <p className="set-rewards-note">
-                  The terminal price is the maximum total collection amount (ticket price × quantity)
-                  allowed when issuing a ticket. Leave it at 0 to disable the limit.
-                </p>
-                {terminalPriceLoading ? (
-                  <p className="set-rewards-note">Loading terminal price...</p>
-                ) : (
-                  <div className="set-add-row">
-                    <label className="set-field">
-                      <span className="set-field-label">Terminal Price (₱)</span>
-                      <input
-                        type="number"
-                        className="set-input"
-                        min={0}
-                        step="0.01"
-                        value={terminalPriceInput}
-                        onChange={(e) => setTerminalPriceInput(e.target.value)}
-                        placeholder="0"
-                      />
-                    </label>
-                  </div>
-                )}
-                {terminalPriceError && (
-                  <p className="set-rewards-note" style={{ color: "#c0392b" }}>{terminalPriceError}</p>
-                )}
-                <div className="set-add-row">
-                  <button className="set-add-btn" onClick={handleSaveTerminalPrice} disabled={savingTerminalPrice || terminalPriceLoading}>
-                    <PlusIcon />
-                    {savingTerminalPrice ? "Saving..." : "Save Terminal Price"}
-                  </button>
-                </div>
               </div>
             </div>
           </>

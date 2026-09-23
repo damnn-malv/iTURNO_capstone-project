@@ -38,9 +38,7 @@ function Registry() {
           <div className="reg-header-accent" />
           <div>
             <h1 className="reg-title">Fleet &amp; Driver Registry</h1>
-            <p className="reg-subtitle">
-              Manage registered vehicles, drivers, and assignments
-            </p>
+            
           </div>
         </div>
         <div className="reg-header-right">

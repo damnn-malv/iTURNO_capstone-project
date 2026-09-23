@@ -185,9 +185,7 @@ function User({ userRole }) {
           <div className="usr-header-accent" />
           <div>
             <h1 className="usr-title">Staff Registry</h1>
-            <p className="usr-subtitle">
-              Manage system accounts and personnel roles
-            </p>
+            
           </div>
         </div>
         <div className="usr-header-right">
@@ -310,9 +308,15 @@ function User({ userRole }) {
                     </td>
                     <td>
                       <span
-                        className={`usr-status ${user.is_active ? "usr-status--active" : "usr-status--inactive"}`}
+                        className={`usr-status ${
+                          user.must_reset_password
+                            ? "usr-status--new"
+                            : user.is_active
+                            ? "usr-status--active"
+                            : "usr-status--inactive"
+                        }`}
                       >
-                        {user.is_active ? "Active" : "Inactive"}
+                        {user.must_reset_password ? "New" : user.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
                     <td>
@@ -428,9 +432,15 @@ function User({ userRole }) {
                       {form.role}
                     </span>
                     <span
-                      className={`usr-status ${form.is_active ? "usr-status--active" : "usr-status--inactive"}`}
+                      className={`usr-status ${
+                        editing?.must_reset_password
+                          ? "usr-status--new"
+                          : form.is_active
+                          ? "usr-status--active"
+                          : "usr-status--inactive"
+                      }`}
                     >
-                      {form.is_active ? "Active" : "Inactive"}
+                      {editing?.must_reset_password ? "New" : form.is_active ? "Active" : "Inactive"}
                     </span>
                   </div>
                 </div>

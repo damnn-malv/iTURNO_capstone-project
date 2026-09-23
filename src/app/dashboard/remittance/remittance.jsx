@@ -212,9 +212,6 @@ export default function Remittance() {
           <div className="rem-header-accent" />
           <div>
             <h1 className="rem-title">Remittance Batches</h1>
-            <p className="rem-subtitle">
-              Manage remittance collections and deposits
-            </p>
           </div>
         </div>
         <div className="rem-header-right">

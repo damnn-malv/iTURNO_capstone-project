@@ -44,9 +44,6 @@ function Collection() {
           <div className="col-header-accent" />
           <div>
             <h1 className="col-title">Tally &amp; Collections</h1>
-            <p className="col-subtitle">
-              Automated revenue recording
-            </p>
           </div>
         </div>
       </div>
@@ -128,40 +125,36 @@ function Collection() {
                 Clear
               </button>
             )}
+
+            <div className="col-search-wrap col-date-search">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className="col-search-icon"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+              <input
+                className="col-search"
+                placeholder="Search tickets…"
+                value={activeTab === "queue" ? searchTerm : roamingSearch}
+                onChange={(e) =>
+                  activeTab === "queue"
+                    ? setSearchTerm(e.target.value)
+                    : setRoamingSearch(e.target.value)
+                }
+              />
+            </div>
           </div>
 
           {/* ── Terminal Queue Log Tab ── */}
           {activeTab === "queue" && (
             <>
-              <div className="col-card-header col-card-header--color col-log-header">
-                <div>
-                  <span className="col-card-title">Terminal Queue Log</span>
-                  <p className="col-card-desc">
-                    Recent collections and verification status
-                  </p>
-                </div>
-                <div className="col-search-wrap">
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    className="col-search-icon"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <path d="m21 21-4.3-4.3" />
-                  </svg>
-                  <input
-                    className="col-search"
-                    placeholder="Search tickets…"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-              </div>
-
               <div className="col-table-wrap">
                 <table className="col-table">
                   <thead>
@@ -249,12 +242,16 @@ function Collection() {
                                 className={`col-verified ${
                                   ticket.status === "CANCELLED"
                                     ? "col-verified--cancelled"
+                                    : ticket.status === "QUEUED"
+                                    ? "col-verified--queued"
                                     : "col-verified--yes"
                                 }`}
                               >
                                 {ticket.status === "CANCELLED"
-                                  ? "✗ Cancelled"
-                                  : "✓ Collected"}
+                                  ? "Cancelled"
+                                  : ticket.status === "QUEUED"
+                                  ? "Queued"
+                                  : "Collected"}
                               </span>
                             </td>
                           </tr>
@@ -293,30 +290,6 @@ function Collection() {
           {/* ── Roaming Vehicle Log Tab ── */}
           {activeTab === "roaming" && (
             <>
-              <div className="col-card-header col-card-header--color col-log-header">
-                <div>
-                  <span className="col-card-title">Roaming Vehicle Log</span>
-                  <p className="col-card-desc">
-                    Tickets issued to roaming vehicles that unload passengers
-                  </p>
-                </div>
-                <div className="col-search-wrap">
-                  <svg
-                    width="13" height="13" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" strokeWidth="2" className="col-search-icon"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <path d="m21 21-4.3-4.3" />
-                  </svg>
-                  <input
-                    className="col-search"
-                    placeholder="Search tickets…"
-                    value={roamingSearch}
-                    onChange={(e) => setRoamingSearch(e.target.value)}
-                  />
-                </div>
-              </div>
-
               <div className="col-table-wrap">
                 <table className="col-table">
                   <thead>

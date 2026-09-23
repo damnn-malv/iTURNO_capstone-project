@@ -80,7 +80,7 @@ export default function AuditTrail({ auditData, auditMeta, onAuditFetchPage, onA
   };
 
   const renderRow = (l, idx, { rowClass, cellClass }) => (
-    <tr key={l.id + idx} className={rowClass}>
+    <tr key={`${l.id}-${idx}`} className={rowClass}>
       <td className={`${cellClass} rpt-mono rpt-muted`}>
         {l.created_at ? new Date(l.created_at).toLocaleString() : "—"}
       </td>
