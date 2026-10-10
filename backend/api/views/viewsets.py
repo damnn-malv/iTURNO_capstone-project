@@ -15,11 +15,11 @@ from rest_framework.permissions import IsAuthenticated, BasePermission, SAFE_MET
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, RemittanceBatch, TicketForm, Requisition, TicketSeries, RoamingLog, WipMode
-from ..serializers import UserSerializer, DriverSerializer, VehicleSerializer, RouteSerializer, TicketSerializer, TicketPriceSerializer, PUVTypeSerializer, RemittanceBatchSerializer, TicketFormSerializer, RequisitionSerializer, TicketSeriesSerializer, RoamingLogSerializer
+from ..models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, RemittanceBatch, TicketForm, Requisition, TicketSeries, PaperIssuance, RoamingLog, WipMode
+from ..serializers import UserSerializer, DriverSerializer, VehicleSerializer, RouteSerializer, TicketSerializer, TicketPriceSerializer, PUVTypeSerializer, RemittanceBatchSerializer, TicketFormSerializer, RequisitionSerializer, TicketSeriesSerializer, PaperIssuanceSerializer, RoamingLogSerializer
 from ..sms import send_sms_async, queue_next_message
 from ..tokens import sign_email_verification_token
-from .helpers import record_audit_log, expire_stale_queue_tickets, expire_stale_unverified_accounts, supabase_reachable, parse_date_start, parse_date_end, paginate_request, promote_queue_front
+from .helpers import record_audit_log, expire_stale_queue_tickets, expire_stale_unverified_accounts, supabase_reachable, paper_numbers_by_series, parse_date_start, parse_date_end, paginate_request, promote_queue_front
 from .remittance_export import remittance_xlsx_response
 
 
@@ -129,11 +129,37 @@ class UserViewSet(AuditLogMixin, viewsets.ModelViewSet):
         # _state.db when no custom router is configured.
         return User.objects.using('supabase').all()
 
+    def _guard_account_change(self, target, role, is_active, deleting=False):
+        """Accounts belong to people, roles are permissions: several people may share a
+        role, but the system must never lose its last active admin or let someone lock
+        themselves out. Enforced here (not just in the UI) so no client can bypass it."""
+        losing_access = deleting or not is_active or role != target.role
+        if target.pk == self.request.user.pk and losing_access:
+            raise ValidationError('You cannot deactivate, delete or change the role of your own account.')
+        if target.role == 'SUPERADMIN' and target.is_active and (deleting or not is_active or role != 'SUPERADMIN'):
+            other_admins = User.objects.using('supabase').filter(role='SUPERADMIN', is_active=True).exclude(pk=target.pk)
+            if not other_admins.exists():
+                raise ValidationError('This is the last active Admin. Promote or create another Admin first.')
+
     def perform_create(self, serializer):
         instance = super().perform_create(serializer)
         if not instance.email_verified:
             send_verification_email(instance)
         return instance
+
+    def perform_update(self, serializer):
+        data = serializer.validated_data
+        target = serializer.instance
+        self._guard_account_change(target, data.get('role', target.role), data.get('is_active', target.is_active))
+        return super().perform_update(serializer)
+
+    def perform_destroy(self, instance):
+        self._guard_account_change(instance, instance.role, instance.is_active, deleting=True)
+        # Deleting orphans the person's history (FKs are SET_NULL), so only accounts
+        # that never did anything may be removed; everyone else gets deactivated.
+        if instance.last_login or instance.audit_logs.exists():
+            raise ValidationError('This account has activity history and cannot be deleted. Deactivate it instead.')
+        super().perform_destroy(instance)
 
     @action(detail=True, methods=['post'])
     def resend_verification(self, request, pk=None):
@@ -212,6 +238,9 @@ class DriverViewSet(AuditLogMixin, viewsets.ModelViewSet):
         status_param = self.request.query_params.get('status')
         if status_param:
             qs = qs.filter(status__in=[s.strip() for s in status_param.split(',') if s.strip()])
+        is_archived = self.request.query_params.get('is_archived')
+        if is_archived is not None:
+            qs = qs.filter(is_archived=is_archived.lower() in ('1', 'true', 'yes'))
         return qs
 
 
@@ -277,7 +306,12 @@ def _consume_series_fifo(ticket_form_id, quantity, series_id=None):
     if series_id:
         qs = qs.filter(id=series_id)
     series_list = list(qs.order_by('requisition_id', 'id'))
-    taken_by_series = {s.id: set(s.tickets.values_list('id', flat=True)) for s in series_list}
+    # Paper-issued numbers are as unavailable as system-issued ones.
+    paper = paper_numbers_by_series([s.id for s in series_list])
+    taken_by_series = {
+        s.id: set(s.tickets.values_list('id', flat=True)) | {str(n) for n in paper.get(s.id, ())}
+        for s in series_list
+    }
     total_available = sum(
         max(int(s.end_no) - int(s.start_no) + 1 - len(taken_by_series[s.id]), 0) for s in series_list
     )
@@ -631,6 +665,10 @@ class TicketViewSet(viewsets.ModelViewSet):
             raise ValidationError({"vehicle_id": f"Vehicle is {vehicle.status} — cannot issue ticket."})
         if driver.status != 'ACTIVE':
             raise ValidationError({"driver_id": "Selected driver is not active."})
+        if vehicle.franchise_expired:
+            raise ValidationError({"vehicle_id": f"{vehicle.plate_number}'s franchise has expired."})
+        if driver.iwp_expired:
+            raise ValidationError({"driver_id": "Selected driver's IWP has expired."})
 
         price = ticket_form.price or 0
         _check_terminal_price(vehicle, price, quantity)
@@ -805,10 +843,53 @@ class TicketSeriesViewSet(AuditLogMixin, viewsets.ModelViewSet):
         today = date.today()
         return TicketSeries.objects.filter(requisition__is_archived=False).select_related(
             'ticket_form', 'issued_to'
-        ).annotate(
+        ).prefetch_related('paper_issuances').annotate(
             _total_issued=Count('tickets'),
             _issued_before_today=Count('tickets', filter=Q(tickets__issued_at__date__lt=today)),
         )
+
+
+class PaperIssuanceViewSet(AuditLogMixin, viewsets.ModelViewSet):
+    """Physical tickets handed out outside the system. Admin/Supervisor write; an
+    already-remitted range is locked, since its amount is part of a filed batch."""
+    queryset = PaperIssuance.objects.select_related('series__ticket_form')
+    serializer_class = PaperIssuanceSerializer
+    permission_classes = [IsAuthenticated, IsSupervisorOrAdminForWrite]
+    http_method_names = ['get', 'post', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.query_params.get('unremitted'):
+            qs = qs.filter(remittance_batch__isnull=True)
+        for param in ('series', 'used_on'):
+            value = self.request.query_params.get(param)
+            if value:
+                qs = qs.filter(**{param: value})
+        return qs
+
+    @action(detail=False, methods=['get'], url_path='next-free')
+    def next_free(self, request):
+        """Lowest number in `series` not yet used by a system ticket or paper range —
+        prefills the form's From field so staff only type the last number."""
+        series = TicketSeries.objects.filter(pk=request.query_params.get('series')).first()
+        if not series:
+            raise ValidationError({"series": "Unknown series."})
+        start, end = int(series.start_no), int(series.end_no)
+        used = {int(i) for i in Ticket.objects.filter(series=series).values_list('id', flat=True) if i.isdigit()}
+        used |= paper_numbers_by_series([series.id]).get(series.id, set())
+        free = next((n for n in range(start, end + 1) if n not in used), None)
+        return Response({'next_free': free})
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        name = f"{user.first_name} {user.last_name}".strip() or user.username
+        instance = serializer.save(recorded_by=user, recorded_by_name=name)
+        self._audit('CREATE', instance, self._safe_changes())
+
+    def perform_destroy(self, instance):
+        if instance.remittance_batch_id:
+            raise ValidationError("This range is already part of a remittance batch and can't be removed.")
+        super().perform_destroy(instance)
 
 
 class RoamingLogViewSet(viewsets.ModelViewSet):

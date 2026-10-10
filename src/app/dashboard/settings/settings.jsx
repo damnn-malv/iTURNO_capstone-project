@@ -3,6 +3,7 @@ import { apiService } from "../../../lib/api-service";
 import { useToast, useConfirm } from "../../../components/ui/ToastConfirmContext";
 import SettingsModal from "../../../components/ui/settingsModal";
 import TicketBackfillTab from "./backfill/TicketBackfillTab";
+import ArchiveTab from "./archive/ArchiveTab";
 import "../../../styles/Settings.css";
 
 const TABS = [
@@ -29,6 +30,18 @@ const TABS = [
         <path d="M12 21V9" />
         <path d="M7 14l5-5 5 5" />
         <path d="M4 3h16" />
+      </svg>
+    ),
+  },
+  {
+    key: "archive",
+    label: "Archive",
+    description: "Restore archived vehicles, drivers, requisitions, and remittance batches",
+    icon: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="4" width="18" height="4" rx="1" />
+        <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+        <path d="M10 12h4" />
       </svg>
     ),
   },
@@ -448,13 +461,6 @@ function Settings() {
     return !q || tf.name?.toLowerCase().includes(q);
   });
 
-  const counts = {
-    puv: puvTypes.length,
-    routes: routes.length,
-    ticketForms: ticketForms.length,
-    system: systemBackups.length,
-  };
-
   return (
     <div className="set-page">
       {/* Header */}
@@ -477,7 +483,6 @@ function Settings() {
           >
             <span className="set-tab-icon">{tab.icon}</span>
             <span>{tab.label}</span>
-            <span className="set-tab-count">{counts[tab.key]}</span>
           </button>
         ))}
       </div>
@@ -729,6 +734,18 @@ function Settings() {
               </div>
             </div>
             <TicketBackfillTab />
+          </div>
+        )}
+
+        {/* Archive: restore archived vehicles, drivers, requisitions, remittance */}
+        {activeTab === "archive" && (
+          <div className="set-section">
+            <div className="set-panel-toolbar">
+              <div className="set-panel-heading">
+                <h2 className="set-panel-title">Archive</h2>
+              </div>
+            </div>
+            <ArchiveTab />
           </div>
         )}
 

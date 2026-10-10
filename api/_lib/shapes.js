@@ -180,7 +180,8 @@ export function shapeTicketSeries(s, stats = null) {
     issued_to_name: s.issued_to?.username ?? null,
     date_issued: s.date_issued,
     beginning: Math.max(originalPcs - issuedBeforeToday, 0),
-    remaining: Math.max(originalPcs - totalIssued, 0),
+    remaining: Math.max(originalPcs - totalIssued - (stats?.paperIssued ?? 0), 0),
+    last_used_no: stats?.lastUsed ?? null,
     created_at: s.created_at,
     updated_at: s.updated_at,
   };

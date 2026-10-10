@@ -23,13 +23,6 @@ function isValidEmail(value) {
   return EMAIL_PATTERN.test(value);
 }
 
-const ROLE_CLASS = {
-  MANAGER: "usr-role--manager",
-  SUPERVISOR: "usr-role--supervisor",
-  PERSONNEL: "usr-role--personnel",
-  SUPERADMIN: "usr-role--admin",
-};
-
 const Field = ({ label, children }) => (
   <div className="usr-field">
     <label className="usr-label">{label}</label>
@@ -70,8 +63,6 @@ function User({ userRole }) {
     }
   };
 
-  const UNIQUE_ROLES = ["SUPERADMIN", "SUPERVISOR", "MANAGER"];
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -80,44 +71,19 @@ function User({ userRole }) {
       return;
     }
 
-    const role = form.role;
-    const isActive = !!form.is_active;
-
-    // Check if this role requires uniqueness and the new account will be active
-    let conflictingUser = null;
-    if (UNIQUE_ROLES.includes(role) && isActive) {
-      conflictingUser = users.find(
-        (u) =>
-          u.role === role &&
-          u.is_active &&
-          (!editing || u.id !== editing.id),
-      );
-    }
-
-    let confirmMsg = editing ? "Confirm update?" : "Confirm registry?";
-    if (conflictingUser) {
-      confirmMsg = `There is already an active ${role.charAt(0) + role.slice(1).toLowerCase()} (${conflictingUser.first_name} ${conflictingUser.last_name}). Proceeding will set them to Inactive. Continue?`;
-    }
-
-    const confirmed = await showConfirm(confirmMsg);
+    // Several people may hold the same role (handover overlap, backups); the
+    // server blocks the dangerous cases (own account, last active Admin).
+    const confirmed = await showConfirm(editing ? "Confirm update?" : "Confirm registry?");
     if (!confirmed) return;
 
     try {
-      // Deactivate the conflicting user first
-      if (conflictingUser) {
-        await apiService.updateUser(conflictingUser.id, {
-          ...conflictingUser,
-          is_active: false,
-        });
-      }
-
       const payload = {
         username: form.username || "",
         first_name: form.first_name || "",
         middle_name: form.middle_name || "",
         last_name: form.last_name || "",
         role: form.role || "PERSONNEL",
-        is_active: isActive,
+        is_active: !!form.is_active,
       };
       const userData = editing
         ? await apiService.updateUser(editing.id, payload)
@@ -156,8 +122,24 @@ function User({ userRole }) {
     setForm(EMPTY_FORM);
   };
 
+  const handleToggleActive = async (user) => {
+    const verb = user.is_active ? "Deactivate" : "Reactivate";
+    const confirmed = await showConfirm(
+      `${verb} ${user.first_name} ${user.last_name}? ${user.is_active ? "They will no longer be able to sign in, but their history is kept." : "They will be able to sign in again."}`,
+    );
+    if (!confirmed) return;
+    try {
+      await apiService.updateUser(user.id, { ...user, is_active: !user.is_active });
+      fetchUsers();
+      showToast(`Staff account ${user.is_active ? "deactivated" : "reactivated"}`);
+    } catch (err) {
+      setError(err.message);
+      showToast(err.message || `Failed to ${verb.toLowerCase()} account`, "info");
+    }
+  };
+
   const handleDelete = async (id) => {
-    const confirmed = await showConfirm("Are you sure you want to remove this staff account?");
+    const confirmed = await showConfirm("Permanently delete this account? Only accounts with no activity can be deleted — otherwise deactivate it.");
     if (!confirmed) return;
     try {
       await apiService.deleteUser(id);
@@ -301,11 +283,7 @@ function User({ userRole }) {
                     </td>
                     <td className="usr-td-email">{user.username}</td>
                     <td>
-                      <span
-                        className={`usr-role ${ROLE_CLASS[user.role] || "usr-role--personnel"}`}
-                      >
-                        {user.role}
-                      </span>
+                      <span className="usr-role">{user.role}</span>
                     </td>
                     <td>
                       <span
@@ -343,6 +321,14 @@ function User({ userRole }) {
                           </svg>
                           Edit
                         </button>
+                        {canManageStaff && (
+                          <button
+                            className="usr-btn usr-btn--edit"
+                            onClick={() => handleToggleActive(user)}
+                          >
+                            {user.is_active ? "Deactivate" : "Reactivate"}
+                          </button>
+                        )}
                         <button
                           className="usr-btn usr-btn--delete"
                           onClick={() => handleDelete(user.id)}
@@ -378,18 +364,6 @@ function User({ userRole }) {
           <div className="usr-modal usr-modal--profile" onClick={(e) => e.stopPropagation()}>
             <div className="usr-modal-header">
               <div className="usr-modal-header-left">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#c9a84c"
-                  strokeWidth="2"
-                >
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-                </svg>
                 <h2 className="usr-modal-title">
                   {editing ? "Staff Profile" : "Register Staff Account"}
                 </h2>
@@ -415,15 +389,17 @@ function User({ userRole }) {
 
             <form onSubmit={handleSubmit} className="usr-modal-body">
               {/* Staff hero section */}
-              <div className="usr-profile-hero">
-                <div className="usr-profile-hero-info">
-                  <span className="usr-profile-hero-name">
-                    {[form.first_name, form.middle_name, form.last_name]
-                      .filter(Boolean)
-                      .join(" ") || "New Staff"}
-                  </span>
+              {editing && (
+                <div className="usr-profile-hero">
+                  <div className="usr-profile-hero-info">
+                    <span className="usr-profile-hero-name">
+                      {[form.first_name, form.middle_name, form.last_name]
+                        .filter(Boolean)
+                        .join(" ")}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Personal Information */}
               <div className="usr-profile-section">

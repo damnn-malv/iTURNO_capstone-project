@@ -1,6 +1,8 @@
 ﻿import React, { useState } from "react";
 import { useRequisition } from "./useRequisition";
 import RequisitionFormModal from "./RequisitionFormModal";
+import PaperRangeModal from "./PaperRangeModal";
+import { IS_REMOTE } from "../../../lib/api-service";
 import "../../../styles/requisition.css";
 
 function formatCurrency(val) {
@@ -31,9 +33,11 @@ function Requisition() {
     inventory,
     approvedBy,
     setApprovedBy,
+    refresh,
   } = useRequisition();
 
   const [expandedDenom, setExpandedDenom] = useState(null);
+  const [paperSeries, setPaperSeries] = useState(null);
 
   const toggleDenom = (denom) =>
     setExpandedDenom((prev) => (prev === denom ? null : denom));
@@ -79,6 +83,10 @@ function Requisition() {
         saving={saving}
         error={error}
       />
+
+      {paperSeries && (
+        <PaperRangeModal series={paperSeries} onClose={() => setPaperSeries(null)} onSaved={refresh} />
+      )}
 
       {/* Loading */}
       {loading ? (
@@ -128,16 +136,30 @@ function Requisition() {
                                     <th className="text-right">Beginning</th>
                                     <th className="text-right">Remaining</th>
                                     <th className="text-right">Amount</th>
+                                    {!IS_REMOTE && <th className="text-right">Action</th>}
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {d.series.map((ts) => (
+                                  {d.series.filter((ts) => ts.remaining > 0).map((ts) => (
                                       <tr key={ts.id}>
-                                        <td>{ts.series_no || "—"}</td>
+                                        <td>
+                                          {ts.series_no || "—"}{" "}
+                                          <span style={{ color: "var(--text-secondary)" }}>
+                                            ({ts.last_used_no != null ? `ended ${ts.last_used_no}` : "none used"})
+                                          </span>
+                                        </td>
                                         <td>{formatDate(ts.created_at)}</td>
                                         <td className="text-right">{(ts.beginning ?? ts.pcs ?? 0).toLocaleString()}</td>
                                         <td className="text-right">{(ts.remaining ?? ts.pcs ?? 0).toLocaleString()}</td>
                                         <td className="text-right">{formatCurrency(ts.current_value)}</td>
+                                        {!IS_REMOTE && (
+                                          <td className="text-right">
+                                            <button type="button" className="req-new-btn" style={{ padding: "3px 10px", fontSize: 11 }}
+                                              onClick={() => setPaperSeries(ts)}>
+                                              Paper range
+                                            </button>
+                                          </td>
+                                        )}
                                       </tr>
                                   ))}
                                 </tbody>

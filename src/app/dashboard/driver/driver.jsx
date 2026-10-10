@@ -3,7 +3,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useDriver } from "./useDriver";
 import { usePhilippineAddress } from "./usePhilippineAddress";
-import { getDriverCode, getDriverDisplayName } from "./driver-utils";
+import { getDriverCode, getDriverDisplayName, getIwpStatus } from "./driver-utils";
 import { useToast } from "../../../components/ui/ToastConfirmContext";
 import { exportDriversPDF } from "../registry/registryExport";
 import "../../../styles/Driver.css";
@@ -28,7 +28,7 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
     handleEdit,
     handleAdd,
     closeModal,
-    handleDelete,
+    handleArchive,
   } = useDriver();
 
   const showToast = useToast();
@@ -301,11 +301,15 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                     </td>
                     <td>
                       <div className="drv-status-group">
-                        <span
-                          className={`drv-status ${driver.status === "ACTIVE" ? "drv-status--active" : "drv-status--inactive"}`}
-                        >
-                          {driver.status === "ACTIVE" ? "Active" : "Inactive"}
-                        </span>
+                        {driver.status === "ACTIVE" && getIwpStatus(driver) === "expired" ? (
+                          <span className="drv-status drv-status--expired">IWP Expired</span>
+                        ) : (
+                          <span
+                            className={`drv-status ${driver.status === "ACTIVE" ? "drv-status--active" : "drv-status--inactive"}`}
+                          >
+                            {driver.status === "ACTIVE" ? "Active" : "Inactive"}
+                          </span>
+                        )}
                         {isDriverOnActiveTicket(driver.id) && (
                           <span className="drv-status drv-status--duty">
                             On Queue
@@ -334,7 +338,7 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                         </button>
                         <button
                           className="drv-btn drv-btn--delete"
-                          onClick={() => handleDelete(driver.id)}
+                          onClick={() => handleArchive(driver.id)}
                         >
                           <svg
                             width="12"
@@ -349,7 +353,7 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                             <path d="M10 11v6M14 11v6" />
                             <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
                           </svg>
-                          Delete
+                          Archive
                         </button>
                       </div>
                     </td>
@@ -388,17 +392,6 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
           <div className="drv-modal drv-modal--profile" onClick={(e) => e.stopPropagation()}>
             <div className="drv-modal-header">
               <div className="drv-modal-header-left">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#c9a84c"
-                  strokeWidth="2"
-                >
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
                 <h2 className="drv-modal-title">
                   {editing ? "Driver Profile" : "Register New Driver"}
                 </h2>
@@ -564,7 +557,6 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                       <option value="">Select gender</option>
                       <option value="MALE">Male</option>
                       <option value="FEMALE">Female</option>
-                      <option value="OTHER">Other</option>
                     </select>
                   </div>
                   <div className="drv-field">

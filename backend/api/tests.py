@@ -23,3 +23,60 @@ class ModelSopFieldsTests(TestCase):
 
         self.assertTrue(hasattr(Ticket, 'mode'))
         self.assertTrue(hasattr(Ticket, 'remittance_batch'))
+
+
+class PaperIssuanceTests(TestCase):
+    def setUp(self):
+        from .models import Requisition, TicketForm, TicketSeries
+        form = TicketForm.objects.create(name='Std', price=10)
+        req = Requisition.objects.create()
+        self.series = TicketSeries.objects.create(
+            series_no='S1', ticket_form=form, start_no='1', end_no='1000', unit_value=0, requisition=req,
+        )
+        self.form = form
+
+    def _paper(self, a, b):
+        from .models import PaperIssuance
+        from datetime import date
+        return PaperIssuance.objects.create(series=self.series, from_no=a, to_no=b, used_on=date.today())
+
+    def test_allocator_skips_paper_range_and_out_of_order_ranges(self):
+        from .views.viewsets import _consume_series_fifo
+        self._paper(1, 624)
+        self._paper(700, 710)
+        units = _consume_series_fifo(self.form.id, 3)
+        self.assertEqual([u[1] for u in units], ['625', '626', '627'])
+
+    def test_stock_and_amount_count_paper(self):
+        from .serializers import TicketSeriesSerializer, PaperIssuanceSerializer
+        p = self._paper(1, 624)
+        self.assertEqual(p.amount, 6240)
+        self.assertEqual(TicketSeriesSerializer(self.series).data['remaining'], 376)
+        self.assertEqual(PaperIssuanceSerializer(p).data['count'], 624)
+
+    def test_validation_rejects_overlap_and_out_of_series(self):
+        from .serializers import PaperIssuanceSerializer
+        from datetime import date
+        self._paper(1, 624)
+        base = {'series': self.series.id, 'used_on': date.today().isoformat(), 'reason': 'SYSTEM_DOWN'}
+        for a, b in [(600, 650), (990, 1001), (5, 2)]:
+            s = PaperIssuanceSerializer(data={**base, 'from_no': a, 'to_no': b})
+            self.assertFalse(s.is_valid(), (a, b))
+        self.assertTrue(PaperIssuanceSerializer(data={**base, 'from_no': 625, 'to_no': 630}).is_valid())
+
+    def test_next_free_skips_paper_and_system_numbers(self):
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from .models import User
+        from .views import PaperIssuanceViewSet
+        self._paper(1, 624)
+        user = User.objects.create_user(username='a', password='x', role='SUPERADMIN')
+        req = APIRequestFactory().get('/paper-issuances/next-free/', {'series': self.series.id})
+        force_authenticate(req, user=user)
+        res = PaperIssuanceViewSet.as_view({'get': 'next_free'})(req)
+        self.assertEqual(res.data['next_free'], 625)
+
+    def test_last_used_no_covers_paper_and_system_tickets(self):
+        from .serializers import TicketSeriesSerializer
+        self.assertIsNone(TicketSeriesSerializer(self.series).data['last_used_no'])
+        self._paper(1, 624)
+        self.assertEqual(TicketSeriesSerializer(self.series).data['last_used_no'], 624)

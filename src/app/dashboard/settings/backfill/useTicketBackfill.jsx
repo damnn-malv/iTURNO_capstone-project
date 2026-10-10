@@ -75,7 +75,7 @@ export function useTicketBackfill() {
     fetchWipMode();
     fetchRemoteRequests();
     fetchHistory();
-    apiService.getVehicles().then(setVehicles).catch((err) => console.error("Failed to load vehicles:", err));
+    apiService.getVehicles({ is_archived: "false" }).then(setVehicles).catch((err) => console.error("Failed to load vehicles:", err));
     apiService.getTicketForms().then(setTicketForms).catch((err) => console.error("Failed to load ticket forms:", err));
   }, []);
 

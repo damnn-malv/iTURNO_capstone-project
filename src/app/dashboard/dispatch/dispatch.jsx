@@ -10,7 +10,9 @@ const EXTEND_OPTIONS_MINUTES = [5, 10, 15];
 
 // The ticket series + quantity picker is shared with the Queue page (roaming
 // check-ins use the same selection), so its state lives in useQueue.
-function Dispatch({ availableSeries, selectedSeriesId, setSelectedSeriesId, ticketQuantity, setTicketQuantity, onStockChange }) {
+function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () => {}, selectedSeriesId, setSelectedSeriesId, ticketQuantity, setTicketQuantity, onStockChange }) {
+  const [pickSeries, setPickSeries] = useState(false);
+  const selected = allSeries.find((s) => String(s.id) === String(selectedSeriesId));
   const [vehicles, setVehicles] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [drivers, setDrivers] = useState([]);
@@ -59,7 +61,7 @@ function Dispatch({ availableSeries, selectedSeriesId, setSelectedSeriesId, tick
       const [vehicleData, ticketData, driverData, routeData] = await Promise.all([
         apiService.getVehicles({ status: "QUEUED", is_archived: "false" }),
         apiService.getTickets({ status: "QUEUED" }),
-        apiService.getDrivers({ status: "ACTIVE" }),
+        apiService.getDrivers({ status: "ACTIVE", is_archived: "false" }),
         apiService.getRoutes(),
       ]);
       setVehicles(vehicleData);
@@ -412,23 +414,51 @@ function Dispatch({ availableSeries, selectedSeriesId, setSelectedSeriesId, tick
         <div className="dispatch-settings-body">
           <div className="dispatch-modal-field">
             <label className="dispatch-modal-label">
-              Ticket Series <span className="dispatch-modal-required">*</span>
+              Ticket Denomination <span className="dispatch-modal-required">*</span>
             </label>
-            <select
-              className="dispatch-modal-select"
-              value={selectedSeriesId}
-              onChange={(e) => {
-                setSelectedSeriesId(e.target.value);
-                if (dispatchError) setDispatchError("");
-              }}
-            >
-              <option value="">— Select a ticket series —</option>
-              {availableSeries.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.ticket_form_label || "Unspecified"} — Series {s.series_no} ({s.pcs} pcs remaining)
-                </option>
-              ))}
-            </select>
+            <div className="dispatch-series-row">
+              <select
+                className="dispatch-modal-select"
+                value={selectedSeriesId}
+                onChange={(e) => {
+                  setSelectedSeriesId(e.target.value);
+                  if (dispatchError) setDispatchError("");
+                }}
+              >
+                {availableSeries.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.ticket_form_label || "Unspecified"}
+                  </option>
+                ))}
+              </select>
+              {selectedSeriesId && (
+                <button
+                  type="button"
+                  className="dispatch-series-toggle"
+                  onClick={() => {
+                    if (pickSeries) setSeriesOverrideId("");
+                    setPickSeries(!pickSeries);
+                  }}
+                >
+                  {pickSeries ? "Use default" : "Pick series"}
+                </button>
+              )}
+            </div>
+            {pickSeries && selectedSeriesId && (
+              <select
+                className="dispatch-modal-select"
+                value={selectedSeriesId}
+                onChange={(e) => setSeriesOverrideId(e.target.value)}
+              >
+                {allSeries
+                  .filter((s) => (s.ticket_form_label || "Unspecified") === (selected?.ticket_form_label || "Unspecified"))
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      Series {s.series_no} ({s.pcs} pcs remaining)
+                    </option>
+                  ))}
+              </select>
+            )}
             {availableSeries.length === 0 && (
               <span className="dispatch-modal-field-error">
                 No ticket series with stock available.

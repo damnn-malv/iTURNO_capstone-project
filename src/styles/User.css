@@ -170,21 +170,15 @@
 .usr-td-name  { font-weight: 600; }
 .usr-td-email { font-size: 13px; color: var(--text-secondary); }
 
-/* Role badges */
+/* Role label — plain text, no color coding */
 .usr-role {
-  display: inline-block;
-  padding: 4px 11px;
-  border-radius: 20px;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  color: var(--text-primary);
   white-space: nowrap;
 }
-
-.usr-role--manager    { background: rgba(168,85,247,0.12); color: #7e22ce; }
-.usr-role--supervisor { background: rgba(59,130,246,0.12);  color: #1d4ed8; }
-.usr-role--personnel  { background: var(--bg-page); color: var(--text-secondary); border: 1px solid var(--border); }
 
 /* Status badges */
 .usr-status {
@@ -293,9 +287,9 @@
 .usr-btn:active { transform: translateY(0); }
 
 .usr-btn--edit {
-  background: linear-gradient(135deg, var(--gold) 0%, #e2be6e 100%);
-  color: #1a2744;
-  box-shadow: 0 2px 8px rgba(201,168,76,0.25);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
 }
 
 .usr-btn--delete {

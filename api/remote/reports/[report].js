@@ -25,12 +25,14 @@ async function dashboardStats(req, res, supabase) {
   const VEHICLE_STATUSES = ["AVAILABLE", "DISPATCHED", "MAINTENANCE", "QUEUED"];
 
   const [{ data: allTickets, error: tErr }, { data: allVehicles, error: vErr },
-    { data: latestPrice, error: pErr }, { data: allSeries, error: sErr }] = await Promise.all([
+    { data: latestPrice, error: pErr }, { data: allSeries, error: sErr }, { data: allPaper, error: ppErr }] = await Promise.all([
     supabase.from("api_ticket").select("id,vehicle_id,driver_id,status,collection_amount,issued_at,dispatched_at"),
     supabase.from("api_vehicle").select("id,status,is_archived"),
     supabase.from("api_ticketprice").select("amount,effective_date").order("effective_date", { ascending: false }).limit(1).maybeSingle(),
-    supabase.from("api_ticketseries").select("start_no,end_no,tickets:api_ticket(id),requisition:api_requisition(is_archived)"),
+    supabase.from("api_ticketseries").select("id,start_no,end_no,tickets:api_ticket(id),requisition:api_requisition(is_archived)"),
+    supabase.from("api_paperissuance").select("series_id,from_no,to_no"),
   ]);
+  if (ppErr) throw ppErr;
   if (tErr) throw tErr;
   if (vErr) throw vErr;
   if (pErr) throw pErr;
@@ -65,7 +67,9 @@ async function dashboardStats(req, res, supabase) {
   for (const series of allSeries || []) {
     if (series.requisition?.is_archived) continue;
     const original = Math.max((Number(series.end_no) || 0) - (Number(series.start_no) || 0) + 1, 0);
-    ticketStockRemaining += Math.max(original - (series.tickets || []).length, 0);
+    const paperUsed = (allPaper || []).filter((p) => p.series_id === series.id)
+      .reduce((s, p) => s + (p.to_no - p.from_no + 1), 0);
+    ticketStockRemaining += Math.max(original - (series.tickets || []).length - paperUsed, 0);
   }
 
   res.status(200).json({
@@ -172,20 +176,26 @@ async function eodReconciliation(req, res, supabase) {
   const dayStart = phRangeStart(dateStr).toISOString();
   const dayEnd = phRangeEnd(dateStr).toISOString();
 
-  const [{ data: dispatchedToday, error: dErr }, { data: batchesToday, error: bErr }, { data: openSessions, error: oErr }] =
+  const [{ data: dispatchedToday, error: dErr }, { data: batchesToday, error: bErr }, { data: openSessions, error: oErr },
+    { data: paperToday, error: ppErr }] =
     await Promise.all([
       supabase.from("api_ticket").select("id,collection_amount,series:api_ticketseries(series_no)")
         .in("status", ["DISPATCHED", "COLLECTED"]).gte("dispatched_at", dayStart).lte("dispatched_at", dayEnd),
       supabase.from("api_remittancebatch").select("total_amount").gte("issued_at", dayStart).lte("issued_at", dayEnd),
       supabase.from("api_ticket").select("id,issued_at,vehicle:api_vehicle(plate_number),driver:api_driver(first_name,last_name)")
         .eq("status", "ISSUED").order("issued_at", { ascending: true }),
+      supabase.from("api_paperissuance").select("from_no,to_no,series:api_ticketseries(series_no,ticket_form:api_ticketform(price))").eq("used_on", dateStr),
     ]);
+  if (ppErr) throw ppErr;
   if (dErr) throw dErr;
   if (bErr) throw bErr;
   if (oErr) throw oErr;
 
   const checkoutCount = dispatchedToday.length;
-  const expectedCash = Math.round(dispatchedToday.reduce((s, t) => s + (Number(t.collection_amount) || 0), 0) * 100) / 100;
+  // Paper-issued tickets have no api_ticket row but their cash is still remitted.
+  const paperCount = paperToday.reduce((s, p) => s + (p.to_no - p.from_no + 1), 0);
+  const paperAmount = Math.round(paperToday.reduce((s, p) => s + (p.to_no - p.from_no + 1) * (Number(p.series?.ticket_form?.price) || 0), 0) * 100) / 100;
+  const expectedCash = Math.round((dispatchedToday.reduce((s, t) => s + (Number(t.collection_amount) || 0), 0) + paperAmount) * 100) / 100;
   const actualCash = Math.round((batchesToday || []).reduce((s, b) => s + (Number(b.total_amount) || 0), 0) * 100) / 100;
 
   const bySeries = {};
@@ -195,13 +205,16 @@ async function eodReconciliation(req, res, supabase) {
     const numbers = ids.map(Number).filter((n) => !Number.isNaN(n)).sort((a, b) => a - b);
     if (!numbers.length) continue;
     const missing = [];
-    for (let n = numbers[0]; n <= numbers[numbers.length - 1]; n++) if (!numbers.includes(n)) missing.push(n);
+    const isPaper = (n) => paperToday.some((p) => p.series?.series_no === seriesNo && n >= p.from_no && n <= p.to_no);
+    for (let n = numbers[0]; n <= numbers[numbers.length - 1]; n++) if (!numbers.includes(n) && !isPaper(n)) missing.push(n);
     if (missing.length) ticketNumberGaps.push({ series_no: seriesNo, missing_numbers: missing });
   }
 
   res.status(200).json({
     date: dateStr,
     checkout_count: checkoutCount,
+    paper_count: paperCount,
+    paper_amount: paperAmount,
     expected_cash: expectedCash,
     actual_cash: actualCash,
     difference: Math.round((expectedCash - actualCash) * 100) / 100,

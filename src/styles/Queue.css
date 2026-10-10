@@ -369,51 +369,13 @@
   color: var(--text-label);
 }
 
-/* Hidden QR scanner: kept rendered (not display:none) so frames keep decoding */
+/* Hidden canvas for QR frame decoding on the /scan tab */
 .queue-scanner-hidden {
   position: absolute;
   width: 1px;
   height: 1px;
   opacity: 0;
   pointer-events: none;
-}
-
-.queue-scanner-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.queue-scanner {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--text-label);
-}
-
-.queue-scanner-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #9ca3af;
-}
-.queue-scanner-dot--on { background: #16a34a; }
-.queue-scanner-dot--starting { background: #f59e0b; }
-.queue-scanner-dot--no-camera,
-.queue-scanner-dot--blocked,
-.queue-scanner-dot--busy { background: #dc2626; }
-
-.queue-scanner-toggle {
-  border: 1px solid var(--border);
-  background: var(--bg-page);
-  color: var(--text-primary);
-  border-radius: 6px;
-  padding: 2px 8px;
-  font-size: 11.5px;
-  font-family: inherit;
-  cursor: pointer;
 }
 
 .queue-select {

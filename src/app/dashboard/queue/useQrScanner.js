@@ -1,16 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import jsQR from "jsqr";
 
-const STORAGE_KEY = "queueQrScannerEnabled";
 const REARM_MS = 1500; // QR must leave the frame this long before the same code re-fires
-
-const readEnabled = () => {
-  try {
-    return localStorage.getItem(STORAGE_KEY) !== "off";
-  } catch {
-    return true;
-  }
-};
 
 const errorToStatus = (err) => {
   const name = err?.name || "";
@@ -22,9 +13,9 @@ const errorToStatus = (err) => {
 // Hidden background QR reader: attach videoRef/canvasRef to off-screen elements.
 // onResult(text) fires once per QR — again only for a different code, or the
 // same code after it has left the frame.
-// alwaysOn ignores the saved Queue-page toggle (the camera tab has no switch).
-export function useQrScanner(onResult, { alwaysOn = false } = {}) {
-  const [enabled, setEnabled] = useState(() => alwaysOn || readEnabled());
+// The camera runs while the component using this hook is mounted — it is only
+// used by the /scan tab, so closing that tab turns the camera off.
+export function useQrScanner(onResult) {
   const [liveStatus, setStatus] = useState("starting");
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -35,8 +26,6 @@ export function useQrScanner(onResult, { alwaysOn = false } = {}) {
   });
 
   useEffect(() => {
-    if (!enabled) return undefined;
-
     const video = videoRef.current;
     let cancelled = false;
     let stream = null;
@@ -104,26 +93,12 @@ export function useQrScanner(onResult, { alwaysOn = false } = {}) {
       if (stream) stream.getTracks().forEach((t) => t.stop());
       video.srcObject = null;
     };
-  }, [enabled]);
-
-  const toggle = useCallback(() => {
-    setEnabled((prev) => {
-      try {
-        localStorage.setItem(STORAGE_KEY, prev ? "off" : "on");
-      } catch {
-        /* storage unavailable — toggle still works for this session */
-      }
-      return !prev;
-    });
   }, []);
 
-  const status = enabled ? liveStatus : "off";
-
-  return { videoRef, canvasRef, enabled, toggle, status };
+  return { videoRef, canvasRef, status: liveStatus };
 }
 
 export const SCANNER_STATUS_LABEL = {
-  off: "Scanner off",
   starting: "Starting camera…",
   on: "Camera on",
   "no-camera": "No camera found",

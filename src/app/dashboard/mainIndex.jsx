@@ -201,68 +201,17 @@ function mainIndex() {
           <img src={sfcLogo} alt="SFC Logo" className="mobile-header-logo" />
           <span className="mobile-header-name">North Central Terminal</span>
         </div>
-      </header>
-
-      {mobileNavOpen && (
-        <div
-          className="mobile-nav-overlay"
-          onClick={() => setMobileNavOpen(false)}
-        />
-      )}
-
-      <aside className={`sidebar${mobileNavOpen ? " sidebar-open" : ""}`}>
-        {/* Brand header */}
-        <div className="sidebar-brand">
-          <div className="sidebar-brand-icon">
-            <img
-              src={sfcLogo}
-              alt="SFC Logo"
-              style={{ width: "30px", height: "30px", borderRadius: "40px" }}
-            />
-          </div>
-          <div className="sidebar-brand-text">
-            <span className="sidebar-brand-name">North Central Terminal</span>
-          </div>
-        </div>
-
-        {/* Nav links */}
-        <nav className="sidebar-nav">
-          <div className="sidebar-nav-label">Navigation</div>
-          {NAV_GROUPS.map((group) =>
-            group.filter((item) => ROLE_NAV[userRole]?.includes(item.to)),
-          )
-            .filter((group) => group.length > 0)
-            .map((group, idx) => (
-              <React.Fragment key={idx}>
-                {idx > 0 && <div className="sidebar-nav-divider" />}
-                {group.map(({ to, label, Icon }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    end={to === "/dashboard"}
-                    className={({ isActive }) =>
-                      isActive ? "nav-link nav-link-active" : "nav-link"
-                    }
-                  >
-                    <Icon className="nav-link-icon" />
-                    {label}
-                  </NavLink>
-                ))}
-              </React.Fragment>
-            ))}
-        </nav>
-
         {/* User footer */}
-        <div className="sidebar-footer">
-          <div className="sidebar-avatar">{userInitials}</div>
-          <div className="sidebar-user-info">
-            <div className="sidebar-user-name">{userName}</div>
-            <div className="sidebar-user-role">{userRoleLabel}</div>
+        <div className="header-user">
+          <div className="header-avatar">{userInitials}</div>
+          <div className="header-user-info">
+            <div className="header-user-name">{userName}</div>
+            <div className="header-user-role">{userRoleLabel}</div>
           </div>
 
           {/* Theme toggle */}
           <button
-            className="sidebar-icon-btn"
+            className="header-icon-btn"
             onClick={() => setDark((d) => !d)}
             title={dark ? "Switch to light mode" : "Switch to dark mode"}
           >
@@ -302,7 +251,7 @@ function mainIndex() {
 
           {/* Logout */}
           <button
-            className="sidebar-icon-btn"
+            className="header-icon-btn"
             onClick={async () => {
               const ok = await showConfirm("Are you sure you want to logout?");
               if (!ok) return;
@@ -328,6 +277,43 @@ function mainIndex() {
             </svg>
           </button>
         </div>
+      </header>
+
+      {mobileNavOpen && (
+        <div
+          className="mobile-nav-overlay"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+
+      <aside className={`sidebar${mobileNavOpen ? " sidebar-open" : ""}`}>
+        {/* Nav links */}
+        <nav className="sidebar-nav">
+          <div className="sidebar-nav-label">Navigation</div>
+          {NAV_GROUPS.map((group) =>
+            group.filter((item) => ROLE_NAV[userRole]?.includes(item.to)),
+          )
+            .filter((group) => group.length > 0)
+            .map((group, idx) => (
+              <React.Fragment key={idx}>
+                {idx > 0 && <div className="sidebar-nav-divider" />}
+                {group.map(({ to, label, Icon }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={to === "/dashboard"}
+                    className={({ isActive }) =>
+                      isActive ? "nav-link nav-link-active" : "nav-link"
+                    }
+                  >
+                    <Icon className="nav-link-icon" />
+                    {label}
+                  </NavLink>
+                ))}
+              </React.Fragment>
+            ))}
+        </nav>
+
       </aside>
 
       <main className="main-content">

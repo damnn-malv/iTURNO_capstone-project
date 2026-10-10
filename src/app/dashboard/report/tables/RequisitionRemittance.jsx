@@ -18,15 +18,11 @@ export default function RequisitionRemittance({
   onRequisitionFetchPage,
   onRequisitionFetchAll,
   onExportRequisitionsPDF,
-  requisitionArchived,
-  onRequisitionArchivedChange,
   remittanceData,
   remittanceMeta,
   onRemittanceFetchPage,
   onRemittanceFetchAll,
   onExportRemittancePDF,
-  remittanceArchived,
-  onRemittanceArchivedChange,
   pageSize,
 }) {
   const [activeTab, setActiveTab] = useState("remittance");
@@ -46,8 +42,6 @@ export default function RequisitionRemittance({
   const meta = isRequisition ? requisitionMeta : remittanceMeta;
   const fetchPage = isRequisition ? onRequisitionFetchPage : onRemittanceFetchPage;
   const fetchAll = isRequisition ? onRequisitionFetchAll : onRemittanceFetchAll;
-  const archived = isRequisition ? requisitionArchived : remittanceArchived;
-  const onArchivedChange = isRequisition ? onRequisitionArchivedChange : onRemittanceArchivedChange;
 
   const toggleExpand = (id) =>
     setExpandedId((prev) => (prev === id ? null : id));
@@ -199,20 +193,6 @@ export default function RequisitionRemittance({
               onClick={() => handleTabChange("requisition")}
             >
               Requisition
-            </button>
-          </div>
-          <div className="rpt-tab-group">
-            <button
-              className={`rpt-tab ${!archived ? "rpt-tab--active" : ""}`}
-              onClick={() => onArchivedChange(false)}
-            >
-              Active
-            </button>
-            <button
-              className={`rpt-tab ${archived ? "rpt-tab--active" : ""}`}
-              onClick={() => onArchivedChange(true)}
-            >
-              Archived
             </button>
           </div>
           <span className="rpt-record-count">

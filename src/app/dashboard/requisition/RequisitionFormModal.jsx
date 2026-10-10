@@ -96,6 +96,7 @@ const RequisitionFormModal = ({
                 <label className="req-label">Ticket Form</label>
                 <select
                   className="req-input"
+                  required
                   value={item.ticket_form}
                   onChange={(e) =>
                     updateSeriesItem(i, "ticket_form", e.target.value)

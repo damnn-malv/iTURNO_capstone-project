@@ -10,6 +10,7 @@ from .viewsets import (
     TicketFormViewSet,
     RequisitionViewSet,
     TicketSeriesViewSet,
+    PaperIssuanceViewSet,
     RemittanceBatchViewSet,
     RoamingLogViewSet,
 )

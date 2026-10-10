@@ -60,7 +60,7 @@ function Registry() {
           </div>
           {(activeTab === "vehicles" || activeTab === "drivers") && (
             <button
-              className="reg-add-btn"
+              className="reg-add-btn reg-add-btn--secondary"
               onClick={() =>
                 activeTab === "vehicles"
                   ? vehExportQRRef.current?.()
@@ -81,7 +81,7 @@ function Registry() {
             </button>
           )}
           <button
-            className="reg-add-btn"
+            className="reg-add-btn reg-add-btn--secondary"
             onClick={() =>
               activeTab === "vehicles"
                 ? vehExportPDFRef.current?.()

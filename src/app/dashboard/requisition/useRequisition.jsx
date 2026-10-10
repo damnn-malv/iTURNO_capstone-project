@@ -139,10 +139,15 @@ export function useRequisition() {
   );
 
   useEffect(() => {
-    if (showForm) setError(null);
+    setError(null);
   }, [showForm]);
 
   const handleSave = async () => {
+    const filled = seriesItems.filter((item) => item.start_no || item.end_no);
+    if (filled.some((item) => !item.ticket_form)) {
+      setError("Select a ticket form for every series item.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -157,13 +162,12 @@ export function useRequisition() {
         }),
       });
 
-      for (const item of seriesItems) {
-        if (!item.start_no && !item.end_no) continue;
+      for (const item of filled) {
         await apiService.request("/ticket-series/", {
           method: "POST",
           body: JSON.stringify({
             series_no: `${item.start_no}-${item.end_no}`,
-            ticket_form: item.ticket_form || null,
+            ticket_form: item.ticket_form,
             pad_no: item.pad_no || "",
             box_no: item.box_no || "",
             start_no: item.start_no,

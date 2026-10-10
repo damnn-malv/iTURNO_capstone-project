@@ -119,6 +119,15 @@
   transform: translateY(0);
 }
 
+.reg-add-btn--secondary {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.reg-add-btn--secondary:hover { background: var(--bg-hover); box-shadow: none; opacity: 1; }
+
 @media (max-width: 560px) {
   .reg-header-right { flex-wrap: wrap; width: 100%; }
   .reg-search-wrap { width: 100%; }

@@ -21,7 +21,7 @@ async function getTicketStatsBySeries(seriesIds) {
 
   const { data, error } = await supabaseAdmin()
     .from("api_ticket")
-    .select("series_id, issued_at")
+    .select("id, series_id, issued_at")
     .in("series_id", ids);
   if (error) throw error;
 
@@ -30,11 +30,27 @@ async function getTicketStatsBySeries(seriesIds) {
   const todayStart = new Date();
   todayStart.setUTCHours(0, 0, 0, 0);
 
+  // Paper-issued ranges (api_paperissuance) are reserved stock too — mirrors
+  // the paper_issuances term in TicketSeriesSerializer.get_remaining.
+  const { data: paper, error: pErr } = await supabaseAdmin()
+    .from("api_paperissuance")
+    .select("series_id, from_no, to_no")
+    .in("series_id", ids);
+  if (pErr) throw pErr;
+
   const stats = {};
+  for (const p of paper) {
+    const entry = stats[p.series_id] || { totalIssued: 0, issuedBeforeToday: 0 };
+    entry.paperIssued = (entry.paperIssued || 0) + (p.to_no - p.from_no + 1);
+    entry.lastUsed = Math.max(entry.lastUsed ?? p.to_no, p.to_no);
+    stats[p.series_id] = entry;
+  }
   for (const row of data) {
     const entry = stats[row.series_id] || { totalIssued: 0, issuedBeforeToday: 0 };
     entry.totalIssued += 1;
     if (row.issued_at && new Date(row.issued_at) < todayStart) entry.issuedBeforeToday += 1;
+    const n = Number(row.id);
+    if (Number.isFinite(n)) entry.lastUsed = Math.max(entry.lastUsed ?? n, n);
     stats[row.series_id] = entry;
   }
   return stats;

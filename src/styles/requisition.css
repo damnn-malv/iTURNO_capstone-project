@@ -843,3 +843,12 @@
     font-size: 12px;
   }
 }
+
+.req-used-title {
+  margin: 14px 10px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
