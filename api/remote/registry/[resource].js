@@ -15,12 +15,12 @@ import { requireAuth, requireRole, CAN_EDIT_SETTINGS } from "../../_lib/auth.js"
 const RESOURCES = {
   vehicles: {
     table: "api_vehicle",
-    editableFields: ["plate_number", "transportation_id", "franchise_number", "route", "operator_address", "qr_code", "owner_driver"],
+    editableFields: ["plate_number", "transportation_id", "franchise_number", "franchise_expiration_date", "route", "operator_address", "qr_code", "owner_driver"],
   },
   drivers: {
     table: "api_driver",
     editableFields: [
-      "iwp_number", "first_name", "middle_name", "last_name", "gender", "birthdate",
+      "iwp_number", "iwp_expiration_date", "first_name", "middle_name", "last_name", "gender", "birthdate",
       "province", "city", "barangay", "street", "contact", "qr_code",
     ],
   },

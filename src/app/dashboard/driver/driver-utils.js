@@ -14,12 +14,22 @@ export const getDriverDisplayName = (driver) => {
 
 export const getDriverCode = (driver) => driver?.iwp_number || driver?.code || "—";
 
+// "valid" | "expired" | "none" (no expiration date on file). Valid through the expiry day itself.
+export const getExpiryStatus = (exp) => {
+  if (!exp) return "none";
+  const today = new Date().toLocaleDateString("en-CA");
+  return exp < today ? "expired" : "valid";
+};
+
+export const getIwpStatus = (driver) => getExpiryStatus(driver?.iwp_expiration_date);
+
 export const normalizeDriverForm = (driver = {}) => ({
   id: driver.id ?? null,
   first_name: driver.first_name || "",
   middle_name: driver.middle_name || "",
   last_name: driver.last_name || "",
   iwp_number: driver.iwp_number || "",
+  iwp_expiration_date: driver.iwp_expiration_date || "",
   gender: driver.gender || "",
   birthdate: driver.birthdate || "",
   province: driver.province || "La Union",
@@ -44,6 +54,7 @@ export const buildDriverPayload = (form = {}) => {
   }
   payload.append("last_name", form.last_name || "");
   payload.append("iwp_number", form.iwp_number || "");
+  payload.append("iwp_expiration_date", form.iwp_expiration_date || "");
   payload.append("gender", form.gender || "");
   payload.append("birthdate", form.birthdate || "");
   payload.append("province", form.province || "La Union");

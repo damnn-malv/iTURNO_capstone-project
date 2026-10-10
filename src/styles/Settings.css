@@ -173,6 +173,7 @@
 .set-general-grid .set-table th {
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border);
 }
 
 /* ── Panel (Ticket Backfill / System tabs) ── */
@@ -274,7 +275,7 @@
 }
 
 .set-table thead tr {
-  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
+  background: var(--bg-page);
 }
 
 .set-table th {
@@ -284,7 +285,8 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: rgba(255,255,255,0.85);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 

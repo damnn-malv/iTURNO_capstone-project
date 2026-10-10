@@ -4,14 +4,11 @@ import {
   STATUS_COLORS,
   getToday,
   getYearStart,
-  exportCSV,
   matchesQueueRow,
   matchesRoamingRow,
   matchesRequisitionRow,
   matchesRemittanceRow,
   matchesAuditRow,
-  matchesVehicleRow,
-  matchesDriverRow,
   formatAuditItem,
   formatAuditDetails,
 } from "./reportHook";
@@ -19,9 +16,7 @@ import { exportTablePDF } from "./exportPDF";
 
 import QueueLog from "./tables/QueueLog";
 import AuditTrail from "./tables/AuditTrail";
-import FleetRecords from "./tables/FleetRecords";
 import RequisitionRemittance from "./tables/RequisitionRemittance";
-import { getDriverCode } from "../driver/driver-utils";
 import { IS_REMOTE, authFetch } from "../../../lib/api-service";
 import "../../../styles/Report.css";
 
@@ -57,13 +52,6 @@ export default function Report() {
 
   const [auditData, setAuditData] = useState([]);
   const [auditMeta, setAuditMeta] = useState(EMPTY_PAGE_META);
-
-  const [vehicles, setVehicles] = useState([]);
-  const [vehiclesTotal, setVehiclesTotal] = useState(0);
-  const [drivers, setDrivers] = useState([]);
-  const [driversTotal, setDriversTotal] = useState(0);
-  const [showAllVehicles, setShowAllVehicles] = useState(false);
-  const [showAllDrivers, setShowAllDrivers] = useState(false);
 
   const [requisitionData, setRequisitionData] = useState([]);
   const [requisitionMeta, setRequisitionMeta] = useState(EMPTY_PAGE_META);
@@ -165,28 +153,6 @@ export default function Report() {
     }
   }, [fetchAuditRaw]);
 
-  const fetchVehicles = useCallback(async () => {
-    try {
-      const res = await authFetch("/vehicles/");
-      const data = await res.json();
-      setVehicles(Array.isArray(data) ? data : data.vehicles || []);
-      setVehiclesTotal(Array.isArray(data) ? data.length : data.total || 0);
-    } catch {
-      console.error("Failed to load vehicle records");
-    }
-  }, []);
-
-  const fetchDrivers = useCallback(async () => {
-    try {
-      const res = await authFetch("/drivers/");
-      const data = await res.json();
-      setDrivers(Array.isArray(data) ? data : data.drivers || []);
-      setDriversTotal(Array.isArray(data) ? data.length : data.total || 0);
-    } catch {
-      console.error("Failed to load driver records");
-    }
-  }, []);
-
   const fetchRequisitionRaw = useCallback(async (page = 1) => {
     const qs = buildParams();
     const res = await authFetch(
@@ -239,17 +205,23 @@ export default function Report() {
 
   // Full date-filtered range, ignoring pagination — used only when exporting,
   // so CSV/PDF stay complete even though the on-screen table only loads one page.
-  const fetchQueueExportRows = useCallback(async () => {
+  // `search` is optional: the on-screen search box passes it so the server narrows
+  // the set instead of shipping every ticket; exports omit it and filter locally.
+  const fetchQueueExportRows = useCallback(async (search = "") => {
     const qs = buildParams();
-    const res = await authFetch(`/tickets/?mode=QUEUE${qs ? `&${qs}` : ""}`);
+    const res = await authFetch(
+      `/tickets/?mode=QUEUE${search ? `&search=${encodeURIComponent(search)}` : ""}${qs ? `&${qs}` : ""}`,
+    );
     const data = await res.json();
     const list = Array.isArray(data) ? data : data.results || [];
     return list.map(mapTicketToLogRow);
   }, [buildParams]);
 
-  const fetchRoamingExportRows = useCallback(async () => {
+  const fetchRoamingExportRows = useCallback(async (search = "") => {
     const qs = buildParams();
-    const res = await authFetch(`/tickets/?mode=UNLOAD${qs ? `&${qs}` : ""}`);
+    const res = await authFetch(
+      `/tickets/?mode=UNLOAD${search ? `&search=${encodeURIComponent(search)}` : ""}${qs ? `&${qs}` : ""}`,
+    );
     const data = await res.json();
     return Array.isArray(data) ? data : data.results || [];
   }, [buildParams]);
@@ -285,8 +257,6 @@ export default function Report() {
     Promise.all([fetchQueuePage(), fetchRoamingPage(), fetchAuditPage()]).finally(() =>
       setLoading(false),
     );
-    fetchVehicles();
-    fetchDrivers();
   }, []);
 
   // Refetches on mount and whenever the Active/Archived requisition tab flips.
@@ -327,49 +297,6 @@ export default function Report() {
     setTimeout(refetchFiltered, 0);
   };
 
-  const buildVehicleExportRow = (v) => ({
-    "Plate Number": v.plate_number,
-    Route: v.route_detail
-      ? `${v.route_detail.origin} - San Fernando`
-      : v.route || "—",
-    Transportation: v.transportation_name || v.transportation_id || "—",
-    "Franchise #": v.franchise_number || "—",
-    "QR Code": v.qr_code || "—",
-    "Active Driver": v.active_driver_name || "Unassigned",
-  });
-
-  const buildDriverExportRow = (d) => ({
-    IWP: getDriverCode(d),
-    "First Name": d.first_name || "—",
-    "Middle Name": d.middle_name || "—",
-    "Last Name": d.last_name || "—",
-    Gender: d.gender || "—",
-    Birthdate: d.birthdate || "—",
-    Province: d.province || "—",
-    City: d.city || "—",
-    Barangay: d.barangay || "—",
-    Street: d.street || "—",
-    "Contact No.": d.contact || "—",
-  });
-
-  const handleExportVehiclesCSV = (search = "") =>
-    exportCSV(
-      vehicles.filter((v) => matchesVehicleRow(v, search)).map(buildVehicleExportRow),
-      `vehicle_records_${Date.now()}.csv`,
-    );
-
-  const handleExportDriversCSV = (search = "") =>
-    exportCSV(
-      drivers.filter((d) => matchesDriverRow(d, search)).map(buildDriverExportRow),
-      `driver_records_${Date.now()}.csv`,
-    );
-
-  const handleExportVehiclesPDF = (search = "") =>
-    exportTablePDF(vehicles.filter((v) => matchesVehicleRow(v, search)).map(buildVehicleExportRow), "Vehicle Records");
-
-  const handleExportDriversPDF = (search = "") =>
-    exportTablePDF(drivers.filter((d) => matchesDriverRow(d, search)).map(buildDriverExportRow), "Driver Records");
-
   const buildRequisitionExportRow = (r) => ({
     "Date Requested": r.date_requested ? r.date_requested.slice(0, 10) : "—",
     "Requested By": r.requested_by_name || "—",
@@ -380,14 +307,6 @@ export default function Report() {
     "Total Value": r.total_value,
     Status: r.status,
   });
-
-  const handleExportRequisitionsCSV = async (search = "") => {
-    const rows = await fetchRequisitionExportRows();
-    exportCSV(
-      rows.filter((r) => matchesRequisitionRow(r, search)).map(buildRequisitionExportRow),
-      `requisitions_${Date.now()}.csv`,
-    );
-  };
 
   const handleExportRequisitionsPDF = async (search = "") => {
     const rows = await fetchRequisitionExportRows();
@@ -401,14 +320,6 @@ export default function Report() {
     "Total Amount": b.total_amount,
     Status: b.status,
   });
-
-  const handleExportRemittanceCSV = async (search = "") => {
-    const rows = await fetchRemittanceExportRows();
-    exportCSV(
-      rows.filter((b) => matchesRemittanceRow(b, search)).map(buildRemittanceExportRow),
-      `remittance_${Date.now()}.csv`,
-    );
-  };
 
   const handleExportRemittancePDF = async (search = "") => {
     const rows = await fetchRemittanceExportRows();
@@ -426,16 +337,8 @@ export default function Report() {
     User: l.user,
   });
 
-  const handleExportQueueCSV = async (search = "") => {
-    const rows = await fetchQueueExportRows();
-    exportCSV(
-      rows.filter((l) => matchesQueueRow(l, search)).map(buildLogExportRow),
-      `terminal_queue_log_${Date.now()}.csv`,
-    );
-  };
-
   const handleExportQueuePDF = async (search = "") => {
-    const rows = await fetchQueueExportRows();
+    const rows = await fetchQueueExportRows(search);
     exportTablePDF(rows.filter((l) => matchesQueueRow(l, search)).map(buildLogExportRow), "Terminal Queue Log");
   };
 
@@ -448,16 +351,8 @@ export default function Report() {
     Verified: t.status === "CANCELLED" ? "Cancelled" : t.is_verified ? "Verified" : "Pending",
   });
 
-  const handleExportRoamingCSV = async (search = "") => {
-    const rows = await fetchRoamingExportRows();
-    exportCSV(
-      rows.filter((t) => matchesRoamingRow(t, search)).map(buildRoamingExportRow),
-      `roaming_logs_${Date.now()}.csv`,
-    );
-  };
-
   const handleExportRoamingPDF = async (search = "") => {
-    const rows = await fetchRoamingExportRows();
+    const rows = await fetchRoamingExportRows(search);
     exportTablePDF(rows.filter((t) => matchesRoamingRow(t, search)).map(buildRoamingExportRow), "Roaming Logs");
   };
 
@@ -468,14 +363,6 @@ export default function Report() {
     Details: formatAuditDetails(l),
     User: l.user_name || "System",
   });
-
-  const handleExportAuditCSV = async (search = "") => {
-    const rows = await fetchAuditExportRows();
-    exportCSV(
-      rows.filter((l) => matchesAuditRow(l, search)).map(buildAuditExportRow),
-      `audit_trail_${Date.now()}.csv`,
-    );
-  };
 
   const handleExportAuditPDF = async (search = "") => {
     const rows = await fetchAuditExportRows();
@@ -577,12 +464,10 @@ export default function Report() {
         queueData={queueData}
         queueMeta={queueMeta}
         onQueueFetchPage={fetchQueueRaw}
-        onExportQueueCSV={handleExportQueueCSV}
         onExportQueuePDF={handleExportQueuePDF}
         roamingData={roamingData}
         roamingMeta={roamingMeta}
         onRoamingFetchPage={fetchRoamingRaw}
-        onExportRoamingCSV={handleExportRoamingCSV}
         onExportRoamingPDF={handleExportRoamingPDF}
         onQueueFetchAll={fetchQueueExportRows}
         onRoamingFetchAll={fetchRoamingExportRows}
@@ -595,7 +480,6 @@ export default function Report() {
         requisitionMeta={requisitionMeta}
         onRequisitionFetchPage={fetchRequisitionRaw}
         onRequisitionFetchAll={fetchRequisitionExportRows}
-        onExportRequisitionsCSV={handleExportRequisitionsCSV}
         onExportRequisitionsPDF={handleExportRequisitionsPDF}
         requisitionArchived={requisitionArchived}
         onRequisitionArchivedChange={setRequisitionArchived}
@@ -603,26 +487,9 @@ export default function Report() {
         remittanceMeta={remittanceMeta}
         onRemittanceFetchPage={fetchRemittanceRaw}
         onRemittanceFetchAll={fetchRemittanceExportRows}
-        onExportRemittanceCSV={handleExportRemittanceCSV}
         onExportRemittancePDF={handleExportRemittancePDF}
         remittanceArchived={remittanceArchived}
         onRemittanceArchivedChange={setRemittanceArchived}
-        pageSize={PAGE_SIZE}
-      />
-
-      <FleetRecords
-        vehiclesTotal={vehiclesTotal}
-        showAllVehicles={showAllVehicles}
-        setShowAllVehicles={setShowAllVehicles}
-        visibleVehicles={showAllVehicles ? vehicles : vehicles.slice(0, 5)}
-        handleExportVehiclesCSV={handleExportVehiclesCSV}
-        handleExportVehiclesPDF={handleExportVehiclesPDF}
-        driversTotal={driversTotal}
-        showAllDrivers={showAllDrivers}
-        setShowAllDrivers={setShowAllDrivers}
-        visibleDrivers={showAllDrivers ? drivers : drivers.slice(0, 5)}
-        handleExportDriversCSV={handleExportDriversCSV}
-        handleExportDriversPDF={handleExportDriversPDF}
         pageSize={PAGE_SIZE}
       />
 
@@ -631,7 +498,6 @@ export default function Report() {
         auditMeta={auditMeta}
         onAuditFetchPage={fetchAuditRaw}
         onAuditFetchAll={fetchAuditExportRows}
-        onExportCSV={handleExportAuditCSV}
         onExportPDF={handleExportAuditPDF}
         pageSize={PAGE_SIZE}
       />

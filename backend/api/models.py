@@ -4,6 +4,9 @@ from django.core.validators import EmailValidator
 from django.db import models
 
 
+LOCAL_ADMIN_PK_BASE = 1_000_000
+
+
 class UserManager(BaseUserManager):
     """Username-only manager — the default UserManager always passes `email`
     to the model constructor, which breaks since User has no email field
@@ -29,6 +32,10 @@ class UserManager(BaseUserManager):
             raise ValueError('Superuser must have is_staff=True.')
         if extra_fields.get('is_superuser') is not True:
             raise ValueError('Superuser must have is_superuser=True.')
+        if self._db in (None, 'default'):
+            # Local-only emergency admin (works offline): park its id far above
+            # Supabase's sequence so a pulled row can never overwrite it.
+            extra_fields.setdefault('pk', max(self.model.objects.aggregate(m=models.Max('pk'))['m'] or 0, LOCAL_ADMIN_PK_BASE) + 1)
         return self._create_user(username, password, **extra_fields)
 
 
@@ -69,6 +76,7 @@ class Driver(models.Model):
 
     id = models.AutoField(primary_key=True)
     iwp_number = models.CharField(max_length=50, blank=True, db_index=True)
+    iwp_expiration_date = models.DateField(null=True, blank=True)
 
     first_name = models.CharField(max_length=100, db_index=True)
     middle_name = models.CharField(max_length=100, blank=True, db_index=True)
@@ -162,7 +170,8 @@ class Vehicle(models.Model):
     plate_number = models.CharField(unique=True, max_length=20, db_index=True)
     transportation_id = models.ForeignKey('PUVType', null=True, blank=True, on_delete=models.SET_NULL, related_name='vehicles', db_index=True)
     franchise_number = models.CharField(max_length=100, blank=True, db_index=True)
-    route = models.ForeignKey('Route', null=True, blank=True, on_delete=models.SET_NULL, related_name='vehicles', db_index=True)
+    franchise_expiration_date = models.DateField(null=True, blank=True)
+    route =models.ForeignKey('Route', null=True, blank=True, on_delete=models.SET_NULL, related_name='vehicles', db_index=True)
 
     operator_address = models.CharField(max_length=255, blank=True)
     qr_code = models.CharField(max_length=255, blank=True, db_index=True)
@@ -213,6 +222,16 @@ class Ticket(models.Model):
     # gives the actual loading duration for that trip, without needing a
     # separate duration column or table.
     loading_started_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # One-off addition to the route's estimated_loading_minutes, for this ticket
+    # only (e.g. a peak-hour extension) — never touches the route default and
+    # never affects the real dispatched_at - loading_started_at duration used
+    # for stats, since it only shifts the displayed/estimated deadline.
+    extra_loading_minutes = models.PositiveIntegerField(default=0)
+    # Manual drag-and-drop override of this vehicle's spot in its route's queue.
+    # Null until the queue is reordered at least once; ties/fallback use
+    # issued_at (plain FIFO) — see promote_queue_front() and the Ticket
+    # reorder-queue action.
+    queue_rank = models.IntegerField(null=True, blank=True, db_index=True)
     dispatched_at = models.DateTimeField(null=True, blank=True)
     nullified_at = models.DateTimeField(null=True, blank=True)
     reason = models.TextField(blank=True)
@@ -319,6 +338,9 @@ class TicketPrice(models.Model):
     
 class PUVType(models.Model):
     name = models.CharField(max_length=50, unique=True)
+    # Exact total (ticket price x quantity) a vehicle of this type must be charged
+    # per ticket issuance; 0 disables the check for the type.
+    terminal_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     def __str__(self):
         return self.name
@@ -329,19 +351,6 @@ class TicketForm(models.Model):
 
     def __str__(self):
         return self.name
-
-class TerminalPrice(models.Model):
-    amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"Terminal Price: ₱{self.amount}"
-
-    @classmethod
-    def get_solo(cls):
-        obj, _ = cls.objects.get_or_create(pk=1)
-        return obj
-
 
 class WipMode(models.Model):
     """Singleton operational flag: while active, new ticket issuance is hard-blocked

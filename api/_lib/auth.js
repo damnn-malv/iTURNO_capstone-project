@@ -153,7 +153,7 @@ export const ROLES = {
   MANAGER: "MANAGER",
   ADMIN: "SUPERADMIN",
 };
-// Everything writable remotely (Route, User, TicketPrice, TerminalPrice,
+// Everything writable remotely (Route, User, TicketPrice,
 // TicketForm, PUVType, and the registry-only fields on Vehicle/Driver) is
 // restricted to SUPERADMIN — deliberately narrower than "any manager" per
 // the user's explicit call for this category of remote write access.

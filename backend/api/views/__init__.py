@@ -28,7 +28,6 @@ from .records import (
     public_queue,
     server_time,
     remittance_batches,
-    terminal_price_config,
 )
 
 from .system import (

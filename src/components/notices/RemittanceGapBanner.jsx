@@ -48,7 +48,7 @@ export default function RemittanceGapBanner({ canViewRemittance }) {
   if (!canViewRemittance || !gap || dismissed) return null;
 
   const handleFileLate = () => {
-    navigate("/dashboard/Remittance", { state: { lateDate: gap.date } });
+    navigate(`/dashboard/Remittance?date=${gap.date}`);
   };
 
   const handleDismiss = () => {

@@ -1,10 +1,16 @@
-import React, { useState, useMemo } from "react";
+﻿import React, { useState } from "react";
 import { useRequisition } from "./useRequisition";
 import RequisitionFormModal from "./RequisitionFormModal";
 import "../../../styles/requisition.css";
 
 function formatCurrency(val) {
   return "₱" + Number(val || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatDate(val) {
+  if (!val) return "—";
+  const d = new Date(val);
+  return isNaN(d) ? "—" : d.toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" });
 }
 
 function Requisition() {
@@ -23,42 +29,16 @@ function Requisition() {
     handleSave,
     allSeries,
     inventory,
-    handleArchive,
-    handleRestore,
     approvedBy,
     setApprovedBy,
-    activeRequisitions,
-    archivedRequisitions,
   } = useRequisition();
 
-  const [expandedId, setExpandedId] = useState(null);
   const [expandedDenom, setExpandedDenom] = useState(null);
-  const [receiptsTab, setReceiptsTab] = useState("active");
-
-  const displayedRequisitions =
-    receiptsTab === "active" ? activeRequisitions : archivedRequisitions;
-
-  const toggleExpand = (id) =>
-    setExpandedId((prev) => (prev === id ? null : id));
 
   const toggleDenom = (denom) =>
     setExpandedDenom((prev) => (prev === denom ? null : denom));
 
   const denomOptions = Object.keys(inventory.byDenomination);
-
-  const displayInventory = useMemo(() => {
-    if (!expandedDenom || !inventory.byDenomination[expandedDenom]) return inventory;
-    const d = inventory.byDenomination[expandedDenom];
-    const totalStock = d.totalQty;
-    const stockLevel = totalStock >= 10000 ? "high" : totalStock >= 5000 ? "normal" : "low";
-    return {
-      totalStock,
-      totalValue: d.totalValue,
-      activeSeries: d.series.length > 0 ? d.series[0] : null,
-      hasStock: totalStock > 0,
-      stockLevel,
-    };
-  }, [expandedDenom, inventory]);
 
   return (
     <div className="req-page">
@@ -81,7 +61,7 @@ function Requisition() {
       </div>
 
       {/* Error */}
-      {error && <div className="req-error">{error}</div>}
+      {error && !showForm && <div className="req-error">{error}</div>}
 
       {/* Modal */}
       <RequisitionFormModal
@@ -97,6 +77,7 @@ function Requisition() {
         computeTotal={computeTotal}
         handleSave={handleSave}
         saving={saving}
+        error={error}
       />
 
       {/* Loading */}
@@ -104,77 +85,6 @@ function Requisition() {
         <div className="req-loading">Loading requisitions…</div>
       ) : (
         <>
-          {/* Inventory Summary Cards */}
-          {/* {denomOptions.length > 0 && (
-            <div className="req-filter-wrap" style={{ marginBottom: 14, justifyContent: "flex-start" }}>
-              <label className="req-inv-card-label" style={{ marginRight: 4 }}>
-                Viewing
-              </label>
-              <select
-                className="req-filter-select"
-                value={expandedDenom || ""}
-                onChange={(e) => setExpandedDenom(e.target.value || null)}
-              >
-                <option value="">All denominations</option>
-                {denomOptions.map((denom) => (
-                  <option key={denom} value={denom}>
-                    {denom}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )} */}
-          <div className="req-inventory-grid">
-            <div className={`req-inv-card ${displayInventory.hasStock ? "req-inv-card--ok" : "req-inv-card--empty"}`}>
-              <span className="req-inv-card-label">Total Stock</span>
-              <span className="req-inv-card-value">
-                {displayInventory.totalStock.toLocaleString()} tickets
-              </span>
-              <span className="req-inv-card-sub">
-                {formatCurrency(displayInventory.totalValue)}
-              </span>
-            </div>
-
-            <div className="req-inv-card">
-              <span className="req-inv-card-label">Active Series</span>
-              {displayInventory.activeSeries ? (
-                <>
-                  <span className="req-inv-card-value">{displayInventory.activeSeries.series_no}</span>
-                  <span className="req-inv-card-sub">
-                    {displayInventory.activeSeries.ticket_form_label || "—"} · {displayInventory.activeSeries.remaining.toLocaleString()} pcs
-                  </span>
-                </>
-              ) : (
-                <span className="req-inv-card-value req-inv-card-value--none">No active series</span>
-              )}
-            </div>
-
-            {displayInventory.stockLevel !== "normal" && (
-              <div className={`req-inv-card ${displayInventory.stockLevel === "low" ? "req-inv-card--alert" : "req-inv-card--ok"}`}>
-                <span className="req-inv-card-label">Stock Alert</span>
-                {displayInventory.stockLevel === "low" ? (
-                  <>
-                    <span className="req-inv-card-value req-inv-card-value--warn">
-                      {displayInventory.hasStock ? "LOW STOCK" : "OUT OF STOCK"}
-                    </span>
-                    <span className="req-inv-card-sub">
-                      {displayInventory.hasStock
-                        ? `Only ${displayInventory.totalStock.toLocaleString()} tickets remaining — below 5,000 threshold`
-                        : "New requisition required to resume transactions"}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span className="req-inv-card-value req-inv-card-value--high">HIGH STOCK</span>
-                    <span className="req-inv-card-sub">
-                      {displayInventory.totalStock.toLocaleString()} tickets — above 50,000 threshold
-                    </span>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* Collections & Deposits by Denomination */}
           <div className="req-table-wrap">
             <div className="req-report-section-header">
@@ -190,21 +100,19 @@ function Requisition() {
               </thead>
               <tbody>
                 {denomOptions.length > 0 ? (
-                  denomOptions
-                    .filter((denom) => !expandedDenom || expandedDenom === denom)
-                    .map((denom) => {
+                  denomOptions.map((denom) => {
                     const d = inventory.byDenomination[denom];
                     const isExpanded = expandedDenom === denom;
                     return (
                       <React.Fragment key={denom}>
                         <tr
                           onClick={() => toggleDenom(denom)}
-                          style={{ cursor: "pointer" }}
-                          className={isExpanded ? "req-row--active" : ""}
+                          className={`req-row--clickable ${isExpanded ? "req-row--active" : ""}`}
                         >
                           <td>
                             <span className={`req-expand-icon ${isExpanded ? "req-expand-icon--open" : ""}`}>&#9654;</span>
                             {denom}
+                            <span className="req-expand-hint">{isExpanded ? "Hide series" : "View series"}</span>
                           </td>
                           <td className="text-right">{d.totalQty.toLocaleString()}</td>
                           <td className="text-right">{formatCurrency(d.totalValue)}</td>
@@ -216,7 +124,7 @@ function Requisition() {
                                 <thead>
                                   <tr>
                                     <th>Series No.</th>
-                                    
+                                    <th>Date Created</th>
                                     <th className="text-right">Beginning</th>
                                     <th className="text-right">Remaining</th>
                                     <th className="text-right">Amount</th>
@@ -226,6 +134,7 @@ function Requisition() {
                                   {d.series.map((ts) => (
                                       <tr key={ts.id}>
                                         <td>{ts.series_no || "—"}</td>
+                                        <td>{formatDate(ts.created_at)}</td>
                                         <td className="text-right">{(ts.beginning ?? ts.pcs ?? 0).toLocaleString()}</td>
                                         <td className="text-right">{(ts.remaining ?? ts.pcs ?? 0).toLocaleString()}</td>
                                         <td className="text-right">{formatCurrency(ts.current_value)}</td>
@@ -262,138 +171,6 @@ function Requisition() {
               )}
             </table>
           </div>
-
-          {/* Stocking Receipts */}
-          {(activeRequisitions.length > 0 || archivedRequisitions.length > 0) && (
-            <div className="req-table-wrap" style={{ marginTop: 20 }}>
-              <h3 className="req-section-heading">Stocking Receipts</h3>
-
-              {/* Tab bar */}
-              <div className="req-tabs">
-                <button
-                  type="button"
-                  className={`req-tab ${receiptsTab === "active" ? "req-tab--active" : ""}`}
-                  onClick={() => setReceiptsTab("active")}
-                >
-                  Active
-                  {activeRequisitions.length > 0 && (
-                    <span className="req-tab-count">{activeRequisitions.length}</span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className={`req-tab ${receiptsTab === "archived" ? "req-tab--active" : ""}`}
-                  onClick={() => setReceiptsTab("archived")}
-                >
-                  Archived
-                  {archivedRequisitions.length > 0 && (
-                    <span className="req-tab-count">{archivedRequisitions.length}</span>
-                  )}
-                </button>
-              </div>
-
-              <table className="req-table">
-                <thead>
-                  <tr>
-
-                    <th>Date</th>
-                    <th>Requested By</th>
-                    <th>Approved By</th>
-                    <th className="text-right">Total Amount</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayedRequisitions.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} style={{ textAlign: "center", color: "var(--text-secondary)", padding: "30px 16px" }}>
-                        {receiptsTab === "archived" ? "No archived requisitions" : "No active requisitions"}
-                      </td>
-                    </tr>
-                  ) : (
-                    displayedRequisitions.map((req) => (
-                    <React.Fragment key={req.id}>
-                      <tr
-                        onClick={() => toggleExpand(req.id)}
-                        style={{ cursor: "pointer" }}
-                      >
-
-                        <td>
-                          {new Date(req.date_requested).toLocaleDateString("en-PH", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </td>
-                        <td>{req.requested_by_name}</td>
-                        <td>{req.approved_by_name || "—"}</td>
-                        <td className="text-right">
-                          {formatCurrency(req.total_value)}
-                        </td>
-                        <td>
-                          {receiptsTab === "archived" ? (
-                            <button
-                              type="button"
-                              className="req-restore-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRestore(req.id);
-                              }}
-                            >
-                              Restore
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="req-delete-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleArchive(req.id);
-                              }}
-                            >
-                              Archive
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-
-                      {expandedId === req.id &&
-                        req.ticket_series &&
-                        req.ticket_series.length > 0 && (
-                          <tr className="req-series-row">
-                            <td colSpan={6}>
-                              <table className="req-series-table">
-                                <thead>
-                                  <tr>
-                                    <th>Series No.</th>
-                                    <th>Ticket Form</th>
-
-                                    <th>QTY</th>
-                                    <th>Total Amount</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {req.ticket_series.map((ts) => (
-                                    <tr key={ts.id}>
-                                      <td>{ts.series_no}</td>
-                                      <td>{ts.ticket_form_label || "—"}</td>
-
-                                      <td>{(ts.pcs ?? (Math.max((parseInt(ts.end_no) || 0) - (parseInt(ts.start_no) || 0) + 1, 0))).toLocaleString()}</td>
-                                      <td>{formatCurrency(ts.total_value)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </td>
-                          </tr>
-                        )}
-                    </React.Fragment>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
         </>
       )}
     </div>

@@ -45,6 +45,7 @@ const RequisitionFormModal = ({
   computeTotal,
   handleSave,
   saving,
+  error,
 }) => {
   if (!showForm) return null;
 
@@ -186,6 +187,8 @@ const RequisitionFormModal = ({
             </span>
           </div>
         </div>
+
+        {error && <div className="req-modal-error" role="alert">{error}</div>}
 
         {/* Footer */}
         <div className="req-modal-footer">

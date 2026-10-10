@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
 import { apiService } from "../../../lib/api-service";
-import { useTerminalPrice } from "../../../lib/useTerminalPrice";
 import { getPhDateString } from "../../../lib/phDate";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -16,28 +15,12 @@ export const statusColor = {
 export const getTicketDisplayId = (ticket) =>
   ticket?.queue_code || String(ticket?.id || "").replace(/^TICKET-/i, "");
 
-export const formatTime = (dateString) => {
-  try {
-    return new Date(dateString).toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "N/A";
-  }
-};
-
 // ─── Custom Hook ──────────────────────────────────────────────────────────────
 export function useQueue(userRole = "") {
   const [tickets, setTickets] = useState([]);
-  const [filteredTickets, setFilteredTickets] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [vehicles, setVehicles] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [issuanceType, setIssuanceType] = useState("QUEUE");
-  const [selectedRouteId, setSelectedRouteId] = useState("");
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [showDriverModal, setShowDriverModal] = useState(false);
@@ -58,18 +41,14 @@ export function useQueue(userRole = "") {
     }
   });
 
-  const { terminalPrice } = useTerminalPrice();
 
   // Fetch data
   const fetchTickets = async () => {
     try {
-      setLoading(true);
       const today = getPhDateString();
       setTickets(await apiService.getTickets({ start_date: today, end_date: today }));
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+    } catch {
+      /* silent */
     }
   };
 
@@ -106,22 +85,6 @@ export function useQueue(userRole = "") {
     fetchTicketSeries();
   }, []);
 
-  // Filter and sort tickets based on search term
-  useEffect(() => {
-    const filtered = tickets.filter(
-      (t) =>
-        t.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (t.vehicle?.plate_number || "")
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        (t.driver?.name || "").toLowerCase().includes(searchTerm.toLowerCase()),
-    );
-    const sorted = filtered.sort(
-      (a, b) => new Date(b.issued_at) - new Date(a.issued_at),
-    );
-    setFilteredTickets(sorted.slice(0, 10));
-  }, [searchTerm, tickets]);
-
   const updateSelectedSeriesId = (id) => {
     setSelectedSeriesId(id);
     localStorage.setItem("lastSelectedSeriesId", id);
@@ -135,38 +98,24 @@ export function useQueue(userRole = "") {
     });
   };
 
-  // Route change handler
-  const handleRouteChange = (e) => {
-    setSelectedRouteId(e.target.value);
-    setSelectedVehicle(null);
-    setSelectedDriver(null);
-    setIssueError("");
+  // Remembered driver for this vehicle, else its assigned active driver.
+  const resolveDriver = (vehicle) => {
+    const rememberedDriver = vehicleDriverMap[vehicle.id]
+      ? drivers.find((d) => d.id === vehicleDriverMap[vehicle.id] && d.status === "ACTIVE")
+      : null;
+    return (
+      rememberedDriver ||
+      (vehicle.active_driver && drivers.find((d) => d.id === vehicle.active_driver)) ||
+      null
+    );
   };
 
   // Vehicle change handler
   const selectVehicleById = (vehicleId) => {
     const vehicle = vehicles.find((v) => v.id === vehicleId);
     setSelectedVehicle(vehicle || null);
-
     setIssueError("");
-    if (vehicle) {
-      const rememberedDriverId = vehicleDriverMap[vehicle.id];
-      const rememberedDriver = rememberedDriverId
-        ? drivers.find((d) => d.id === rememberedDriverId && d.status === "ACTIVE")
-        : null;
-
-      if (rememberedDriver) {
-        setSelectedDriver(rememberedDriver);
-      } else if (vehicle.active_driver) {
-        setSelectedDriver(
-          drivers.find((d) => d.id === vehicle.active_driver) || null,
-        );
-      } else {
-        setSelectedDriver(null);
-      }
-    } else {
-      setSelectedDriver(null);
-    }
+    setSelectedDriver(vehicle ? resolveDriver(vehicle) : null);
   };
 
   const handleVehicleChange = (e) => {
@@ -183,48 +132,46 @@ export function useQueue(userRole = "") {
     }
   };
 
+  const driverHasActiveTicket = (driver) =>
+    !!driver && tickets.some((t) => t.driver?.id === driver.id && t.status === "QUEUED");
+
   // Issue ticket handler
-  const handleIssueTicket = async () => {
+  // Overrides let the scan page issue straight from a QR hit without waiting for
+  // selection state to settle. Returns the issued ticket(s), or null on failure.
+  const handleIssueTicket = async (vehicleArg, driverArg) => {
+    const vehicle = vehicleArg || selectedVehicle;
+    const driver = driverArg || selectedDriver;
     setSuccessMessage("");
     setIssueError("");
+    const fail = (error) => {
+      setIssueError(error);
+      return { error };
+    };
 
     const isRoam = issuanceType === "ROAM";
 
-    if (!selectedVehicle) {
-      setIssueError("Please select a vehicle.");
-      return;
+    if (!vehicle) {
+      return fail("Please select a vehicle.");
     }
-    if (!selectedDriver) {
-      setIssueError("Please select a driver.");
-      return;
+    if (!driver) {
+      return fail("Please select a driver.");
     }
     if (isRoam && !selectedSeriesId) {
-      setIssueError("Please select a ticket form / series.");
-      return;
+      return fail("Please select a ticket form / series.");
     }
 
-    const driverHasActiveTicket = tickets.some(
-      (t) =>
-        t.driver?.id === selectedDriver.id && ["QUEUED"].includes(t.status),
-    );
-
-    if (driverHasActiveTicket) {
-      setIssueError("This driver already has an active ticket.");
-      return;
+    if (driverHasActiveTicket(driver)) {
+      return fail("This driver already has an active ticket.");
     }
 
     // Vehicle must be AVAILABLE
-    if (selectedVehicle.status !== "AVAILABLE") {
-      setIssueError(
-        `Vehicle is currently ${selectedVehicle.status} and cannot be ticketed.`,
-      );
-      return;
+    if (vehicle.status !== "AVAILABLE") {
+      return fail(`Vehicle is currently ${vehicle.status} and cannot be ticketed.`);
     }
 
     // Driver must be ACTIVE
-    if (selectedDriver.status !== "ACTIVE") {
-      setIssueError("Selected driver is not active and cannot be assigned.");
-      return;
+    if (driver.status !== "ACTIVE") {
+      return fail("Selected driver is not active and cannot be assigned.");
     }
 
     // Queue check-ins no longer pick a denomination/series or quantity here —
@@ -234,60 +181,56 @@ export function useQueue(userRole = "") {
         setIssuingTicket(true);
         const newTicket = await apiService.createTicket({
           id: `Q-${crypto.randomUUID()}`,
-          vehicle_id: selectedVehicle.id,
-          driver_id: selectedDriver.id,
-          route: selectedVehicle.route_detail?.id || null,
+          vehicle_id: vehicle.id,
+          driver_id: driver.id,
+          route: vehicle.route_detail?.id || null,
           status: "QUEUED",
           mode: "QUEUE",
           is_verified: false,
         });
-        setSuccessMessage(`Vehicle checked into queue (ticket ${newTicket.id}).`);
+        setSuccessMessage("Vehicle checked into queue.");
         fetchTickets();
         fetchVehicles();
         setSelectedVehicle(null);
         setSelectedDriver(null);
         setShowDriverModal(false);
         setTimeout(() => setSuccessMessage(""), 3000);
+        return { ticket: newTicket };
       } catch (err) {
-        setIssueError(err.message || "Error checking in vehicle");
+        return fail(err.message || "Error checking in vehicle");
       } finally {
         setIssuingTicket(false);
       }
-      return;
     }
 
     const quantity = Math.max(1, parseInt(ticketQuantity) || 1);
 
     const series = availableSeries.find((s) => String(s.id) === String(selectedSeriesId));
     if (!series) {
-      setIssueError("Selected ticket series not found.");
-      return;
+      return fail("Selected ticket series not found.");
     }
     if (quantity > series.pcs) {
-      setIssueError(`Only ${series.pcs} ticket(s) remaining in this series.`);
-      return;
+      return fail(`Only ${series.pcs} ticket(s) remaining in this series.`);
     }
 
-    const cap = Number(terminalPrice?.amount || 0);
+    const cap = Number(vehicle.terminal_price || 0);
     if (cap > 0 && ticketFee * quantity !== cap) {
-      setIssueError(
-        `Total collection amount (₱${(ticketFee * quantity).toFixed(2)}) must match the terminal price of ₱${cap.toFixed(2)}.`,
-      );
-      return;
+      return fail(`Total collection amount (₱${(ticketFee * quantity).toFixed(2)}) must match the ${vehicle.transportation_name} terminal price of ₱${cap.toFixed(2)}.`);
     }
 
     try {
       setIssuingTicket(true);
       let nextStartNo = parseInt(series.start_no);
       const issuedIds = [];
+      const issuedTickets = [];
       const issuanceGroup = crypto.randomUUID();
 
       for (let i = 0; i < quantity; i++) {
         const ticketPayload = {
           id: `${nextStartNo}`,
-          vehicle_id: selectedVehicle.id,
-          driver_id: selectedDriver.id,
-          route: selectedVehicle.route_detail?.id || null,
+          vehicle_id: vehicle.id,
+          driver_id: driver.id,
+          route: vehicle.route_detail?.id || null,
           series_id: parseInt(selectedSeriesId),
           // Roam pays the toll on the spot — the backend always issues these
           // as COLLECTED/verified regardless of what's sent here (see the
@@ -302,6 +245,7 @@ export function useQueue(userRole = "") {
         }
         const newTicket = await apiService.createTicket(ticketPayload);
         issuedIds.push(newTicket.id);
+        issuedTickets.push(newTicket);
         nextStartNo += 1;
       }
 
@@ -319,34 +263,18 @@ export function useQueue(userRole = "") {
       setTicketQuantity(1);
 
       setTimeout(() => setSuccessMessage(""), 3000);
+      return { ticket: issuedTickets[0] };
     } catch (err) {
-      setIssueError(err.message || "Error issuing ticket");
+      return fail(err.message || "Error issuing ticket");
     } finally {
       setIssuingTicket(false);
     }
   };
 
   // Computed values
-  const routes = useMemo(() => {
-    const map = new Map();
-    vehicles.forEach((v) => {
-      if (v.route_detail?.id != null && !map.has(v.route_detail.id)) {
-        map.set(v.route_detail.id, v.route_detail);
-      }
-    });
-    return Array.from(map.values()).sort((a, b) =>
-      (a.full_name || "").localeCompare(b.full_name || ""),
-    );
-  }, [vehicles]);
-
   const availableVehicles = useMemo(
-    () =>
-      vehicles.filter(
-        (v) =>
-          v.status === "AVAILABLE" &&
-          (!selectedRouteId || String(v.route_detail?.id) === String(selectedRouteId)),
-      ),
-    [vehicles, selectedRouteId],
+    () => vehicles.filter((v) => v.status === "AVAILABLE"),
+    [vehicles],
   );
 
   const activeDrivers = useMemo(
@@ -372,17 +300,10 @@ export function useQueue(userRole = "") {
   return {
     // State
     tickets,
-    filteredTickets,
-    searchTerm,
-    setSearchTerm,
-    loading,
-    error,
     vehicles,
     drivers,
     issuanceType,
     setIssuanceType,
-    selectedRouteId,
-    setSelectedRouteId,
     selectedVehicle,
     setSelectedVehicle,
     selectedDriver,
@@ -394,7 +315,6 @@ export function useQueue(userRole = "") {
     issueError,
 
     // Computed
-    routes,
     availableVehicles,
     activeDrivers,
     availableSeries,
@@ -404,12 +324,13 @@ export function useQueue(userRole = "") {
     setTicketQuantity,
     // Actions
     fetchTickets,
-    handleRouteChange,
+    fetchTicketSeries,
     handleVehicleChange,
     selectVehicleById,
+    resolveDriver,
     handleDriverChange,
     handleIssueTicket,
+    driverHasActiveTicket,
     ticketFee,
-    terminalPrice,
   };
 }

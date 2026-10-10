@@ -30,6 +30,7 @@ export function shapeDriver(d) {
   return {
     id: d.id,
     iwp_number: d.iwp_number,
+    iwp_expiration_date: d.iwp_expiration_date,
     last_name: d.last_name,
     first_name: d.first_name,
     middle_name: d.middle_name,
@@ -60,6 +61,7 @@ export function shapeVehicle(v) {
     transportation_id: v.transportation?.id ?? v.transportation_id ?? null,
     transportation_name: v.transportation?.name ?? null,
     franchise_number: v.franchise_number,
+    franchise_expiration_date: v.franchise_expiration_date,
     route: v.route?.id ?? v.route ?? null,
     route_detail: shapeRouteDetail(v.route),
     operator_address: v.operator_address,

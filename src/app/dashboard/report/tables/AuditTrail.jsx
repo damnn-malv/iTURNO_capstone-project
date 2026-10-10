@@ -15,7 +15,7 @@ const ACTION_COLORS = {
   DELETE: "#ef4444",
 };
 
-export default function AuditTrail({ auditData, auditMeta, onAuditFetchPage, onAuditFetchAll, onExportCSV, onExportPDF, pageSize }) {
+export default function AuditTrail({ auditData, auditMeta, onAuditFetchPage, onAuditFetchAll, onExportPDF, pageSize }) {
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [modalSearch, setModalSearch] = useState("");
@@ -126,19 +126,7 @@ export default function AuditTrail({ auditData, auditMeta, onAuditFetchPage, onA
             </button>
           )}
           <button
-            className="rpt-btn-export rpt-btn-export--green"
-            title={search ? "Export only rows matching your search" : "Export all records in range"}
-            onClick={() => onExportCSV(search)}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            {search ? "Export Matches (CSV)" : "Export CSV"}
-          </button>
-          <button
-            className="rpt-btn-export rpt-btn-export--red"
+            className="rpt-btn-export rpt-btn-export--navy"
             title={search ? "Export only rows matching your search" : "Export all records in range"}
             onClick={() => onExportPDF(search)}
           >

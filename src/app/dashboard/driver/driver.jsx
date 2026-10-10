@@ -5,13 +5,15 @@ import { useDriver } from "./useDriver";
 import { usePhilippineAddress } from "./usePhilippineAddress";
 import { getDriverCode, getDriverDisplayName } from "./driver-utils";
 import { useToast } from "../../../components/ui/ToastConfirmContext";
+import { exportDriversPDF } from "../registry/registryExport";
 import "../../../styles/Driver.css";
+import "../../../styles/FormModal.css";
 
 function capitalizeWords(value) {
   return value.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 }
 
-function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAdd, exposeExportQR }) {
+function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAdd, exposeExportQR, exposeExportPDF }) {
   const {
     drivers,
     loading,
@@ -161,6 +163,7 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
 
   React.useEffect(() => {
     if (exposeExportQR) exposeExportQR(exportQR);
+    if (exposeExportPDF) exposeExportPDF(() => exportDriversPDF(filteredDrivers));
   });
 
   return (
@@ -539,6 +542,17 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                     {fieldErrors.iwp_number && (
                       <p className="drv-field-error">{fieldErrors.iwp_number}</p>
                     )}
+                  </div>
+                  <div className="drv-field">
+                    <label className="drv-label">IWP Expiration Date</label>
+                    <input
+                      type="date"
+                      className="drv-input"
+                      value={form.iwp_expiration_date || ""}
+                      onChange={(e) =>
+                        setForm({ ...form, iwp_expiration_date: e.target.value })
+                      }
+                    />
                   </div>
                   <div className="drv-field">
                     <label className="drv-label">Gender</label>

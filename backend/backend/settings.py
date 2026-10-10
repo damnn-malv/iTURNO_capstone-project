@@ -115,8 +115,16 @@ DATABASES = {
         # SQLite only allows one writer at a time; two staff dispatching tickets
         # at the same moment is entirely realistic at a live terminal, and
         # without an explicit timeout the second writer gets "database is
-        # locked" immediately instead of just waiting its turn.
-        'OPTIONS': {'timeout': 20},
+        # locked" immediately instead of just waiting its turn. IMMEDIATE takes
+        # the write lock at BEGIN: with the default deferred mode, a transaction
+        # that reads first and writes later (e.g. TicketSerializer.create) fails
+        # instantly with "database is locked" if the sync worker committed in
+        # between — the timeout never gets a chance to apply.
+        'OPTIONS': {
+            'timeout': 20,
+            'transaction_mode': 'IMMEDIATE',
+            'init_command': 'PRAGMA journal_mode=WAL;',
+        },
     },
     'supabase': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -135,7 +143,8 @@ DATABASES = {
         # connections to the same client across queries, so a server-side
         # cursor opened on one backend can't be read from on another.
         'DISABLE_SERVER_SIDE_CURSORS': True,
-        'OPTIONS': {'sslmode': 'require'},
+        # Short connect timeout so an offline LAN fails over to the local cache fast.
+        'OPTIONS': {'sslmode': 'require', 'connect_timeout': 4},
         'CONN_MAX_AGE': 60,
     },
 }

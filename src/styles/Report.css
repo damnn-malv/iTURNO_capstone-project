@@ -166,7 +166,6 @@
 
 .rpt-btn-export--green { background: linear-gradient(135deg, #166534 0%, #15803d 100%); }
 .rpt-btn-export--navy  { background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%); }
-.rpt-btn-export--red   { background: linear-gradient(135deg, #991b1b 0%, #dc2626 100%); }
 .rpt-btn-export--blue  { background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%); }
 .rpt-btn-export--amber { background: linear-gradient(135deg, #b45309 0%, #d97706 100%); }
 
@@ -627,7 +626,7 @@
 }
 
 .rpt-thead-row {
-  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
+  background: var(--bg-page);
 }
 
 .rpt-th {
@@ -637,10 +636,11 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: rgba(255,255,255,0.85);
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  border-bottom: 1px solid var(--border);
 }
 
 .rpt-tr {

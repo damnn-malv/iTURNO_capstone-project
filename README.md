@@ -113,9 +113,6 @@ in the sidebar:
   routes/PUV types, and the ticket backfill tool (`settings/backfill/`, for
   retroactively entering physically-issued tickets that missed live entry).
 
-A separate mobile-facing page (`src/app/mobile/MobileScan.jsx`) lets a phone
-camera scan a ticket's QR code independent of the main dashboard shell.
-
 ## Core Workflows
 
 Ordered to mirror the [Dashboard Modules](#dashboard-modules) list above.
@@ -189,7 +186,6 @@ api/                                  # Vercel serverless functions (remote depl
 
 src/
     app/dashboard/                    # One folder per dashboard module (see above)
-    app/mobile/                       # Standalone mobile QR ticket scanner
     lib/                              # Shared hooks and API service (LAN/remote switch)
     styles/                           # Per-module CSS
 ```

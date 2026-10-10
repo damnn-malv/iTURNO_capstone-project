@@ -69,20 +69,6 @@ export const formatAuditDetails = (log) => {
   return log.object_repr || changes;
 };
 
-export function exportCSV(data, filename = "report.csv") {
-  if (!data.length) return;
-  const headers = Object.keys(data[0]);
-  const rows = data.map((r) => headers.map((h) => `"${r[h] ?? ""}"`).join(","));
-  const csv = [headers.join(","), ...rows].join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 // Shared row-match predicates: used both by each report table's on-screen
 // search box (filtering the loaded preview/page) and by report.jsx's export
 // handlers (filtering the fully-fetched, date-ranged export rows), so typing
@@ -98,7 +84,7 @@ export const matchesQueueRow = (l, query) =>
   fieldsMatch([l.timestamp, l.ticket_id, l.action, l.driver, l.vehicle, l.route, l.user], query);
 
 export const matchesRoamingRow = (t, query) =>
-  fieldsMatch([t.id, t.vehicle?.plate_number, t.driver?.name, t.active_user_name], query);
+  fieldsMatch([t.id, t.vehicle?.plate_number, t.driver?.name, t.route_name, t.active_user_name], query);
 
 export const matchesRequisitionRow = (r, query) =>
   fieldsMatch([r.requested_by_name, r.approved_by_name], query);
@@ -108,15 +94,6 @@ export const matchesRemittanceRow = (b, query) =>
 
 export const matchesAuditRow = (l, query) =>
   fieldsMatch([l.created_at, l.action_display, l.model_name, l.object_repr, l.user_name], query);
-
-export const matchesVehicleRow = (v, query) =>
-  fieldsMatch(
-    [v.plate_number, v.route_detail ? `${v.route_detail.origin} - San Fernando` : v.route, v.active_driver_name],
-    query,
-  );
-
-export const matchesDriverRow = (d, query) =>
-  fieldsMatch([d.iwp_number || String(d.id), d.name, d.contact], query);
 
 // The report tables only ever hold one server-paginated page (e.g. 30 rows) in
 // memory, so filtering that page client-side silently misses matches sitting
@@ -136,7 +113,7 @@ export function useDebouncedSearchAll(fetchAll, query, delayMs = 300) {
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const rows = await fetchAll();
+        const rows = await fetchAll(query.trim());
         if (!cancelled) setAllResults(rows);
       } catch {
         if (!cancelled) setAllResults([]);
