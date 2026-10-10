@@ -9,13 +9,15 @@ import {
   buildDriverAddress,
 } from "./vehicleHook";
 import VehicleModal from "./vehicleModal";
+import { exportVehiclesPDF } from "../registry/registryExport";
 
 import React, { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { renderToStaticMarkup } from "react-dom/server";
 import "../../../styles/Vehicle.css";
+import "../../../styles/FormModal.css";
 
-function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeAdd, exposeExportQR }) {
+function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeAdd, exposeExportQR, exposeExportPDF }) {
   const {
     vehicles,
     loading,
@@ -127,6 +129,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
 
   React.useEffect(() => {
     if (exposeExportQR) exposeExportQR(exportQR);
+    if (exposeExportPDF) exposeExportPDF(() => exportVehiclesPDF(filteredVehicles));
   });
 
   const filteredVehicles = vehicles.filter((v) => {
@@ -491,6 +494,16 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                       value={form.franchise_number}
                       onChange={(e) =>
                         setForm({ ...form, franchise_number: e.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label="Franchise Expiration Date">
+                    <input
+                      type="date"
+                      className="veh-input"
+                      value={form.franchise_expiration_date || ""}
+                      onChange={(e) =>
+                        setForm({ ...form, franchise_expiration_date: e.target.value })
                       }
                     />
                   </Field>

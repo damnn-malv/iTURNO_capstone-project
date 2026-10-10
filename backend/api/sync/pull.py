@@ -1,5 +1,6 @@
 import logging
 
+from api.models import LOCAL_ADMIN_PK_BASE, User
 from api.sync.registry import PULL_MODELS
 
 logger = logging.getLogger('sync')
@@ -60,6 +61,10 @@ def pull_all():
             continue
 
         stale = model.objects.using('default').exclude(pk__in=remote_ids)
+        if model is User:
+            # Local superusers (createsuperuser) exist so the LAN stays
+            # administrable offline; they were never on Supabase by design.
+            stale = stale.exclude(pk__gt=LOCAL_ADMIN_PK_BASE)
         stale_count = stale.count()
         if stale_count:
             stale.delete()

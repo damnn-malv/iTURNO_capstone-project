@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { apiService } from "../../../lib/api-service";
 import { useToast, useConfirm } from "../../../components/ui/ToastConfirmContext";
-import { useTerminalPrice } from "../../../lib/useTerminalPrice";
 import SettingsModal from "../../../components/ui/settingsModal";
 import TicketBackfillTab from "./backfill/TicketBackfillTab";
 import "../../../styles/Settings.css";
@@ -110,14 +109,6 @@ const TicketIcon = () => (
   </svg>
 );
 
-const WalletIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="3" y="6" width="18" height="13" rx="2" />
-    <path d="M3 10h18" />
-    <circle cx="17" cy="14" r="1.3" fill="currentColor" stroke="none" />
-  </svg>
-);
-
 const formatBytes = (bytes) => {
   if (!bytes) return "0 KB";
   const kb = bytes / 1024;
@@ -141,6 +132,9 @@ function Settings() {
 
   const [puvTypes, setPuvTypes] = useState([]);
   const [newType, setNewType] = useState("");
+  const [newTypePrice, setNewTypePrice] = useState("");
+  const [puvPriceInputs, setPuvPriceInputs] = useState({});
+  const [savingPuvPriceId, setSavingPuvPriceId] = useState(null);
 
   const [routes, setRoutes] = useState([]);
   const [newOrigin, setNewOrigin] = useState("");
@@ -152,6 +146,7 @@ function Settings() {
   const [newTicketFormPrice, setNewTicketFormPrice] = useState("");
 
   const showToast = useToast();
+  const showConfirm = useConfirm();
 
   // General is now four stacked sections rather than tabs a click apart, so
   // each needs its own independent search/add-modal state instead of one
@@ -163,33 +158,6 @@ function Settings() {
   const [ticketFormsSearch, setTicketFormsSearch] = useState("");
   const [ticketFormModalOpen, setTicketFormModalOpen] = useState(false);
 
-  const {
-    terminalPrice,
-    loading: terminalPriceLoading,
-    error: terminalPriceError,
-    updateTerminalPrice,
-  } = useTerminalPrice();
-  const [terminalPriceInput, setTerminalPriceInput] = useState("");
-  const [savingTerminalPrice, setSavingTerminalPrice] = useState(false);
-
-  useEffect(() => {
-    if (terminalPrice) {
-      setTerminalPriceInput(String(terminalPrice.amount ?? ""));
-    }
-  }, [terminalPrice]);
-
-  const handleSaveTerminalPrice = async () => {
-    setSavingTerminalPrice(true);
-    try {
-      await updateTerminalPrice(parseFloat(terminalPriceInput) || 0);
-      showToast?.("Terminal price saved", "success");
-    } catch (err) {
-      console.error("Failed to save terminal price", err);
-      showToast?.("Failed to save terminal price", "info");
-    } finally {
-      setSavingTerminalPrice(false);
-    }
-  };
   useEffect(() => {
     apiService.getPUVTypes()
       .then(setPuvTypes)
@@ -202,22 +170,48 @@ function Settings() {
       return;
     }
     try {
-      const created = await apiService.createPUVType({ name: newType });
+      const created = await apiService.createPUVType({ name: newType, terminal_price: parseFloat(newTypePrice) || 0 });
       setPuvTypes([...puvTypes, created]);
       setNewType("");
+      setNewTypePrice("");
       setPuvModalOpen(false);
+      showToast?.("PUV type added", "success");
     } catch (err) {
       console.error("Failed to create:", err);
       showToast?.(err.message || "Failed to create PUV type", "info");
     }
   };
 
+  const handleSavePuvPrice = async (pt) => {
+    const price = parseFloat(puvPriceInputs[pt.id]);
+    if (isNaN(price) || price < 0) {
+      showToast?.("Terminal price must be 0 or more", "info");
+      return;
+    }
+    setSavingPuvPriceId(pt.id);
+    try {
+      const updated = await apiService.updatePUVType(pt.id, { name: pt.name, terminal_price: price });
+      setPuvTypes(puvTypes.map(p => (p.id === pt.id ? updated : p)));
+      setPuvPriceInputs(({ ...rest }) => (delete rest[pt.id], rest));
+      showToast?.("Terminal price saved", "success");
+    } catch (err) {
+      console.error("Failed to save terminal price:", err);
+      showToast?.(err.message || "Failed to save terminal price", "info");
+    } finally {
+      setSavingPuvPriceId(null);
+    }
+  };
+
   const handleDeletePUVType = async (id) => {
+    const name = puvTypes.find(pt => pt.id === id)?.name;
+    if (!(await showConfirm?.(`Delete PUV type "${name}"? This cannot be undone.`))) return;
     try {
       await apiService.deletePUVType(id);
       setPuvTypes(puvTypes.filter(pt => pt.id !== id));
+      showToast?.("PUV type deleted", "success");
     } catch (err) {
       console.error("Failed to delete PUV type:", err);
+      showToast?.(err.message || "Failed to delete PUV type", "info");
     }
   };
 
@@ -237,6 +231,7 @@ function Settings() {
       setRoutes([...routes, created]);
       setNewOrigin("");
       setRouteModalOpen(false);
+      showToast?.("Route added", "success");
     } catch (err) {
       console.error("Failed to create route:", err);
       showToast?.(err.message || "Failed to create route", "info");
@@ -244,11 +239,15 @@ function Settings() {
   };
 
   const handleDeleteRoute = async (id) => {
+    const name = routes.find(r => r.id === id)?.origin;
+    if (!(await showConfirm?.(`Delete route "${name}"? This cannot be undone.`))) return;
     try {
       await apiService.deleteRoute(id);
       setRoutes(routes.filter(r => r.id !== id));
+      showToast?.("Route deleted", "success");
     } catch (err) {
       console.error("Failed to delete route:", err);
+      showToast?.(err.message || "Failed to delete route", "info");
     }
   };
 
@@ -296,6 +295,7 @@ function Settings() {
       setNewTicketForm("");
       setNewTicketFormPrice("");
       setTicketFormModalOpen(false);
+      showToast?.("Ticket form added", "success");
     } catch (err) {
       console.error("Failed to create ticket form:", err);
       showToast?.(err.message || "Failed to create ticket form", "info");
@@ -303,15 +303,18 @@ function Settings() {
   };
 
   const handleDeleteTicketForm = async (id) => {
+    const name = ticketForms.find(t => t.id === id)?.name;
+    if (!(await showConfirm?.(`Delete ticket form "${name}"? This cannot be undone.`))) return;
     try {
       await apiService.deleteTicketForm(id);
       setTicketForms(ticketForms.filter(t => t.id !== id));
+      showToast?.("Ticket form deleted", "success");
     } catch (err) {
       console.error("Failed to delete ticket form:", err);
+      showToast?.(err.message || "Failed to delete ticket form", "info");
     }
   };
 
-  const showConfirm = useConfirm();
   const [systemBackups, setSystemBackups] = useState([]);
   const [backupsLoading, setBackupsLoading] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
@@ -449,7 +452,6 @@ function Settings() {
     puv: puvTypes.length,
     routes: routes.length,
     ticketForms: ticketForms.length,
-    terminalPrice: terminalPrice ? 1 : 0,
     system: systemBackups.length,
   };
 
@@ -490,10 +492,10 @@ function Settings() {
             <div className="set-section">
               <div className="set-panel-toolbar">
                 <div className="set-panel-heading">
-                  <span className="set-panel-icon"><TicketIcon /></span>
+                  
                   <div>
                     <h2 className="set-panel-title">Ticket Forms</h2>
-                    <p className="set-panel-desc">Ticket price variants used at checkout</p>
+                   
                   </div>
                 </div>
                 <div className="set-toolbar-actions">
@@ -547,60 +549,12 @@ function Settings() {
               </div>
             </div>
 
-            {/* Terminal Price */}
-            <div className="set-section">
-              <div className="set-panel-toolbar">
-                <div className="set-panel-heading">
-                  <span className="set-panel-icon"><WalletIcon /></span>
-                  <div>
-                    <h2 className="set-panel-title">Terminal Price</h2>
-                    <p className="set-panel-desc">Maximum collection ceiling allowed per ticket</p>
-                  </div>
-                </div>
-              </div>
-              <div className="set-rewards-form">
-                <p className="set-rewards-note">
-                  The terminal price is the maximum total collection amount (ticket price × quantity)
-                  allowed when issuing a ticket. Leave it at 0 to disable the limit.
-                </p>
-                {terminalPriceLoading ? (
-                  <p className="set-rewards-note">Loading terminal price...</p>
-                ) : (
-                  <div className="set-add-row">
-                    <label className="set-field">
-                      <span className="set-field-label">Terminal Price (₱)</span>
-                      <input
-                        type="number"
-                        className="set-input"
-                        min={0}
-                        step="0.01"
-                        value={terminalPriceInput}
-                        onChange={(e) => setTerminalPriceInput(e.target.value)}
-                        placeholder="0"
-                      />
-                    </label>
-                  </div>
-                )}
-                {terminalPriceError && (
-                  <p className="set-rewards-note" style={{ color: "#c0392b" }}>{terminalPriceError}</p>
-                )}
-                <div className="set-add-row">
-                  <button className="set-add-btn" onClick={handleSaveTerminalPrice} disabled={savingTerminalPrice || terminalPriceLoading}>
-                    <PlusIcon />
-                    {savingTerminalPrice ? "Saving..." : "Save Terminal Price"}
-                  </button>
-                </div>
-              </div>
-            </div>
-
             {/* PUV Types */}
             <div className="set-section">
               <div className="set-panel-toolbar">
                 <div className="set-panel-heading">
-                  <span className="set-panel-icon"><BusIcon /></span>
                   <div>
                     <h2 className="set-panel-title">PUV Types</h2>
-                    <p className="set-panel-desc">Vehicle categories available for dispatch</p>
                   </div>
                 </div>
                 <div className="set-toolbar-actions">
@@ -624,13 +578,14 @@ function Settings() {
                   <thead>
                     <tr>
                       <th>Name</th>
+                      <th>Terminal Price (₱)</th>
                       <th className="set-th-actions">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredPuvTypes.length === 0 ? (
                       <tr>
-                        <td colSpan="2" className="set-table-state">
+                        <td colSpan="3" className="set-table-state">
                           {puvTypes.length === 0 ? "No PUV types configured" : "No matches found"}
                         </td>
                       </tr>
@@ -638,6 +593,27 @@ function Settings() {
                       filteredPuvTypes.map(pt => (
                         <tr key={pt.id} className="set-row">
                           <td className="set-cell-label">{pt.name}</td>
+                          <td className="set-cell-meta">
+                            <div className="set-add-row" style={{ gap: 8 }}>
+                              <input
+                                type="number"
+                                className="set-input"
+                                style={{ width: 100 }}
+                                min={0}
+                                step="0.01"
+                                placeholder="0 = no limit"
+                                value={puvPriceInputs[pt.id] ?? pt.terminal_price ?? ""}
+                                onChange={(e) => setPuvPriceInputs({ ...puvPriceInputs, [pt.id]: e.target.value })}
+                              />
+                              <button
+                                className="set-add-btn"
+                                onClick={() => handleSavePuvPrice(pt)}
+                                disabled={savingPuvPriceId === pt.id || puvPriceInputs[pt.id] === undefined}
+                              >
+                                {savingPuvPriceId === pt.id ? "Saving..." : "Save"}
+                              </button>
+                            </div>
+                          </td>
                           <td className="set-cell-actions">
                             <button className="set-delete-btn" onClick={() => handleDeletePUVType(pt.id)}>
                               <DeleteIcon />
@@ -656,10 +632,8 @@ function Settings() {
             <div className="set-section">
               <div className="set-panel-toolbar">
                 <div className="set-panel-heading">
-                  <span className="set-panel-icon"><RouteIcon /></span>
                   <div>
                     <h2 className="set-panel-title">Routes</h2>
-                    <p className="set-panel-desc">Terminal-to-terminal routes and loading time defaults</p>
                   </div>
                 </div>
                 <div className="set-toolbar-actions">
@@ -868,9 +842,12 @@ function Settings() {
       <SettingsModal
         open={puvModalOpen}
         title="Add PUV Type"
-        fields={[{ name: "name", label: "Name", placeholder: "New PUV Type" }]}
-        values={{ name: newType }}
-        onChange={(_, value) => setNewType(value)}
+        fields={[
+          { name: "name", label: "Name", placeholder: "New PUV Type" },
+          { name: "terminal_price", label: "Terminal Price (₱)", type: "number", placeholder: "0 = no limit", min: "0", step: "0.01" },
+        ]}
+        values={{ name: newType, terminal_price: newTypePrice }}
+        onChange={(field, value) => (field === "name" ? setNewType(value) : setNewTypePrice(value))}
         onClose={() => setPuvModalOpen(false)}
         onSubmit={handleAddPUVType}
         submitLabel="Add"

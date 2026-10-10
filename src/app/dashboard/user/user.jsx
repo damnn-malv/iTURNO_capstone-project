@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { apiService } from "../../../lib/api-service";
 import { useConfirm, useToast } from "../../../components/ui/ToastConfirmContext";
 import "../../../styles/User.css";
+import "../../../styles/FormModal.css";
 
 const EMPTY_FORM = {
   username: "",
@@ -316,7 +317,11 @@ function User({ userRole }) {
                             : "usr-status--inactive"
                         }`}
                       >
-                        {user.must_reset_password ? "New" : user.is_active ? "Active" : "Inactive"}
+                        {user.must_reset_password
+                          ? "New"
+                          : user.is_active
+                          ? "Active"
+                          : "Inactive"}
                       </span>
                     </td>
                     <td>
@@ -411,38 +416,12 @@ function User({ userRole }) {
             <form onSubmit={handleSubmit} className="usr-modal-body">
               {/* Staff hero section */}
               <div className="usr-profile-hero">
-                <div className="usr-profile-avatar">
-                  {(form.first_name?.[0] || "") + (form.last_name?.[0] || "") || (
-                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                      <circle cx="12" cy="7" r="4" />
-                    </svg>
-                  )}
-                </div>
                 <div className="usr-profile-hero-info">
                   <span className="usr-profile-hero-name">
                     {[form.first_name, form.middle_name, form.last_name]
                       .filter(Boolean)
                       .join(" ") || "New Staff"}
                   </span>
-                  <div className="usr-profile-hero-tags">
-                    <span
-                      className={`usr-role ${ROLE_CLASS[form.role] || "usr-role--personnel"}`}
-                    >
-                      {form.role}
-                    </span>
-                    <span
-                      className={`usr-status ${
-                        editing?.must_reset_password
-                          ? "usr-status--new"
-                          : form.is_active
-                          ? "usr-status--active"
-                          : "usr-status--inactive"
-                      }`}
-                    >
-                      {editing?.must_reset_password ? "New" : form.is_active ? "Active" : "Inactive"}
-                    </span>
-                  </div>
                 </div>
               </div>
 

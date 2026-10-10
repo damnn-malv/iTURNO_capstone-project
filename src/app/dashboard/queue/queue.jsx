@@ -1,22 +1,15 @@
-import React, { useState, useEffect } from "react";
-import { useQueue, formatTime, getTicketDisplayId } from "./useQueue";
+import React, { useState, useEffect, useRef } from "react";
+import { useQueue } from "./useQueue";
+import Dispatch from "../dispatch/dispatch";
+import { useQrScanner, SCANNER_STATUS_LABEL } from "./useQrScanner";
+import { useScanChannel } from "../../../lib/useScanChannel";
+import { getIwpStatus, getExpiryStatus } from "../driver/driver-utils";
 import "../../../styles/Queue.css";
-import {
-  HistoryIcon,
-  RouteIcon,
-  IssueTicketIcon,
-  SearchIcon,
-  EmptyStateIcon,
-} from "./queueIcon";
+import { RouteIcon, SearchIcon } from "./queueIcon";
 
 function Queue({ userRole }) {
+  const scannedPlate = useRef(null); // plate awaiting check-in after a scan
   const {
-    filteredTickets,
-    searchTerm,
-    setSearchTerm,
-    loading,
-    error,
-
     vehicles,
     drivers,
     issuanceType,
@@ -30,8 +23,6 @@ function Queue({ userRole }) {
     successMessage,
     issueError,
 
-    routes,
-    selectedRouteId,
     availableVehicles,
     activeDrivers,
     availableSeries,
@@ -39,13 +30,13 @@ function Queue({ userRole }) {
     setSelectedSeriesId,
     ticketQuantity,
     setTicketQuantity,
-    handleRouteChange,
     selectVehicleById,
     handleDriverChange,
     handleIssueTicket,
+    driverHasActiveTicket,
+    fetchTicketSeries,
   } = useQueue(userRole);
 
-  const [activeTab, setActiveTab] = useState("tickets");
   const [vehicleSearch, setVehicleSearch] = useState("");
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
   const [driverSearch, setDriverSearch] = useState("");
@@ -83,6 +74,63 @@ function Queue({ userRole }) {
     }
   };
 
+  // A QR read by either the built-in scanner or the /scan camera tab selects the
+  // vehicle here; the operator then checks in. The camera tab is only told about
+  // a pending vehicle and a successful check-in — never errors.
+  const postToCamera = useScanChannel((msg) => {
+    if (msg.type === "scan") handleScannedText(msg.text);
+  });
+
+  function handleScannedText(text) {
+    const vehicle = vehicles.find(
+      (v) =>
+        v.qr_code === text || v.plate_number === text || String(v.id) === text,
+    );
+    if (vehicle?.status === "AVAILABLE" && !issuingTicket) {
+      handleSelectVehicle(vehicle);
+      scannedPlate.current = vehicle.plate_number;
+      postToCamera({
+        type: "pending",
+        plate: vehicle.plate_number,
+        franchiseExpired: getExpiryStatus(vehicle.franchise_expiration_date) === "expired",
+      });
+    }
+  }
+
+  // The driver is assigned after the scan, so tell the camera tab once it is known
+  // whether the permit is expired — flags only, never the driver's name.
+  useEffect(() => {
+    if (scannedPlate.current && selectedDriver) {
+      postToCamera({
+        type: "pending",
+        plate: scannedPlate.current,
+        iwpExpired: getIwpStatus(selectedDriver) === "expired",
+        franchiseExpired: getExpiryStatus(selectedVehicle?.franchise_expiration_date) === "expired",
+      });
+    }
+  }, [selectedDriver, selectedVehicle]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const driverBusy = driverHasActiveTicket(selectedDriver);
+
+  const handleCheckIn = async () => {
+    const vehicle = selectedVehicle;
+    scannedPlate.current = null;
+    const { ticket } = await handleIssueTicket();
+    if (ticket) {
+      postToCamera({
+        type: "result",
+        mode: issuanceType,
+        plate: vehicle.plate_number,
+        queueCode: ticket.queue_code,
+        ticketId: ticket.id,
+        at: ticket.issued_at,
+      });
+    }
+  };
+
+  const { videoRef, canvasRef, enabled, toggle, status } =
+    useQrScanner(handleScannedText);
+
   // Ticket issuance clears the selected vehicle/driver in the hook, but the
   // plate/driver search inputs are local text state here — clear them too so
   // the fields are ready for the next entry instead of showing stale text.
@@ -94,25 +142,6 @@ function Queue({ userRole }) {
   }, [successMessage]);
 
 
-  const cancelledTickets = filteredTickets.filter((t) => t.status === "CANCELLED");
-  const activeTickets = filteredTickets.filter((t) => t.status !== "CANCELLED");
-  const roamingTickets = activeTickets.filter((t) => t.mode === "UNLOAD");
-  const queuingTickets = activeTickets.filter(
-    (t) => t.mode === "QUEUE" && t.status === "QUEUED",
-  );
-  const ticketsTab = activeTickets.filter(
-    (t) => !(t.mode === "QUEUE" && t.status === "QUEUED"),
-  );
-
-  const displayTickets =
-    activeTab === "tickets"
-      ? ticketsTab
-      : activeTab === "queuing"
-        ? queuingTickets
-        : activeTab === "roaming"
-          ? roamingTickets
-          : cancelledTickets;
-
   return (
     <div className="queue-page">
       {/* ── Page Header ── */}
@@ -121,8 +150,20 @@ function Queue({ userRole }) {
           <div className="queue-header-accent" />
           <div>
             <h1 className="queue-title">Queue Management</h1>
-            
           </div>
+        </div>
+        <div className="queue-header-right">
+          <button
+            type="button"
+            className="dashboard-scan-btn"
+            onClick={() => window.open("/scan", "_blank", "noopener,noreferrer")}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+              <line x1="7" y1="12" x2="17" y2="12" />
+            </svg>
+            Scan Camera
+          </button>
         </div>
       </div>
 
@@ -130,7 +171,7 @@ function Queue({ userRole }) {
       <div className="queue-single-col">
         {/* Issue New Ticket Card */}
         <div className="queue-card">
-          
+
 
           <div className="queue-card-body">
             {/* Issuance type radio group */}
@@ -172,29 +213,33 @@ function Queue({ userRole }) {
               </div>
             </div>
 
-            {/* Route select */}
-            <div className="queue-field">
-              <label className="queue-label">Route</label>
-              <select
-                className="queue-select"
-                value={selectedRouteId}
-                onChange={(e) => {
-                  handleRouteChange(e);
-                  setVehicleSearch("");
-                }}
-              >
-                <option value="">— Select a route —</option>
-                {routes.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.full_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
             {/* Vehicle search / select */}
             <div className="queue-field queue-vehicle-combobox">
-              <label className="queue-label">Vehicle (Plate Number)</label>
+              <div className="queue-scanner-row">
+                <label className="queue-label">Vehicle (Plate Number)</label>
+                <span className="queue-scanner">
+                  <span
+                    className={`queue-scanner-dot queue-scanner-dot--${status}`}
+                  />
+                  <span className="queue-scanner-text">
+                    {SCANNER_STATUS_LABEL[status]}
+                  </span>
+                  <button
+                    type="button"
+                    className="queue-scanner-toggle"
+                    onClick={toggle}
+                  >
+                    {enabled ? "Turn off" : "Turn on"}
+                  </button>
+                </span>
+              </div>
+              <video
+                ref={videoRef}
+                className="queue-scanner-hidden"
+                muted
+                playsInline
+              />
+              <canvas ref={canvasRef} className="queue-scanner-hidden" />
               <div className="queue-search-wrap">
                 <SearchIcon className="queue-search-icon" />
                 <input
@@ -240,49 +285,6 @@ function Queue({ userRole }) {
               )}
             </div>
 
-            {/* Ticket Form / Series select — roaming issues + dispatches in one step, */}
-            {/* so it still needs a denomination picked here. Queue check-ins pick */}
-            {/* the denomination later, at Dispatch. */}
-            {issuanceType === "ROAM" && (
-              <>
-                <div className="queue-field">
-                  <label className="queue-label">Ticket Form / Series</label>
-                  <select
-                    className="queue-select"
-                    value={selectedSeriesId}
-                    onChange={(e) => setSelectedSeriesId(e.target.value)}
-                  >
-                    <option value="">— Select a ticket series —</option>
-                    {availableSeries.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.ticket_form_label || "Unspecified"} — Series {s.series_no} ({s.pcs} pcs remaining)
-                      </option>
-                    ))}
-                  </select>
-                  {availableSeries.length === 0 && (
-                    <p className="queue-field-hint">
-                      No ticket series with stock available. Create a new requisition first.
-                    </p>
-                  )}
-                </div>
-
-                {/* Quantity */}
-                <div className="queue-field">
-                  <label className="queue-label">Quantity</label>
-                  <input
-                    type="number"
-                    className="queue-select"
-                    min={1}
-                    value={ticketQuantity}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value);
-                      setTicketQuantity(Number.isNaN(val) ? 1 : Math.max(1, val));
-                    }}
-                  />
-                </div>
-              </>
-            )}
-
             {/* Driver panel */}
             {selectedVehicle && (
               <div className="queue-driver-panel">
@@ -300,6 +302,12 @@ function Queue({ userRole }) {
                   </button>
                 </div>
 
+                {driverBusy && (
+                  <div className="queue-alert queue-alert--error">
+                    This driver already has an active ticket.
+                  </div>
+                )}
+
                 {selectedDriver ? (
                   <div className="queue-driver-info">
                     <div className="queue-driver-avatar">
@@ -313,12 +321,22 @@ function Queue({ userRole }) {
                         ID: {selectedDriver.id}
                       </span>
                     </div>
+                    <span className={`queue-iwp-badge queue-iwp-badge--${getIwpStatus(selectedDriver)}`}>
+                      {{ valid: "✓ IWP valid", expired: "✕ IWP expired", none: "IWP expiry not set" }[getIwpStatus(selectedDriver)]}
+                    </span>
                   </div>
                 ) : (
                   <p className="queue-driver-empty">
                     No driver assigned to this vehicle
                   </p>
                 )}
+
+                <div className="queue-driver-info">
+                  <span className="queue-label">Franchise</span>
+                  <span className={`queue-iwp-badge queue-iwp-badge--${getExpiryStatus(selectedVehicle.franchise_expiration_date)}`}>
+                    {{ valid: "✓ Franchise valid", expired: "✕ Franchise expired", none: "Franchise expiry not set" }[getExpiryStatus(selectedVehicle.franchise_expiration_date)]}
+                  </span>
+                </div>
 
                 {selectedDriver && (
                   <div className="queue-route-pill">
@@ -388,11 +406,12 @@ function Queue({ userRole }) {
             <button
               type="button"
               className="queue-issue-btn"
-              onClick={handleIssueTicket}
+              onClick={handleCheckIn}
               disabled={
                 issuingTicket ||
                 !selectedVehicle ||
                 !selectedDriver ||
+                driverBusy ||
                 (issuanceType === "ROAM" && !selectedSeriesId)
               }
             >
@@ -408,177 +427,15 @@ function Queue({ userRole }) {
           </div>
         </div>
 
-        {/* ── Recent Tickets with Tabs ── */}
-        <div className="queue-card">
-          <div className="queue-card-header queue-card-header--color">
-            <div>
-              <span className="queue-card-title">Recent Tickets</span>
-              <p className="queue-card-desc">Last 10 issued tickets</p>
-            </div>
-            <div className="queue-search-wrap">
-              <SearchIcon className="queue-search-icon" />
-              <input
-                className="queue-search"
-                placeholder="Search tickets…"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Tab bar */}
-          <div className="queue-tabs">
-            <button
-              className={`queue-tab ${activeTab === "tickets" ? "queue-tab--active" : ""}`}
-              onClick={() => setActiveTab("tickets")}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-              Tickets
-              {ticketsTab.length > 0 && (
-                <span className="queue-tab-count">{ticketsTab.length}</span>
-              )}
-            </button>
-            <button
-              className={`queue-tab ${activeTab === "queuing" ? "queue-tab--active" : ""}`}
-              onClick={() => setActiveTab("queuing")}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
-              Queuing
-              {queuingTickets.length > 0 && (
-                <span className="queue-tab-count">{queuingTickets.length}</span>
-              )}
-            </button>
-            <button
-              className={`queue-tab ${activeTab === "roaming" ? "queue-tab--active" : ""}`}
-              onClick={() => setActiveTab("roaming")}
-            >
-              <RouteIcon />
-              Roaming
-              {roamingTickets.length > 0 && (
-                <span className="queue-tab-count">{roamingTickets.length}</span>
-              )}
-            </button>
-            <button
-              className={`queue-tab ${activeTab === "cancelled" ? "queue-tab--active" : ""}`}
-              onClick={() => setActiveTab("cancelled")}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" />
-                <path d="m15 9-6 6" />
-                <path d="m9 9 6 6" />
-              </svg>
-              Cancelled
-              {cancelledTickets.length > 0 && (
-                <span className="queue-tab-count">{cancelledTickets.length}</span>
-              )}
-            </button>
-          </div>
-
-          {/* Tickets / Queuing / Roaming / Cancelled tab content */}
-          {(activeTab === "tickets" || activeTab === "queuing" || activeTab === "roaming" || activeTab === "cancelled") && (
-            <>
-              <div className="queue-table-wrap">
-                <table className="queue-table">
-                  <thead>
-                    <tr>
-                      {["Ticket ID", "Plate Number", "Driver", "Issued By", "Time", ...(activeTab === "cancelled" ? ["Reason"] : [])].map(
-                        (h) => (
-                          <th key={h}>{h}</th>
-                        ),
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <tr>
-                        <td colSpan={activeTab === "cancelled" ? 6 : 5} className="queue-table-state">
-                          <div className="queue-loading-dots">
-                            <div />
-                            <div />
-                            <div />
-                          </div>
-                        </td>
-                      </tr>
-                    ) : error ? (
-                      <tr>
-                        <td
-                          colSpan={activeTab === "cancelled" ? 6 : 5}
-                          className="queue-table-state queue-table-state--error"
-                        >
-                          Error: {error}
-                        </td>
-                      </tr>
-                    ) : displayTickets.length === 0 ? (
-                      <tr>
-                        <td colSpan={activeTab === "cancelled" ? 6 : 5} className="queue-table-state">
-                          <EmptyStateIcon className="queue-empty-icon" />
-                          <span>
-                            {activeTab === "cancelled"
-                              ? "No cancelled tickets"
-                              : activeTab === "roaming"
-                                ? "No roaming tickets"
-                                : activeTab === "queuing"
-                                  ? "No vehicles currently queuing"
-                                  : "No tickets found"}
-                          </span>
-                        </td>
-                      </tr>
-                    ) : (
-                      displayTickets.map((t) => (
-                        <tr key={t.id} className="queue-table-row">
-                          <td>
-                            <span className="queue-id-badge">{getTicketDisplayId(t)}</span>
-                          </td>
-                          <td>
-                            {t.vehicle?.plate_number ? (
-                              <span className="queue-plate">
-                                {t.vehicle.plate_number}
-                              </span>
-                            ) : (
-                              <span className="queue-na">N/A</span>
-                            )}
-                          </td>
-                          <td className="queue-td-name">
-                            {t.driver?.name || (
-                              <span className="queue-na">N/A</span>
-                            )}
-                          </td>
-                          <td className="queue-td-name">
-                            {t.active_user_name || (
-                              <span className="queue-na">N/A</span>
-                            )}
-                          </td>
-                          <td className="queue-td-time">
-                            {formatTime(t.issued_at)}
-                          </td>
-                          {activeTab === "cancelled" && (
-                            <td>
-                              {t.reason || <span className="queue-na">N/A</span>}
-                            </td>
-                          )}
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="queue-card-footer">
-                <a href="/dashboard/Reports" className="queue-history-link">
-                  <HistoryIcon />
-                  View Full History
-                </a>
-              </div>
-            </>
-          )}
-
-        </div>
+        {/* ── Dispatch board (queued vehicles) ── */}
+        <Dispatch
+          availableSeries={availableSeries}
+          selectedSeriesId={selectedSeriesId}
+          setSelectedSeriesId={setSelectedSeriesId}
+          ticketQuantity={ticketQuantity}
+          setTicketQuantity={setTicketQuantity}
+          onStockChange={fetchTicketSeries}
+        />
       </div>
 
     </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { apiService } from "../../../lib/api-service";
+import { useToast } from "../../../components/ui/ToastConfirmContext";
 
 function formatCurrency(val) {
   return "₱" + Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -12,7 +13,24 @@ const Field = ({ label, children }) => (
   </div>
 );
 
-const CreateBatchForm = ({ onClose, onSave, existingBatches = [], targetDate }) => {
+const CreateBatchForm = ({ targetDate, onSaved }) => {
+  const showToast = useToast();
+
+  // Duplicate-batch and batch-ID-collision checks need the complete batch
+  // history (both tabs), not just a page of it.
+  const [existingBatches, setExistingBatches] = useState([]);
+  useEffect(() => {
+    Promise.all(
+      [false, true].map((archived) =>
+        apiService.get(`/report/remittance/?is_archived=${archived}`)
+      )
+    )
+      .then((pages) =>
+        setExistingBatches(pages.flatMap((res) => (Array.isArray(res) ? res : res.results || [])))
+      )
+      .catch(() => setExistingBatches([]));
+  }, []);
+
   const [accountableOfficer, setAccountableOfficer] = useState("");
   const [collections, setCollections] = useState([
     { ticketFormNo: "", from: 0, to: 0, ticketsIssued: 0, amount: 0 },
@@ -168,25 +186,11 @@ const CreateBatchForm = ({ onClose, onSave, existingBatches = [], targetDate }) 
 
   const [certified, setCertified] = useState(false);
   const amountsMismatch = totalRemittances !== totalCollections;
+  const nothingToRemit = totalRemittances <= 0;
+  const saveBlocked = amountsMismatch || nothingToRemit || !certified;
 
-  const isDuplicateBatch = existingBatches.some((b) => {
-    const sameOfficer = (b.issued_by_name || "").trim().toLowerCase() === accountableOfficer.trim().toLowerCase();
-    // Compare against the day being COVERED, not the day a batch happened to be
-    // filed on — otherwise two late batches for the same missed day, filed on
-    // different real days, wouldn't be caught by this heuristic.
-    const sameDay = (b.covers_date || (b.issued_at && b.issued_at.slice(0, 10))) === dateIssued;
-    const sameAmount = Number(b.total_amount) === Number(totalCollections);
-    return sameOfficer && sameDay && sameAmount && totalCollections > 0;
-  });
-
-  const handleSave = () => {
-    if (amountsMismatch || !certified) return;
-    if (isDuplicateBatch) {
-      const proceed = window.confirm(
-        "A remittance batch with the same officer, date, and total amount already exists. Save anyway?"
-      );
-      if (!proceed) return;
-    }
+  const handleSave = async () => {
+    if (saveBlocked) return;
     const payload = {
       id: batchId,
       issued_by: accountableOfficer,
@@ -195,13 +199,22 @@ const CreateBatchForm = ({ onClose, onSave, existingBatches = [], targetDate }) 
       covers_date: dateIssued,
       collections,
       deposits,
+      ticket_ids: todayTickets.map((t) => t.id),
     };
-    onSave(payload);
+    try {
+      await apiService.post("/report/remittance/", payload);
+    } catch (err) {
+      console.error("Failed to save batch", err);
+      showToast("Error saving batch", "info");
+      return;
+    }
+    window.dispatchEvent(new Event("remittance-batch-saved"));
+    showToast("Remittance batch saved", "success");
+    onSaved();
   };
 
   return (
-    <div className="rem-overlay" onClick={onClose}>
-      <div className="rem-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="rem-modal rem-form-page">
         {/* Header */}
         <div className="rem-modal-header">
           <div className="rem-modal-header-left">
@@ -215,12 +228,6 @@ const CreateBatchForm = ({ onClose, onSave, existingBatches = [], targetDate }) 
               {isLate ? `Late Remittance for ${dateIssued}` : "New Remittance Batch"}
             </h2>
           </div>
-          <button className="rem-modal-close" onClick={onClose} aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <path d="M18 6 6 18" />
-              <path d="m6 6 12 12" />
-            </svg>
-          </button>
         </div>
 
         <div className="rem-modal-body">
@@ -379,17 +386,11 @@ const CreateBatchForm = ({ onClose, onSave, existingBatches = [], targetDate }) 
           </div>
 
           {/* Footer */}
-          {isDuplicateBatch && (
+          {nothingToRemit ? (
             <div className="rem-alert" style={{ marginBottom: 12 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              Warning: A batch with the same officer, date, and total amount already exists. Double-check before saving.
+              Enter at least one deposit. A ₱0.00 remittance cannot be saved.
             </div>
-          )}
-          {amountsMismatch && (
+          ) : amountsMismatch && (
             <div className="rem-alert" style={{ marginBottom: 12 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" />
@@ -400,22 +401,18 @@ const CreateBatchForm = ({ onClose, onSave, existingBatches = [], targetDate }) 
             </div>
           )}
           <div className="rem-modal-footer">
-            <button type="button" className="rem-modal-btn rem-modal-btn--cancel" onClick={onClose}>
-              Cancel
-            </button>
             <button
               type="button"
               className="rem-modal-btn rem-modal-btn--submit"
               onClick={handleSave}
-              disabled={amountsMismatch || !certified}
-              style={(amountsMismatch || !certified) ? { opacity: 0.5, cursor: "not-allowed" } : {}}
+              disabled={saveBlocked}
+              style={saveBlocked ?{ opacity: 0.5, cursor: "not-allowed" } : {}}
             >
               Save Batch
             </button>
           </div>
         </div>
       </div>
-    </div>
   );
 };
 

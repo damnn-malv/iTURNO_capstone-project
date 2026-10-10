@@ -138,6 +138,10 @@ export function useRequisition() {
     [seriesItems]
   );
 
+  useEffect(() => {
+    if (showForm) setError(null);
+  }, [showForm]);
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);

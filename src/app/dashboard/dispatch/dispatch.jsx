@@ -3,16 +3,29 @@ import { apiService } from "../../../lib/api-service";
 import { useQueueSocket } from "../../../lib/useQueueSocket";
 import "../../../styles/Dispatch.css";
 
-const LAST_TICKET_FORM_KEY = "dispatch:lastTicketFormId";
+// Mirrors DEFAULT_ESTIMATED_LOADING_MINUTES in backend/api/views/records.py —
+// the loading-time fallback for a route with no estimated_loading_minutes set.
+const DEFAULT_ESTIMATED_LOADING_MINUTES = 5;
+const EXTEND_OPTIONS_MINUTES = [5, 10, 15];
 
-function Dispatch() {
+// The ticket series + quantity picker is shared with the Queue page (roaming
+// check-ins use the same selection), so its state lives in useQueue.
+function Dispatch({ availableSeries, selectedSeriesId, setSelectedSeriesId, ticketQuantity, setTicketQuantity, onStockChange }) {
   const [vehicles, setVehicles] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [drivers, setDrivers] = useState([]);
-  const [ticketForms, setTicketForms] = useState([]);
-  const [ticketSeries, setTicketSeries] = useState([]);
+  const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const [now, setNow] = useState(() => Date.now());
+  const [extendingTicketId, setExtendingTicketId] = useState(null);
+  const [roamingVehicleId, setRoamingVehicleId] = useState(null);
+
+  const [dragVehicleId, setDragVehicleId] = useState(null);
+  const [dragOverVehicleId, setDragOverVehicleId] = useState(null);
+  const [reorderingRouteId, setReorderingRouteId] = useState(null);
+  const [reorderError, setReorderError] = useState("");
 
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelReason, setCancelReason] = useState("");
@@ -26,18 +39,6 @@ function Dispatch() {
   const [swapError, setSwapError] = useState("");
   const [swapping, setSwapping] = useState(false);
 
-  const [dispatchTicketFormId, setDispatchTicketFormIdState] = useState(
-    () => localStorage.getItem(LAST_TICKET_FORM_KEY) || "",
-  );
-  const setDispatchTicketFormId = (value) => {
-    setDispatchTicketFormIdState(value);
-    if (value) {
-      localStorage.setItem(LAST_TICKET_FORM_KEY, value);
-    } else {
-      localStorage.removeItem(LAST_TICKET_FORM_KEY);
-    }
-  };
-  const [dispatchQuantity, setDispatchQuantity] = useState(1);
   const [dispatchError, setDispatchError] = useState("");
   const [dispatchingVehicleId, setDispatchingVehicleId] = useState(null);
 
@@ -45,21 +46,26 @@ function Dispatch() {
     fetchData();
   }, []);
 
+  // Ticks the loading-time countdowns once a second — purely a display
+  // concern, doesn't touch any fetched data.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const fetchData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [vehicleData, ticketData, driverData, ticketFormData, ticketSeriesData] = await Promise.all([
+      const [vehicleData, ticketData, driverData, routeData] = await Promise.all([
         apiService.getVehicles({ status: "QUEUED", is_archived: "false" }),
         apiService.getTickets({ status: "QUEUED" }),
         apiService.getDrivers({ status: "ACTIVE" }),
-        apiService.getTicketForms(),
-        apiService.request("/ticket-series/"),
+        apiService.getRoutes(),
       ]);
       setVehicles(vehicleData);
       setTickets(ticketData);
       setDrivers(driverData);
-      setTicketForms(ticketFormData);
-      setTicketSeries(ticketSeriesData);
+      setRoutes(routeData);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -72,25 +78,11 @@ function Dispatch() {
   // instead of waiting for someone to leave and revisit this tab.
   useQueueSocket(() => fetchData(true));
 
-  // Remaining stock per denomination (ticket form), FIFO-oldest-first is a backend
-  // concern — here we only need the total so the dropdown can show/allow what's left.
-  const denominationOptions = useMemo(
-    () =>
-      ticketForms
-        .map((form) => {
-          const remaining = ticketSeries
-            .filter((s) => String(s.ticket_form) === String(form.id))
-            .reduce((sum, s) => {
-              const start = parseInt(s.start_no) || 0;
-              const end = parseInt(s.end_no) || 0;
-              const total = Math.max(end - start + 1, 0);
-              return sum + (s.remaining ?? total);
-            }, 0);
-          return { ...form, remaining };
-        })
-        .filter((form) => form.remaining > 0),
-    [ticketForms, ticketSeries],
-  );
+  const routeById = useMemo(() => {
+    const map = new Map();
+    for (const r of routes) map.set(r.id, r);
+    return map;
+  }, [routes]);
 
   // Server already scopes vehicles (status=QUEUED, is_archived=false) and tickets
   // (status=QUEUED) — see fetchData(). This Map indexes the small remaining
@@ -121,22 +113,56 @@ function Dispatch() {
       : Number.POSITIVE_INFINITY;
   };
 
+  // Manual drag-and-drop order (see reorder-queue) takes priority; vehicles
+  // that were never reordered (or joined after) fall back to plain FIFO —
+  // mirrors the backend's order_by('queue_rank', 'issued_at').
+  const getQueueRank = (vehicle) => {
+    const ticket = openTicketByVehicleId.get(vehicle.id);
+    return ticket?.queue_rank ?? Number.POSITIVE_INFINITY;
+  };
+
   const groupedByRoute = useMemo(() => {
     const groups = queue.reduce((acc, vehicle) => {
       const routeName = vehicle.route_detail?.full_name || "No Route Assigned";
-      if (!acc[routeName]) acc[routeName] = [];
-      acc[routeName].push(vehicle);
+      if (!acc[routeName]) {
+        acc[routeName] = { routeId: vehicle.route_detail?.id ?? null, vehicles: [] };
+      }
+      acc[routeName].vehicles.push(vehicle);
       return acc;
     }, {});
 
     Object.keys(groups).forEach((routeName) => {
-      groups[routeName].sort((a, b) => getQueuedAt(a) - getQueuedAt(b));
+      groups[routeName].vehicles.sort((a, b) => {
+        const rankDiff = getQueueRank(a) - getQueueRank(b);
+        return rankDiff !== 0 ? rankDiff : getQueuedAt(a) - getQueuedAt(b);
+      });
     });
 
     return groups;
   }, [queue, openTicketByVehicleId]);
 
   const sortedRoutes = useMemo(() => Object.keys(groupedByRoute).sort(), [groupedByRoute]);
+
+  // Deadline for the vehicle currently at the front of its route's line —
+  // route's configured estimate (or the shared default), plus any one-off
+  // extension applied to just this ticket (see handleExtendLoading).
+  const getLoadingDeadline = (vehicle) => {
+    const ticket = openTicketByVehicleId.get(vehicle.id);
+    if (!ticket?.loading_started_at) return null;
+    const routeId = vehicle.route_detail?.id;
+    const routeMinutes = routeId != null ? routeById.get(routeId)?.estimated_loading_minutes : null;
+    const minutes = (routeMinutes ?? DEFAULT_ESTIMATED_LOADING_MINUTES) + (ticket.extra_loading_minutes || 0);
+    return new Date(ticket.loading_started_at).getTime() + minutes * 60000;
+  };
+
+  const formatCountdown = (deadlineMs) => {
+    const diffMs = deadlineMs - now;
+    const overdue = diffMs < 0;
+    const abs = Math.abs(diffMs);
+    const mins = Math.floor(abs / 60000);
+    const secs = Math.floor((abs % 60000) / 1000);
+    return `${overdue ? "-" : ""}${mins}:${String(secs).padStart(2, "0")}`;
+  };
 
   const getDriverName = (vehicle) => {
     if (vehicle.active_driver_name) return vehicle.active_driver_name;
@@ -145,23 +171,101 @@ function Dispatch() {
   };
 
   const handleDispatch = async (vehicle) => {
-    if (!dispatchTicketFormId) {
-      setDispatchError("Please select a denomination before dispatching.");
+    if (!selectedSeriesId) {
+      setDispatchError("Please select a ticket series before dispatching.");
       return;
     }
-    const quantity = Math.max(1, parseInt(dispatchQuantity) || 1);
+    const quantity = Math.max(1, parseInt(ticketQuantity) || 1);
     setDispatchingVehicleId(vehicle.id);
     setDispatchError("");
     try {
       await apiService.dispatchTicket(vehicle.id, {
-        ticketFormId: dispatchTicketFormId,
+        seriesId: selectedSeriesId,
         quantity,
       });
-      await fetchData();
+      // Small delay so the "Dispatching…" state is perceptible before the row
+      // disappears; fetchData(true) reconciles everything else in the background.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      setVehicles((prev) => prev.filter((v) => v.id !== vehicle.id));
+      fetchData(true);
+      onStockChange?.();
     } catch (err) {
       setDispatchError(err.message || "Failed to dispatch ticket. Please try again.");
     } finally {
       setDispatchingVehicleId(null);
+    }
+  };
+
+  const handleExtendLoading = async (vehicle, minutes) => {
+    const ticket = openTicketByVehicleId.get(vehicle.id);
+    if (!ticket) return;
+    setExtendingTicketId(ticket.id);
+    try {
+      await apiService.patch(`/tickets/${ticket.id}/`, {
+        extra_loading_minutes: (ticket.extra_loading_minutes || 0) + minutes,
+      });
+      fetchData(true);
+    } catch (err) {
+      setDispatchError(err.message || "Failed to extend loading time.");
+    } finally {
+      setExtendingTicketId(null);
+    }
+  };
+
+  // Lets a driver anywhere in the line (not just the front) pay the terminal
+  // fee now and leave instead of waiting their turn — reuses the same
+  // denomination/quantity picker as a normal Dispatch.
+  const handleRoam = async (vehicle) => {
+    if (!selectedSeriesId) {
+      setDispatchError("Please select a ticket series before converting to roam.");
+      return;
+    }
+    const quantity = Math.max(1, parseInt(ticketQuantity) || 1);
+    setRoamingVehicleId(vehicle.id);
+    setDispatchError("");
+    try {
+      await apiService.convertToRoam(vehicle.id, {
+        seriesId: selectedSeriesId,
+        quantity,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      setVehicles((prev) => prev.filter((v) => v.id !== vehicle.id));
+      fetchData(true);
+      onStockChange?.();
+    } catch (err) {
+      setDispatchError(err.message || "Failed to convert to roam. Please try again.");
+    } finally {
+      setRoamingVehicleId(null);
+    }
+  };
+
+  // Persists a drag-and-drop reorder within one route's line — the backend
+  // rewrites queue_rank for the whole route to match, and every connected
+  // client picks it up on the next queue_updated ping.
+  const handleReorderDrop = async (routeName, routeId, targetVehicleId) => {
+    const sourceId = dragVehicleId;
+    setDragVehicleId(null);
+    setDragOverVehicleId(null);
+    if (routeId == null || sourceId == null || sourceId === targetVehicleId) return;
+
+    const currentOrder = groupedByRoute[routeName].vehicles.map((v) => v.id);
+    const fromIdx = currentOrder.indexOf(sourceId);
+    const toIdx = currentOrder.indexOf(targetVehicleId);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    const nextOrder = [...currentOrder];
+    nextOrder.splice(fromIdx, 1);
+    nextOrder.splice(toIdx, 0, sourceId);
+
+    setReorderingRouteId(routeId);
+    setReorderError("");
+    try {
+      await apiService.reorderQueue(routeId, nextOrder);
+    } catch (err) {
+      setReorderError(err.message || "Failed to reorder queue.");
+    } finally {
+      setReorderingRouteId(null);
+      fetchData(true);
     }
   };
 
@@ -267,27 +371,6 @@ function Dispatch() {
 
   return (
     <div className="dispatch-page">
-      <div className="dispatch-header">
-        <div className="dispatch-header-left">
-          <div className="dispatch-header-accent" />
-          <div>
-            <h1 className="dispatch-title">Active Terminal Queue</h1>
-          </div>
-        </div>
-        <div className="dispatch-header-badges">
-          <span className="dispatch-badge dispatch-badge--queue">
-            <span className="dispatch-badge-dot dispatch-badge-dot--green" />
-            {queue.length} In Queue
-          </span>
-          {sortedRoutes.length > 0 && (
-            <span className="dispatch-badge">
-              <span className="dispatch-badge-dot dispatch-badge-dot--amber" />
-              {sortedRoutes.length} Route{sortedRoutes.length !== 1 ? "s" : ""}
-            </span>
-          )}
-        </div>
-      </div>
-
       {error && (
         <div className="dispatch-error">
           <svg
@@ -306,31 +389,49 @@ function Dispatch() {
         </div>
       )}
 
+      {reorderError && (
+        <div className="dispatch-error">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          {reorderError}
+        </div>
+      )}
+
       <div className="dispatch-settings-panel">
        
         <div className="dispatch-settings-body">
           <div className="dispatch-modal-field">
             <label className="dispatch-modal-label">
-              Denomination <span className="dispatch-modal-required">*</span>
+              Ticket Series <span className="dispatch-modal-required">*</span>
             </label>
             <select
               className="dispatch-modal-select"
-              value={dispatchTicketFormId}
+              value={selectedSeriesId}
               onChange={(e) => {
-                setDispatchTicketFormId(e.target.value);
+                setSelectedSeriesId(e.target.value);
                 if (dispatchError) setDispatchError("");
               }}
             >
-              <option value="">— Select a denomination —</option>
-              {denominationOptions.map((form) => (
-                <option key={form.id} value={form.id}>
-                  {form.name} — {form.remaining} pcs remaining
+              <option value="">— Select a ticket series —</option>
+              {availableSeries.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.ticket_form_label || "Unspecified"} — Series {s.series_no} ({s.pcs} pcs remaining)
                 </option>
               ))}
             </select>
-            {denominationOptions.length === 0 && (
+            {availableSeries.length === 0 && (
               <span className="dispatch-modal-field-error">
-                No ticket stock available for any denomination.
+                No ticket series with stock available.
               </span>
             )}
           </div>
@@ -340,18 +441,14 @@ function Dispatch() {
             <input
               type="number"
               className="dispatch-modal-select"
-              min={0}
-              value={dispatchQuantity}
+              min={1}
+              value={ticketQuantity}
               onChange={(e) => {
-                const raw = e.target.value;
-                if (raw === "") {
-                  setDispatchQuantity("");
-                } else {
-                  const val = parseInt(raw);
-                  setDispatchQuantity(Number.isNaN(val) ? "" : Math.max(0, val));
-                }
+                const val = parseInt(e.target.value);
+                setTicketQuantity(Number.isNaN(val) ? "" : Math.max(1, val));
                 if (dispatchError) setDispatchError("");
               }}
+              onBlur={() => !ticketQuantity && setTicketQuantity(1)}
             />
           </div>
         </div>
@@ -400,10 +497,13 @@ function Dispatch() {
             </div>
           ) : (
             <div className="dispatch-routes-list">
-              {sortedRoutes.map((routeName, routeIdx) => (
+              {sortedRoutes.map((routeName) => {
+                const { routeId, vehicles: routeVehicles } = groupedByRoute[routeName];
+                const isReordering = reorderingRouteId === routeId;
+                return (
                 <div
                   key={routeName}
-                  className={`dispatch-route-group${routeIdx > 0 ? " dispatch-route-group--gap" : ""}`}
+                  className="dispatch-route-group"
                 >
                   <div className="dispatch-route-label">
                     <svg
@@ -419,37 +519,74 @@ function Dispatch() {
                     </svg>
                     <span>{routeName}</span>
                     <span className="dispatch-route-label-count">
-                      {groupedByRoute[routeName].length} vehicle
-                      {groupedByRoute[routeName].length !== 1 ? "s" : ""}
+                      {routeVehicles.length} vehicle
+                      {routeVehicles.length !== 1 ? "s" : ""}
                     </span>
+                    {isReordering && (
+                      <span className="dispatch-route-label-saving">Saving order…</span>
+                    )}
                   </div>
 
                   <div className="dispatch-table-wrap">
                     <table className="dispatch-table">
                       <thead>
                         <tr>
+                          <th className="dispatch-th-order">Order</th>
                           <th>Plate No.</th>
-                          <th>Driver</th>
                           <th>Status</th>
                           <th>Action</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {groupedByRoute[routeName].map(
+                        {routeVehicles.map(
                           (vehicle, vehicleIdx) => {
                             const canDispatch = vehicleIdx === 0;
+                            const canReorder = routeId != null;
+                            const deadline = canDispatch ? getLoadingDeadline(vehicle) : null;
+                            const ticket = openTicketByVehicleId.get(vehicle.id);
+                            const isOverdue = deadline != null && deadline - now < 0;
                             return (
                               <tr
                                 key={vehicle.id}
-                                className="dispatch-table-row"
+                                className={`dispatch-table-row${dragOverVehicleId === vehicle.id ? " dispatch-table-row--drag-over" : ""}${dragVehicleId === vehicle.id ? " dispatch-table-row--dragging" : ""}`}
+                                draggable={canReorder}
+                                onDragStart={() => canReorder && setDragVehicleId(vehicle.id)}
+                                onDragOver={(e) => {
+                                  if (!canReorder) return;
+                                  e.preventDefault();
+                                  if (dragOverVehicleId !== vehicle.id) setDragOverVehicleId(vehicle.id);
+                                }}
+                                onDragEnd={() => {
+                                  setDragVehicleId(null);
+                                  setDragOverVehicleId(null);
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  handleReorderDrop(routeName, routeId, vehicle.id);
+                                }}
                               >
+                                <td className="dispatch-td-order">
+                                  {canReorder ? (
+                                    <span
+                                      className="dispatch-drag-handle"
+                                      title="Drag to reorder this route's queue"
+                                    >
+                                      <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
+                                        <circle cx="3" cy="2.5" r="1.4" />
+                                        <circle cx="9" cy="2.5" r="1.4" />
+                                        <circle cx="3" cy="8" r="1.4" />
+                                        <circle cx="9" cy="8" r="1.4" />
+                                        <circle cx="3" cy="13.5" r="1.4" />
+                                        <circle cx="9" cy="13.5" r="1.4" />
+                                      </svg>
+                                    </span>
+                                  ) : null}
+                                  <span className="dispatch-order-index">#{vehicleIdx + 1}</span>
+                                </td>
                                 <td>
                                   <span className="dispatch-plate">
                                     {vehicle.plate_number}
                                   </span>
-                                </td>
-                                <td className="dispatch-td-name">
-                                  {getDriverName(vehicle)}
                                 </td>
                                 <td>
                                   <span
@@ -462,6 +599,27 @@ function Dispatch() {
                                       ? "Ready"
                                       : `#${vehicleIdx + 1} in line`}
                                   </span>
+                                  {deadline != null && (
+                                    <span className={`dispatch-loading-timer${isOverdue ? " dispatch-loading-timer--overdue" : ""}`}>
+                                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                        <circle cx="12" cy="12" r="9" />
+                                        <path d="M12 7v5l3 3" />
+                                      </svg>
+                                      {formatCountdown(deadline)}
+                                      {EXTEND_OPTIONS_MINUTES.map((minutes) => (
+                                        <button
+                                          key={minutes}
+                                          type="button"
+                                          className="dispatch-extend-btn"
+                                          onClick={() => handleExtendLoading(vehicle, minutes)}
+                                          disabled={extendingTicketId === ticket?.id}
+                                          title={`Extend by ${minutes} minutes`}
+                                        >
+                                          +{minutes}m
+                                        </button>
+                                      ))}
+                                    </span>
+                                  )}
                                 </td>
                                 <td>
                                   <div className="dispatch-action-group">
@@ -493,6 +651,24 @@ function Dispatch() {
                                       {dispatchingVehicleId === vehicle.id
                                         ? "Dispatching…"
                                         : "Dispatch"}
+                                    </button>
+                                    <button
+                                      className="dispatch-btn dispatch-btn--roam"
+                                      onClick={() => handleRoam(vehicle)}
+                                      disabled={roamingVehicleId === vehicle.id}
+                                      title="Pay the terminal fee now and leave without waiting in line"
+                                    >
+                                      <svg
+                                        width="13"
+                                        height="13"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2.2"
+                                      >
+                                        <path d="M3 12h13M11 6l6 6-6 6M21 5v14" />
+                                      </svg>
+                                      {roamingVehicleId === vehicle.id ? "Roaming…" : "Roam"}
                                     </button>
                                     <button
                                       className="dispatch-btn dispatch-btn--swap"
@@ -536,7 +712,8 @@ function Dispatch() {
                     </table>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

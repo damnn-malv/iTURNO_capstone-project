@@ -15,7 +15,7 @@ change.
 from api.models import (
     Vehicle, Driver, Ticket, TicketSeries, Requisition,
     RemittanceBatch, Deposit, Collection, AuditLog, WipMode,
-    User, Route, TicketPrice, TerminalPrice, TicketForm, PUVType,
+    User, Route, TicketPrice, TicketForm, PUVType,
 )
 
 # WipMode is pushed for remote *display* only (gates the remote backfill UI) —
@@ -31,5 +31,5 @@ PUSH_MODELS = [
 ]
 
 PULL_MODELS = [
-    User, Route, TicketPrice, TerminalPrice, TicketForm, PUVType,
+    User, Route, TicketPrice, TicketForm, PUVType,
 ]

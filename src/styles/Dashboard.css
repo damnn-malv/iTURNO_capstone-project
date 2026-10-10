@@ -55,6 +55,14 @@
   background: var(--gold);
 }
 
+.col-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 3px;
+  letter-spacing: -0.02em;
+}
+
 .dashboard-title {
   font-size: 22px;
   font-weight: 700;
@@ -154,30 +162,29 @@
   border-color: var(--gold);
 }
 
-/* Overview: Collections as a tall featured card on the left, with the four
-   Check-Ins/Live-Status cards as a 2x2 quad on the right (top row = check-ins,
-   bottom row = live status) — matches the grid stretching the featured card
-   to the quad's full height. */
-.dashboard-overview-grid {
+/* Overview: all five metric cards — a narrower
+   Collections hero (with average + 7-day trend) beside a 2x2 of
+   Checked In / Live Status cards. */
+.overview-panel {
   display: grid;
-  grid-template-columns: minmax(170px, 1fr) minmax(0, 2.3fr);
-  gap: 12px;
-  margin-bottom: 4px;
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 2.2fr);
+  gap: 14px;
 }
 
-.stat-cards-quad {
+.overview-right {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 0;
 }
 
-.quad-group {
+.overview-group {
   flex: 1;
   display: flex;
   flex-direction: column;
 }
 
-.quad-group-label {
+.overview-group-label {
   font-size: 9.5px;
   font-weight: 700;
   color: var(--text-muted);
@@ -186,88 +193,47 @@
   margin-bottom: 6px;
 }
 
-.quad-group-row {
+.overview-group-stats {
+  flex: 1;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
-  flex: 1;
 }
 
 @media (max-width: 720px) {
-  .dashboard-overview-grid {
+  .overview-panel {
     grid-template-columns: 1fr;
   }
 }
 
-.stat-card {
+.stat {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 12px 14px 11px;
+  padding: 12px 14px 11px 16px;
   position: relative;
   overflow: hidden;
   box-shadow: var(--shadow-sm);
   transition: box-shadow 0.15s, transform 0.15s, background 0.25s, border-color 0.25s;
 }
 
-.stat-card--featured {
-  padding: 18px 20px 16px;
-}
-
-.stat-card--featured .stat-card-label {
-  font-size: 11.5px;
-}
-
-.stat-card--featured .stat-card-value {
-  font-size: 32px;
-}
-
-.stat-card--featured .stat-card-sub {
-  font-size: 13px;
-}
-
-.stat-card:hover {
+.stat:hover {
   box-shadow: 0 4px 18px rgba(26, 39, 68, 0.1);
   transform: translateY(-1px);
 }
 
-.stat-card::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--navy);
-  border-radius: 10px 0 0 10px;
-}
-
-.dark .stat-card::before {
-  background: var(--gold);
-}
-
-/* Reserved for genuine alerts (e.g. low ticket stock) — mirrors the red
-   left-bar + red value treatment already used on the Requisition page. */
-.stat-card--alert::before {
-  background: #ef4444;
-}
-
-.stat-card--alert .stat-card-value {
-  color: #ef4444;
-}
-
-.stat-card-label {
+.stat-label {
   font-size: 10.5px;
   font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   line-height: 1.25;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
-.stat-card-value {
-  font-size: 21px;
+.stat-value {
+  font-size: 22px;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.02em;
@@ -275,13 +241,95 @@
   margin-bottom: 3px;
 }
 
-.stat-card-sub {
+.stat-unit {
+  font-size: 0.65em;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.stat-sub {
   font-size: 11.5px;
   font-weight: 600;
   color: var(--gold);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.stat--hero {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px 14px 20px;
+}
+
+.stat--hero .stat-label {
+  font-size: 11.5px;
+}
+
+.stat--hero .stat-value {
+  font-size: 34px;
+  margin-bottom: 6px;
+}
+
+.stat--hero .stat-sub {
+  font-size: 14px;
+}
+
+.stat-hero-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px dashed var(--border-soft);
+}
+
+.stat-hero-foot-label {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.stat-hero-foot-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stat-hero-foot-range {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 28px;
+  width: 64px;
+}
+
+.sparkline span {
+  flex: 1;
+  background: var(--navy);
+  opacity: 0.75;
+  border-radius: 2px 2px 0 0;
+}
+
+.dark .sparkline span {
+  background: var(--gold);
+}
+
+/* Reserved for genuine alerts (e.g. low ticket stock). */
+.stat--alert .stat-value {
+  color: #ef4444;
 }
 
 .chart-card {
@@ -479,11 +527,11 @@
   align-items: center;
   gap: 8px;
   padding: 15px 18px;
-  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  background: var(--bg-page);
+  border-bottom: 1px solid var(--border);
   font-size: 13px;
   font-weight: 700;
-  color: #fff;
+  color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 
@@ -744,7 +792,7 @@
   color: var(--text-secondary);
 }
 
-/* ── Pagination (matches Collection.css's .col-pagination) ── */
+/* ── Pagination  ── */
 .dashboard-pagination {
   display: flex;
   align-items: center;
@@ -794,7 +842,4 @@
   .dashboard-chart-panel { flex: none; width: 100%; }
   .dashboard-routes-sidebar { flex: none; width: 100%; }
   .dashboard-insights-row { grid-template-columns: 1fr; }
-  /* Replaced by the always-on-top floating scan button (mainIndex.css) so
-     it stays reachable without hunting through the wrapped header row. */
-  .dashboard-scan-btn--mobile-scan { display: none; }
 }

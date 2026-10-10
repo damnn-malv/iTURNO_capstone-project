@@ -115,8 +115,16 @@ DATABASES = {
         # SQLite only allows one writer at a time; two staff dispatching tickets
         # at the same moment is entirely realistic at a live terminal, and
         # without an explicit timeout the second writer gets "database is
-        # locked" immediately instead of just waiting its turn.
-        'OPTIONS': {'timeout': 20},
+        # locked" immediately instead of just waiting its turn. IMMEDIATE takes
+        # the write lock at BEGIN: with the default deferred mode, a transaction
+        # that reads first and writes later (e.g. TicketSerializer.create) fails
+        # instantly with "database is locked" if the sync worker committed in
+        # between — the timeout never gets a chance to apply.
+        'OPTIONS': {
+            'timeout': 20,
+            'transaction_mode': 'IMMEDIATE',
+            'init_command': 'PRAGMA journal_mode=WAL;',
+        },
     },
     'supabase': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -124,8 +132,19 @@ DATABASES = {
         'USER': os.getenv('DB_USER'),
         'PASSWORD': os.getenv('DB_PASSWORD'),
         'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT', '5432'),
-        'OPTIONS': {'sslmode': 'require'},
+        # Transaction-mode pooler (6543), not session mode (5432): session mode
+        # caps concurrent clients at 15 project-wide, and every regular request
+        # that touches User (staff registry, login, email verification) plus
+        # the sync worker all open their own connection — that exhausts 15
+        # almost immediately. Transaction mode shares a much larger backend
+        # pool across short-lived connections instead.
+        'PORT': os.getenv('DB_PORT', '6543'),
+        # Required with the transaction pooler: it can hand different backend
+        # connections to the same client across queries, so a server-side
+        # cursor opened on one backend can't be read from on another.
+        'DISABLE_SERVER_SIDE_CURSORS': True,
+        # Short connect timeout so an offline LAN fails over to the local cache fast.
+        'OPTIONS': {'sslmode': 'require', 'connect_timeout': 4},
         'CONN_MAX_AGE': 60,
     },
 }
@@ -209,8 +228,23 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
 
-# Base URL of the frontend app, used to build the password-reset link sent by email
-FRONTEND_URL = 'http://localhost:5173'
+# Base URL used to build the password-reset and verify-email links sent by
+# email. This has to be reachable from wherever the recipient opens their
+# inbox (their phone, a different network entirely) — not just localhost or
+# this machine's LAN IP — so it points at the Vercel deployment. Whichever
+# side actually verifies the click-through link (see api/_lib/auth.js's
+# verifyPasswordResetToken/verifyEmailVerificationToken on Vercel, or this
+# same pair in api/tokens.py here) both trust EMAIL_LINK_SECRET below, so the
+# link works no matter which one ends up serving it.
+PUBLIC_APP_URL = os.getenv('PUBLIC_APP_URL', 'https://northcentralterminal-capstone-project.vercel.app')
+
+# Shared with the Vercel project's EMAIL_LINK_SECRET env var — signs/verifies
+# the password-reset and email-verification JWTs above so either side (this
+# Django backend or the Vercel serverless functions in api/remote/auth/) can
+# issue a link the other side is able to verify. Deliberately a separate
+# secret from Vercel's own REMOTE_JWT_SECRET (login/session tokens), which
+# this backend never needs to know.
+EMAIL_LINK_SECRET = os.getenv('EMAIL_LINK_SECRET')
 
 
 # SMS queue alerts (PhilSMS — https://philsms.com). Both alerts are wired in:

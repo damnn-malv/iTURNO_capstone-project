@@ -23,6 +23,7 @@ const EMPTY_FORM = {
   middle_name: "",
   last_name: "",
   iwp_number: "",
+  iwp_expiration_date: "",
   gender: "",
   birthdate: "",
   province: "La Union",

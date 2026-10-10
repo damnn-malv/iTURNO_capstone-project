@@ -6,7 +6,7 @@ from api.sync.registry import PULL_MODELS
 class Command(BaseCommand):
     help = (
         "One-time bootstrap: copy existing local reference data (User, Route, "
-        "TicketPrice, TerminalPrice, TicketForm, PUVType) up to Supabase so it has "
+        "TicketPrice, TicketForm, PUVType) up to Supabase so it has "
         "a starting point. Never overwrites a row that already exists on Supabase — "
         "admin's remote edits always win, this only fills in what's missing. Run "
         "this once per model when setting up a new Supabase project or adding a new "

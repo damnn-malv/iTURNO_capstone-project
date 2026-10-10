@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   BarChart,
   Bar,
@@ -72,17 +71,30 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-// ─── Stat Card ───────────────────────────────────────────────────────────────
-// `featured` makes the single Collections card fill the tall left slot next
-// to the 2x2 quad of Check-Ins / Live Status cards.
-function StatCard({ label, value, sub, alert, featured }) {
+// ─── Stat (one metric card inside the shared overview panel) ────────────────
+// `unit` is a lighter word after the value ("27 vehicles"); `hero` enlarges the Collections figure; `alert` is reserved for low stock.
+function Stat({ label, value, unit, sub, alert, hero, children }) {
   return (
-    <div
-      className={`stat-card${alert ? " stat-card--alert" : ""}${featured ? " stat-card--featured" : ""}`}
-    >
-      <div className="stat-card-label">{label}</div>
-      <div className="stat-card-value">{value}</div>
-      {sub && <div className="stat-card-sub">{sub}</div>}
+    <div className={`stat${alert ? " stat--alert" : ""}${hero ? " stat--hero" : ""}`}>
+      {label && <div className="stat-label">{label}</div>}
+      <div className="stat-value">
+        {value}
+        {unit && <span className="stat-unit"> {unit}</span>}
+      </div>
+      {sub && <div className="stat-sub">{sub}</div>}
+      {children}
+    </div>
+  );
+}
+
+// Tiny bar trend of ticket counts; heights are relative to the busiest day.
+function Sparkline({ points }) {
+  const max = Math.max(...points, 1);
+  return (
+    <div className="sparkline" aria-hidden="true">
+      {points.map((v, i) => (
+        <span key={i} style={{ height: `${Math.max((v / max) * 100, 6)}%` }} />
+      ))}
     </div>
   );
 }
@@ -173,7 +185,6 @@ const todayStr = () => {
 
 // ─── Main Dashboard ──────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [chartData, setChartData] = useState([]);
   const [routes, setRoutes] = useState([]);
@@ -251,6 +262,16 @@ export default function Dashboard() {
   const chartRangeLabel = isTodayOnly ? "Last 7 days" : rangeLabel;
 
   const fleetStatus = stats?.fleet_status || {};
+  // Same window as the chart: the 7-day trend on today-only, else the filtered
+  // range. Averaged over calendar days (chartData skips days with no tickets).
+  const windowDays = isTodayOnly
+    ? 7
+    : Math.round((new Date(toDate) - new Date(fromDate)) / 86400000) + 1;
+  const avgTicketsPerDay = (
+    chartData.reduce((sum, d) => sum + (d.count ?? 0), 0) / windowDays
+  ).toFixed(1);
+  const collections = stats?.today_total?.count ?? 0;
+  const collectionsTotal = parseFloat(stats?.today_total?.total) || 0;
   const queuedCount = fleetStatus.QUEUED ?? 0;
   const ticketStock = stats?.ticket_stock_remaining ?? 0;
   const stockIsLow = ticketStock < STOCK_LOW_THRESHOLD;
@@ -305,19 +326,6 @@ export default function Dashboard() {
             </svg>
             Public View
           </button>
-          <button
-            className="dashboard-scan-btn dashboard-scan-btn--mobile-scan"
-            onClick={() => navigate("/mobile-scan")}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <path d="M3 7V5a2 2 0 0 1 2-2h2" />
-              <path d="M17 3h2a2 2 0 0 1 2 2v2" />
-              <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
-              <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
-              <rect x="7" y="7" width="10" height="10" rx="1" />
-            </svg>
-            Mobile Scan
-          </button>
         </div>
       </div>
 
@@ -332,36 +340,46 @@ export default function Dashboard() {
       ) : (
         <>
           {/* ─── Overview: Collections (left) + Check-Ins/Live Status quad (right) ─── */}
-          <div>
-            <div className="dashboard-overview-grid">
-              <div className="quad-group">
-                <div className="quad-group-label">Overview</div>
-                <StatCard
-                  featured
-                  label="Total Collections"
-                  value={stats?.today_total?.count ?? 0}
-                  sub={peso(stats?.today_total?.total ?? 0)}
-                />
-              </div>
-              <div className="stat-cards-quad">
-                <div className="quad-group">
-                  <div className="quad-group-label">Checked In</div>
-                  <div className="quad-group-row">
-                    <StatCard label="Vehicles Checked In" value={stats?.active_vehicles ?? 0} />
-                    <StatCard label="Drivers Checked In" value={stats?.active_drivers ?? 0} />
-                  </div>
+          <div className="overview-panel">
+            <Stat
+              hero
+              label="Total Collections"
+              value={collections}
+              sub={peso(collectionsTotal)}
+            >
+              <div className="stat-hero-foot">
+                <div>
+                  <span className="stat-hero-foot-label">Avg tickets / day</span>
+                  <span className="stat-hero-foot-value">{avgTicketsPerDay}</span>
+                  <span className="stat-hero-foot-range">{chartRangeLabel}</span>
                 </div>
-                <div className="quad-group">
-                  <div className="quad-group-label">Live Status</div>
-                  <div className="quad-group-row">
-                    <StatCard label="Currently Queued" value={queuedCount} />
-                    <StatCard
-                      label="Ticket Stock"
-                      value={`${ticketStock.toLocaleString()} pcs`}
-                      sub={stockSub}
-                      alert={stockIsLow}
-                    />
-                  </div>
+                <Sparkline points={chartData.map((d) => d.count ?? 0)} />
+              </div>
+            </Stat>
+            <div className="overview-right">
+              <div className="overview-group">
+                <div className="overview-group-label">Checked In</div>
+                <div className="overview-group-stats">
+                  <Stat
+                    value={stats?.active_vehicles ?? 0}
+                    unit={stats?.active_vehicles === 1 ? "vehicle" : "vehicles"}
+                  />
+                  <Stat
+                    value={stats?.active_drivers ?? 0}
+                    unit={stats?.active_drivers === 1 ? "driver" : "drivers"}
+                  />
+                </div>
+              </div>
+              <div className="overview-group">
+                <div className="overview-group-label">Live Status</div>
+                <div className="overview-group-stats">
+                  <Stat label="Currently Queued" value={queuedCount} />
+                  <Stat
+                    label="Ticket Stock"
+                    value={`${ticketStock.toLocaleString()} pcs`}
+                    sub={stockSub}
+                    alert={stockIsLow}
+                  />
                 </div>
               </div>
             </div>

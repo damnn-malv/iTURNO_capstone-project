@@ -145,7 +145,10 @@ export function exportPDF(collections, filters) {
  * @param {string} title - Heading shown at the top of the document
  */
 export function exportTablePDF(data, title = "Report") {
-  if (!data.length) return;
+  if (!data.length) {
+    alert("No records to export.");
+    return;
+  }
   const headers = Object.keys(data[0]);
   const now = new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" });
 
@@ -187,8 +190,14 @@ export function exportTablePDF(data, title = "Report") {
   </body>
   </html>`;
 
-  const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  window.open(url, "_blank");
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  // Print from a hidden iframe: window.open after an await is blocked as a popup.
+  const frame = document.createElement("iframe");
+  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+  frame.onload = () => {
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+    setTimeout(() => frame.remove(), 60000);
+  };
+  frame.srcdoc = html;
+  document.body.appendChild(frame);
 }

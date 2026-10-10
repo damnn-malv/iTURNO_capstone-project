@@ -9,7 +9,7 @@ import {
 } from "../../_lib/auth.js";
 import { resolveDateRange, inRange } from "../../_lib/dateRange.js";
 
-// Merges routes/users/ticket-forms/puv-types/terminal-price into one
+// Merges routes/users/ticket-forms/puv-types into one
 // function (Vercel Hobby's 12-function cap — see api/remote/auth/[action].js).
 // All writable, all SUPERADMIN-only (CAN_EDIT_SETTINGS). Route is the only
 // one with public read access; the rest require SUPERADMIN even to view.
@@ -78,7 +78,7 @@ async function routesResource(req, res, supabase, payload) {
 
 async function usersResource(req, res, supabase, payload) {
   requireRole(payload, CAN_EDIT_SETTINGS); // whole resource is SUPERADMIN-only, reads included
-  const SELECT = "id, username, first_name, middle_name, last_name, role, is_active, must_reset_password";
+  const SELECT = "id, username, first_name, middle_name, last_name, role, is_active, must_reset_password, email_verified";
 
   if (req.method === "GET") {
     const { data, error } = await supabase.from("api_user").select(SELECT).order("username", { ascending: true });
@@ -181,38 +181,6 @@ function simpleCrud(table, { createFields, requiredField = "name" }) {
     }
     res.status(405).json({ detail: "Method not allowed" });
   };
-}
-
-async function terminalPriceResource(req, res, supabase, payload) {
-  requireRole(payload, CAN_EDIT_SETTINGS);
-
-  if (req.method === "GET") {
-    let { data, error } = await supabase.from("api_terminalprice").select("*").eq("id", 1).maybeSingle();
-    if (error) throw error;
-    if (!data) {
-      // updated_at is Django's auto_now — application-managed, not a DB default,
-      // so the column is NOT NULL with nothing to fall back on if omitted here.
-      ({ data, error } = await supabase
-        .from("api_terminalprice")
-        .insert({ id: 1, amount: 0, updated_at: new Date().toISOString() })
-        .select().single());
-      if (error) throw error;
-    }
-    res.status(200).json(data);
-    return;
-  }
-
-  if (req.method === "PATCH" || req.method === "PUT") {
-    const { amount } = req.body || {};
-    const { data, error } = await supabase
-      .from("api_terminalprice")
-      .upsert({ id: 1, amount, updated_at: new Date().toISOString() })
-      .select().single();
-    if (error) throw error;
-    res.status(200).json(data);
-    return;
-  }
-  res.status(405).json({ detail: "Method not allowed" });
 }
 
 async function wipModeResource(req, res, supabase) {
@@ -323,8 +291,7 @@ const RESOURCES = {
   routes: routesResource,
   users: usersResource,
   "ticket-forms": simpleCrud("api_ticketform", { createFields: ["name", "price"], requiredField: "name" }),
-  "puv-types": simpleCrud("api_puvtype", { createFields: ["name"], requiredField: "name" }),
-  "terminal-price": terminalPriceResource,
+  "puv-types": simpleCrud("api_puvtype", { createFields: ["name", "terminal_price"], requiredField: "name" }),
   "wip-mode": wipModeResource,
   backfill: backfillResource,
 };

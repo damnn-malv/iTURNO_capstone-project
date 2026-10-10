@@ -1,58 +1,9 @@
 /* Dispatch.css — inherits CSS vars from mainIndex.css */
 
+/* Embedded in the Queue page, which supplies the page padding/background. */
 .dispatch-page {
-  padding: 28px 32px;
-  background: var(--bg-page);
-  min-height: 100vh;
   font-family: 'Inter', 'Segoe UI', sans-serif;
   transition: background 0.25s;
-}
-
-/* ── Header ── */
-.dispatch-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-bottom: 28px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border-soft);
-}
-
-.dispatch-header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.dispatch-header-accent {
-  width: 4px;
-  height: 36px;
-  border-radius: 4px;
-  background: var(--navy);
-  flex-shrink: 0;
-}
-.dark .dispatch-header-accent { background: var(--gold); }
-
-.dispatch-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 3px;
-  letter-spacing: -0.02em;
-}
-
-.dispatch-subtitle {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin: 0;
-}
-
-.dispatch-header-badges {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .dispatch-badge {
@@ -172,8 +123,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 15px 20px;
-  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  background: var(--bg-page);
+  border-bottom: 1px solid var(--border);
 }
 
 .dispatch-panel-header-left {
@@ -201,7 +152,7 @@
 .dispatch-panel-title {
   font-size: 13.5px;
   font-weight: 700;
-  color: #fff;
+  color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 
@@ -235,16 +186,16 @@
 .dispatch-routes-list {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+  padding: 16px;
 }
 
+/* One bordered card (label + table) per route */
 .dispatch-route-group {
-  border-bottom: 1px solid var(--border-soft);
-}
-.dispatch-route-group:last-child { border-bottom: none; }
-
-/* Gap between route groups */
-.dispatch-route-group--gap {
-  margin-top: 0; /* gap is visual via the route label stripe */
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-surface);
 }
 
 /* Route label row — mirrors lp-row--route-label / lp-route-label-badge--active */
@@ -255,7 +206,6 @@
   padding: 9px 20px;
   background: linear-gradient(135deg, rgba(26,39,68,0.06) 0%, rgba(45,62,95,0.06) 100%);
   border-bottom: 1px solid var(--border-soft);
-  border-top: 1px solid var(--border-soft);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -280,6 +230,14 @@
   background: var(--bg-page);
   border: 1px solid var(--border);
   border-radius: 20px;
+}
+
+.dispatch-route-label-saving {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #b7791f;
 }
 
 /* ── Table ── */
@@ -313,6 +271,38 @@
 }
 .dispatch-table-row:last-child { border-bottom: none; }
 .dispatch-table-row:hover { background: var(--bg-hover); }
+
+.dispatch-table-row--dragging { opacity: 0.4; }
+.dispatch-table-row--drag-over {
+  background: rgba(183,121,31,0.1);
+  box-shadow: inset 0 2px 0 #b7791f;
+}
+
+/* ── Order column — playlist-style drag handle ── */
+.dispatch-th-order { width: 1%; white-space: nowrap; }
+
+.dispatch-td-order {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.dispatch-drag-handle {
+  display: inline-flex;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  cursor: grab;
+  flex-shrink: 0;
+}
+.dispatch-table-row:hover .dispatch-drag-handle { opacity: 0.9; }
+.dispatch-drag-handle:active { cursor: grabbing; }
+
+.dispatch-order-index {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
 
 .dispatch-table td {
   padding: 13px 18px;
@@ -371,12 +361,42 @@
 }
 .dispatch-status-dot--inactive { background: #94a3b8; }
 
-/* ── Text cells ── */
-.dispatch-td-name {
-  font-weight: 500;
-  color: var(--text-primary);
-  white-space: nowrap;
+/* ── Loading-time countdown + extend (front-of-line vehicle only) ── */
+.dispatch-loading-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 8px;
+  padding: 2px 8px 2px 7px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: rgba(148,163,184,0.12);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  vertical-align: middle;
 }
+.dispatch-loading-timer--overdue {
+  background: rgba(220,38,38,0.08);
+  color: #dc2626;
+  border-color: rgba(220,38,38,0.3);
+}
+
+.dispatch-extend-btn {
+  margin-left: 2px;
+  border: none;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.dispatch-extend-btn:hover { opacity: 0.8; }
+.dispatch-extend-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Action buttons ── */
 .dispatch-action-group {
@@ -403,12 +423,22 @@
 .dispatch-btn:hover  { opacity: 0.88; transform: translateY(-1px); }
 .dispatch-btn:active { transform: translateY(0); }
 
-/* Dispatch — navy/gold like lp-btn--navy */
-.dispatch-btn--dispatch {
-  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(26,39,68,0.25);
+/* Dispatch / Roam / Swap — neutral outline; only Cancel carries a color */
+.dispatch-btn--dispatch,
+.dispatch-btn--roam,
+.dispatch-btn--swap {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1.5px solid var(--border);
+  box-shadow: none;
 }
+.dispatch-btn--dispatch:hover,
+.dispatch-btn--roam:hover,
+.dispatch-btn--swap:hover {
+  background: var(--bg-hover);
+  opacity: 1;
+}
+.dispatch-btn--roam:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
 /* Dispatch disabled state */
 .dispatch-btn--dispatch-disabled {
@@ -421,20 +451,6 @@
 }
 .dark .dispatch-btn--dispatch-disabled {
   background: rgba(255,255,255,0.06) !important;
-}
-
-/* Swap Driver — outline amber */
-.dispatch-btn--swap {
-  background: transparent;
-  color: #b7791f;
-  border: 1.5px solid rgba(183,121,31,0.35);
-  box-shadow: none;
-}
-.dispatch-btn--swap:hover {
-  background: rgba(183,121,31,0.08);
-  border-color: #b7791f;
-  opacity: 1;
-  transform: translateY(-1px);
 }
 
 /* Cancel — outline red */
@@ -739,9 +755,6 @@
 
 /* ── Responsive ── */
 @media (max-width: 640px) {
-  .dispatch-page { padding: 20px 16px; }
-  .dispatch-header { flex-direction: column; align-items: flex-start; }
-  .dispatch-header-badges { flex-wrap: wrap; }
   .dispatch-table th,
   .dispatch-table td { padding: 10px 12px; }
   .dispatch-action-group { flex-direction: column; align-items: flex-start; }

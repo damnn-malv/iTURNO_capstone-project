@@ -28,7 +28,6 @@ from .records import (
     public_queue,
     server_time,
     remittance_batches,
-    terminal_price_config,
 )
 
 from .system import (
@@ -42,6 +41,7 @@ from .system import (
 from .auth import (
     forgot_password,
     reset_password,
+    verify_email,
     change_password,
 )
 

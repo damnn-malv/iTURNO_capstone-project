@@ -13,7 +13,12 @@ function Registry() {
   const vehExportQRRef = useRef(null);
   const drvExportQRRef = useRef(null);
 
-  const exposeVehAdd = useCallback((fn) => { vehAddRef.current = fn; }, []);
+  const vehExportPDFRef = useRef(null);
+  const drvExportPDFRef = useRef(null);
+
+  const exposeVehExportPDF = useCallback((fn) => { vehExportPDFRef.current = fn; }, []);
+  const exposeDrvExportPDF = useCallback((fn) => { drvExportPDFRef.current = fn; }, []);
+  const exposeVehAdd =useCallback((fn) => { vehAddRef.current = fn; }, []);
   const exposeDrvAdd = useCallback((fn) => { drvAddRef.current = fn; }, []);
   const exposeVehExportQR = useCallback((fn) => { vehExportQRRef.current = fn; }, []);
   const exposeDrvExportQR = useCallback((fn) => { drvExportQRRef.current = fn; }, []);
@@ -55,7 +60,7 @@ function Registry() {
           </div>
           {(activeTab === "vehicles" || activeTab === "drivers") && (
             <button
-              className="reg-export-qr-btn"
+              className="reg-add-btn"
               onClick={() =>
                 activeTab === "vehicles"
                   ? vehExportQRRef.current?.()
@@ -75,6 +80,21 @@ function Registry() {
               Export QR
             </button>
           )}
+          <button
+            className="reg-add-btn"
+            onClick={() =>
+              activeTab === "vehicles"
+                ? vehExportPDFRef.current?.()
+                : drvExportPDFRef.current?.()
+            }
+            title={`Export filtered ${activeTab} as PDF`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            Export PDF
+          </button>
           <button className="reg-add-btn" onClick={handleAdd}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M5 12h14" />
@@ -120,6 +140,7 @@ function Registry() {
             onSearchChange={setVehSearch}
             exposeAdd={exposeVehAdd}
             exposeExportQR={exposeVehExportQR}
+            exposeExportPDF={exposeVehExportPDF}
           />
         )}
         {activeTab === "drivers" && (
@@ -129,6 +150,7 @@ function Registry() {
             onSearchChange={setDrvSearch}
             exposeAdd={exposeDrvAdd}
             exposeExportQR={exposeDrvExportQR}
+            exposeExportPDF={exposeDrvExportPDF}
           />
         )}
       </div>

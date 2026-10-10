@@ -40,7 +40,6 @@ const REMOTE_GET_MAP = {
   "/audit-logs/": "/resource/audit-logs",
   "/requisitions/": "/resource/requisitions",
   "/ticket-series/": "/resource/ticket-series",
-  "/settings/terminal-price/": "/settings/terminal-price",
   "/report/remittance/": "/resource/remittance-batches",
   "/report/summary/": "/reports/summary",
   "/report/collections/": "/reports/collections",
@@ -61,11 +60,12 @@ const REMOTE_WRITABLE = [
   // Public (no login yet) — handled by api/remote/auth/[action].js alongside token/refresh.
   { prefix: "/auth/forgot-password/", remote: "/auth/forgot-password", methods: ["POST"] },
   { prefix: "/auth/reset-password/", remote: "/auth/reset-password", methods: ["POST"] },
+  { prefix: "/auth/verify-email/", remote: "/auth/verify-email", methods: ["POST"] },
+  { prefix: "/auth/change-password/", remote: "/auth/change-password", methods: ["POST"] },
   { prefix: "/routes/", remote: "/settings/routes", methods: ["POST", "PATCH", "PUT", "DELETE"] },
   { prefix: "/users/", remote: "/settings/users", methods: ["POST", "PATCH", "PUT", "DELETE"] },
   { prefix: "/puvtypes/", remote: "/settings/puv-types", methods: ["POST", "PATCH", "PUT", "DELETE"] },
   { prefix: "/ticket-forms/", remote: "/settings/ticket-forms", methods: ["POST", "PATCH", "PUT", "DELETE"] },
-  { prefix: "/settings/terminal-price/", remote: "/settings/terminal-price", methods: ["PATCH", "PUT"], singleton: true },
   { prefix: "/vehicles/", remote: "/registry/vehicles", methods: ["PATCH", "PUT"] },
   { prefix: "/drivers/", remote: "/registry/drivers", methods: ["PATCH", "PUT"] },
   // Doesn't create a Ticket directly (LAN is always authoritative for those —
@@ -89,17 +89,28 @@ export function remotePath(endpoint, method = "GET") {
 // translation and Authorization header attachment as request() — without
 // this, remote calls reach the serverless functions with no auth header and
 // requireAuth() in api/_lib/auth.js 401s every one of them.
-export function authFetch(endpoint, options = {}) {
+export async function authFetch(endpoint, options = {}) {
   const method = (options.method || "GET").toUpperCase();
   const effectiveEndpoint = IS_REMOTE
     ? translateForRemote(endpoint, method) ?? endpoint
     : endpoint;
+  const url = `${API_BASE_URL}${effectiveEndpoint}`;
 
-  const token = sessionStorage.getItem("accessToken");
-  const headers = { ...options.headers };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  await apiService.refreshIfExpiring();
+  const send = () => {
+    const token = sessionStorage.getItem("accessToken");
+    const headers = { ...options.headers };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(url, { ...options, headers });
+  };
 
-  return fetch(`${API_BASE_URL}${effectiveEndpoint}`, { ...options, headers });
+  // Access tokens last 5 minutes (SIMPLE_JWT) — refresh once and retry, as
+  // apiService.request does. Parallel callers share one in-flight refresh.
+  let response = await send();
+  if (response.status === 401 && (await apiService.refreshToken())) {
+    response = await send();
+  }
+  return response;
 }
 
 function translateForRemote(endpoint, method) {
@@ -114,7 +125,6 @@ function translateForRemote(endpoint, method) {
   const resource = REMOTE_WRITABLE.find((r) => path.startsWith(r.prefix));
   if (!resource || !resource.methods.includes(method)) return null; // not allowed remotely
 
-  if (resource.singleton) return resource.remote;
   const idMatch = path.slice(resource.prefix.length).match(/^(\d+)\/?$/);
   return idMatch ? `${resource.remote}?id=${idMatch[1]}` : resource.remote;
 }
@@ -134,7 +144,7 @@ export const apiService = {
     const url = `${API_BASE_URL}${effectiveEndpoint}`;
     const defaultHeaders = {};
 
-    //token
+    await this.refreshIfExpiring();
     const token = sessionStorage.getItem("accessToken");
     if (token) {
       defaultHeaders["Authorization"] = `Bearer ${token}`;
@@ -257,6 +267,19 @@ export const apiService = {
     }
   },
 
+  // Access tokens are short-lived (5 min) — refresh just before expiry so the
+  // request doesn't go out with a dead token and show up as a 401 in the console.
+  async refreshIfExpiring() {
+    const token = sessionStorage.getItem("accessToken");
+    if (!token) return;
+    try {
+      const { exp } = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+      if (exp * 1000 - Date.now() < 30000) await this.refreshToken();
+    } catch {
+      // Unreadable token — let the normal 401 → refresh path handle it.
+    }
+  },
+
   async refreshToken() {
     // Several requests can 401 at once (e.g. Mobile Scan's fetchData fires 5 in
     // parallel) — without sharing one in-flight refresh, each would fire its own
@@ -354,10 +377,10 @@ export const apiService = {
     return this.post(`/tickets/${ticketId}/reassign_driver/`, { driver_id: driverId });
   },
 
-  dispatchTicket(vehicleId, { ticketFormId, quantity }) {
+  dispatchTicket(vehicleId, { seriesId, quantity }) {
     return this.post("/tickets/dispatch/", {
       vehicle_id: vehicleId,
-      ticket_form_id: ticketFormId,
+      series_id: seriesId,
       quantity,
     });
   },
@@ -368,6 +391,21 @@ export const apiService = {
       driver_id: driverId,
       ticket_form_id: ticketFormId,
       quantity,
+    });
+  },
+
+  convertToRoam(vehicleId, { seriesId, quantity }) {
+    return this.post("/tickets/convert-to-roam/", {
+      vehicle_id: vehicleId,
+      series_id: seriesId,
+      quantity,
+    });
+  },
+
+  reorderQueue(routeId, vehicleIds) {
+    return this.post("/tickets/reorder-queue/", {
+      route_id: routeId,
+      vehicle_ids: vehicleIds,
     });
   },
 
@@ -446,6 +484,14 @@ export const apiService = {
     return this.delete(`/users/${id}/`);
   },
 
+  resendVerification(id) {
+    return this.post(`/users/${id}/resend_verification/`);
+  },
+
+  verifyEmail({ uid, token }) {
+    return this.post("/auth/verify-email/", { uid, token });
+  },
+
   getCurrentUser() {
     return this.get("/current-user/");
   },
@@ -503,14 +549,6 @@ export const apiService = {
 
   createRoamingLog(data) {
     return this.post("/roaming-logs/", data);
-  },
-
-  getTerminalPrice() {
-    return this.get("/settings/terminal-price/");
-  },
-
-  updateTerminalPrice(data) {
-    return this.put("/settings/terminal-price/", data);
   },
 
   // WIP mode: toggling stays LAN-only (see the model's docstring in
@@ -706,7 +744,8 @@ export const handleLogin = async (
     });
 
     if (!response.ok) {
-      throw new Error("Invalid credentials");
+      const errData = await response.json().catch(() => null);
+      throw new Error(errData?.detail || "Invalid credentials");
     }
 
     const data = await response.json();

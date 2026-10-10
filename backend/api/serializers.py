@@ -1,12 +1,11 @@
 from datetime import datetime, timedelta
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Max, Sum
 from django.utils import timezone
-from django.utils.crypto import get_random_string
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
-from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Requisition, TicketSeries, RoamingLog, AuditLog, BackupRecord, BackfillRecord, TerminalPrice, WipMode
+from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Requisition, TicketSeries, RoamingLog, AuditLog, BackupRecord, BackfillRecord, WipMode
 from .sms import send_sms_async, queue_position_message
 
 
@@ -20,13 +19,18 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'first_name', 'middle_name', 'last_name',
-            'role', 'is_active', 'must_reset_password',
+            'role', 'is_active', 'must_reset_password', 'email_verified',
         ]
         extra_kwargs = {
             'must_reset_password': {'read_only': True},
+            'email_verified': {'read_only': True},
         }
 
     def create(self, validated_data):
+        # No password is generated yet — the account can't log in until the
+        # recipient clicks the verification link emailed to them (proves the
+        # address is real), at which point verify_email() in views/auth.py
+        # generates and emails the temp password. See UserViewSet.perform_create.
         user = User(
             username=validated_data['username'],
             first_name=validated_data.get('first_name', ''),
@@ -35,12 +39,13 @@ class UserSerializer(serializers.ModelSerializer):
             role=validated_data.get('role', 'PERSONNEL'),
             is_active=validated_data.get('is_active', True),
             must_reset_password=True,
+            email_verified=False,
         )
-        raw_password = get_random_string(12)
-        user.set_password(raw_password)
-        user.save()
-        # Transient attribute, not persisted — read by the view to send the welcome email.
-        user._generated_password = raw_password
+        user.set_unusable_password()
+        # User is Supabase-authoritative (see api/sync/registry.py) — saving to
+        # 'default' here would get deleted by the LAN's next pull cycle before
+        # anyone could click the verification email this create() triggers.
+        user.save(using='supabase')
         return user
 
 
@@ -55,7 +60,7 @@ class DriverSerializer(serializers.ModelSerializer):
     class Meta:
         model = Driver
         fields = [
-            'id', 'iwp_number', 'last_name', 'first_name', 'middle_name',
+            'id', 'iwp_number', 'iwp_expiration_date', 'last_name', 'first_name', 'middle_name',
             'gender', 'birthdate', 'province', 'city', 'barangay', 'street', 'photo',
             'contact', 'qr_code', 'status', 'is_archived', 'created_at', 'updated_at', 'name'
         ]
@@ -81,12 +86,13 @@ class VehicleSerializer(serializers.ModelSerializer):
     owner_driver_name = serializers.SerializerMethodField()
     route_detail = RouteSerializer(source='route', read_only=True)
     transportation_name = serializers.CharField(source='transportation_id.name', read_only=True, allow_null=True)
+    terminal_price = serializers.DecimalField(source='transportation_id.terminal_price', max_digits=10, decimal_places=2, read_only=True, allow_null=True)
 
     class Meta:
         model = Vehicle
         fields = [
-            'id', 'plate_number', 'transportation_id', 'transportation_name', 'franchise_number',
-            'route', 'route_detail', 'operator_address', 'qr_code',
+            'id', 'plate_number', 'transportation_id', 'transportation_name', 'terminal_price', 'franchise_number',
+            'franchise_expiration_date', 'route', 'route_detail', 'operator_address', 'qr_code',
             'status', 'owner_driver', 'owner_driver_name', 'active_driver', 'active_driver_name',
             'is_archived', 'created_at', 'updated_at',
         ]
@@ -232,6 +238,14 @@ class TicketSerializer(serializers.ModelSerializer):
                     ).count()
                     validated_data['queue_code'] = f"{route.acronym}-{count_today + 1}"
 
+                    # New arrivals join at the back of the line — one past
+                    # whatever rank (manually reordered or not) is currently
+                    # highest for this route.
+                    max_rank = Ticket.objects.filter(
+                        route=route, mode='QUEUE', status='QUEUED',
+                    ).aggregate(Max('queue_rank'))['queue_rank__max']
+                    validated_data['queue_rank'] = 0 if max_rank is None else max_rank + 1
+
             ticket = Ticket.objects.create(vehicle=vehicle, driver=driver, series=series, **validated_data)
 
             if is_roam:
@@ -275,7 +289,7 @@ class TicketPriceSerializer(serializers.ModelSerializer):
 class PUVTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = PUVType
-        fields = ['id', 'name']
+        fields = ['id', 'name', 'terminal_price']
 
 class RouteSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
@@ -351,11 +365,6 @@ class TicketFormSerializer(serializers.ModelSerializer):
         model = TicketForm
         fields = ['id', 'name', 'price']
 
-class TerminalPriceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TerminalPrice
-        fields = ['id', 'amount', 'updated_at']
-
 class WipModeSerializer(serializers.ModelSerializer):
     class Meta:
         model = WipMode
@@ -405,6 +414,31 @@ class TicketSeriesSerializer(serializers.ModelSerializer):
         else:
             total_issued = self._get_tickets_issued(obj)
         return max(original - total_issued, 0)
+
+    def validate(self, attrs):
+        # Ticket.id is the bare printed number and is the primary key across every
+        # series (archived ones included), so a range that overlaps any other series
+        # would later collide when those numbers are issued.
+        start_no = attrs.get('start_no', getattr(self.instance, 'start_no', None))
+        end_no = attrs.get('end_no', getattr(self.instance, 'end_no', None))
+        try:
+            start, end = int(start_no), int(end_no)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({"start_no": "Start and end numbers must be whole numbers."})
+        if start > end:
+            raise serializers.ValidationError({"end_no": "End number must not be lower than the start number."})
+
+        others = TicketSeries.objects.exclude(pk=getattr(self.instance, 'pk', None))
+        for other in others.only('series_no', 'start_no', 'end_no'):
+            try:
+                o_start, o_end = int(other.start_no), int(other.end_no)
+            except (TypeError, ValueError):
+                continue
+            if start <= o_end and o_start <= end:
+                raise serializers.ValidationError({
+                    "start_no": f"Range {start}–{end} overlaps an existing series ({o_start}–{o_end}). Ticket numbers must be unique across all series."
+                })
+        return attrs
 
     class Meta:
         model = TicketSeries

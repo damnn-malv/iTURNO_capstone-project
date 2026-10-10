@@ -14,13 +14,11 @@ export default function QueueLog({
   queueMeta,
   onQueueFetchPage,
   onQueueFetchAll,
-  onExportQueueCSV,
   onExportQueuePDF,
   roamingData,
   roamingMeta,
   onRoamingFetchPage,
   onRoamingFetchAll,
-  onExportRoamingCSV,
   onExportRoamingPDF,
   STATUS_COLORS,
   pageSize,
@@ -181,19 +179,7 @@ export default function QueueLog({
             </button>
           )}
           <button
-            className="rpt-btn-export rpt-btn-export--green"
-            title={search ? "Export only rows matching your search" : "Export all records in range"}
-            onClick={() => (isQueue ? onExportQueueCSV(search) : onExportRoamingCSV(search))}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            {search ? "Export Matches (CSV)" : "Export CSV"}
-          </button>
-          <button
-            className="rpt-btn-export rpt-btn-export--red"
+            className="rpt-btn-export rpt-btn-export--navy"
             title={search ? "Export only rows matching your search" : "Export all records in range"}
             onClick={() => (isQueue ? onExportQueuePDF(search) : onExportRoamingPDF(search))}
           >

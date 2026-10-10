@@ -6,6 +6,15 @@
   min-height: 100vh;
   font-family: 'Inter', 'Segoe UI', sans-serif;
   transition: background 0.25s;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.rem-count-unit {
+  font-size: 0.55em;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 /* ── Header ── */
@@ -15,7 +24,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 14px;
-  margin-bottom: 28px;
+  margin-bottom: 8px;
   padding-bottom: 20px;
   border-bottom: 1px solid var(--border-soft);
 }
@@ -177,7 +186,7 @@
 }
 
 .rem-table thead tr {
-  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
+  background: var(--bg-page);
 }
 
 .rem-table th {
@@ -187,8 +196,9 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: rgba(255,255,255,0.85);
+  color: var(--text-secondary);
   white-space: nowrap;
+  border-bottom: 1px solid var(--border);
 }
 
 .rem-row {
@@ -420,13 +430,20 @@
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* The create form rendered inline on the page instead of a floating modal. */
+.rem-form-page {
+  max-width: none;
+  max-height: none;
+  animation: none;
+}
+
 .rem-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
   border-bottom: 1px solid var(--border-soft);
-  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
+  background: var(--bg-page);
   position: sticky;
   top: 0;
   z-index: 1;
@@ -441,7 +458,7 @@
 .rem-modal-title {
   font-size: 15px;
   font-weight: 700;
-  color: #fff;
+  color: var(--text-primary);
   margin: 0;
   letter-spacing: -0.01em;
 }
@@ -450,7 +467,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: rgba(255,255,255,0.55);
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -460,8 +477,8 @@
 }
 
 .rem-modal-close:hover {
-  color: #fff;
-  background: rgba(255,255,255,0.1);
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .rem-modal-body {
@@ -552,7 +569,7 @@
 }
 
 .rem-section-table thead tr {
-  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
+  background: var(--bg-page);
 }
 
 .rem-section-table th {
@@ -562,8 +579,9 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: rgba(255,255,255,0.85);
+  color: var(--text-secondary);
   white-space: nowrap;
+  border-bottom: 1px solid var(--border);
 }
 
 .rem-section-table td {
@@ -876,3 +894,7 @@
   .rem-modal { margin: 12px; }
   .rem-modal-body { padding: 16px; }
 }
+
+/* Issued/cash summary cards: plain border, no accent bar */
+.rem-issued .rpt-summary-card,
+.dark .rem-issued .rpt-summary-card { border-top: 1px solid var(--border); }

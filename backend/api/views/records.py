@@ -6,8 +6,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from ..models import Ticket, TicketPrice, Vehicle, Route, RemittanceBatch, Collection, Deposit, AuditLog, TerminalPrice, TicketSeries
-from ..serializers import TicketSerializer, RemittanceBatchSerializer, AuditLogSerializer, TerminalPriceSerializer
+from ..models import Ticket, TicketPrice, Vehicle, Route, RemittanceBatch, Collection, Deposit, AuditLog, TicketSeries
+from ..serializers import TicketSerializer, RemittanceBatchSerializer, AuditLogSerializer
 from .helpers import summarize, parse_iso_datetime, record_audit_log, parse_date_start, parse_date_end, expire_stale_queue_tickets, paginate_request
 
 
@@ -156,7 +156,16 @@ def public_queue(request):
         # not from when it originally joined the queue. Falls back to
         # _queue_time below for legacy rows queued before this field existed.
         _loading_started=Min('tickets__loading_started_at', filter=Q(tickets__status='QUEUED')),
-    ).order_by('_queue_time')
+        # Manual drag-and-drop order from Dispatch (see reorder_queue in
+        # views/viewsets.py) — must be honored here too, or the public board
+        # keeps showing plain FIFO order after a dispatcher reorders the line.
+        _queue_rank=Min('tickets__queue_rank', filter=Q(tickets__status='QUEUED')),
+        # A dispatcher's "+5m" extension (see handleExtendLoading in
+        # dispatch.jsx) must push this same departure estimate out too, or the
+        # public board keeps counting down to a time the terminal already
+        # knows it will miss.
+        _extra_minutes=Min('tickets__extra_loading_minutes', filter=Q(tickets__status='QUEUED')),
+    ).order_by('_queue_rank', '_queue_time')
 
     data = []
     for vehicle in vehicles_with_queued_tickets:
@@ -168,7 +177,7 @@ def public_queue(request):
                 vehicle.route.estimated_loading_minutes
                 if vehicle.route and vehicle.route.estimated_loading_minutes
                 else DEFAULT_ESTIMATED_LOADING_MINUTES
-            )
+            ) + (vehicle._extra_minutes or 0)
             local_dt = loading_start + timedelta(minutes=est_minutes) + timedelta(hours=8)
             departure_time = local_dt.strftime('%I:%M %p')
 
@@ -187,26 +196,6 @@ def public_queue(request):
 def server_time(request):
     now = timezone.now()
     return Response({'time': now.isoformat()})
-
-
-@api_view(['GET', 'PUT'])
-def terminal_price_config(request):
-    config = TerminalPrice.get_solo()
-    if request.method == 'GET':
-        return Response(TerminalPriceSerializer(config).data)
-
-    serializer = TerminalPriceSerializer(config, data=request.data, partial=True)
-    serializer.is_valid(raise_exception=True)
-    serializer.save()
-    record_audit_log(
-        user=request.user,
-        action='UPDATE',
-        model_name='TerminalPrice',
-        object_id=config.pk,
-        object_repr='Terminal price configuration',
-        changes=request.data,
-    )
-    return Response(serializer.data)
 
 
 @api_view(['GET', 'POST'])
@@ -236,6 +225,11 @@ def remittance_batches(request):
                 quantity=d.get('quantity', 0),
                 deposit_amount=d.get('depositAmount', 0),
             )
+        # Mark the tickets this batch covers as remitted so a later batch the
+        # same day only picks up what came in since.
+        ticket_ids = data.get('ticket_ids') or []
+        if ticket_ids:
+            Ticket.objects.filter(pk__in=ticket_ids, remittance_batch__isnull=True).update(remittance_batch=batch)
         return Response({'id': batch.id, 'status': 'created'}, status=201)
 
     batches = RemittanceBatch.objects.select_related('issued_by').order_by('-issued_at')

@@ -1,10 +1,31 @@
+import time
 from datetime import datetime, timedelta, timezone as dt_timezone
 
-from django.db import transaction
+from django.db import connections, transaction
 from django.db.models import F
 from django.utils import timezone
 
-from ..models import Ticket, TicketPrice, AuditLog, Vehicle, Route
+from ..models import Ticket, TicketPrice, AuditLog, Vehicle, Route, User
+
+_SUPABASE_PROBE_TTL = 10
+_supabase_probe = (0.0, False)
+
+
+def supabase_reachable():
+    """True if the Supabase mirror can be reached right now. Result is cached
+    briefly so an offline LAN doesn't pay a connect attempt on every request."""
+    global _supabase_probe
+    checked_at, ok = _supabase_probe
+    if time.monotonic() - checked_at < _SUPABASE_PROBE_TTL:
+        return ok
+    try:
+        connections['supabase'].ensure_connection()
+        ok = True
+    except Exception:
+        connections['supabase'].close()
+        ok = False
+    _supabase_probe = (time.monotonic(), ok)
+    return ok
 
 
 def parse_date_start(date_str):
@@ -31,6 +52,18 @@ def parse_iso_datetime(value):
     return dt.astimezone(dt_timezone.utc)
 
 
+def expire_stale_unverified_accounts():
+    """Drops admin-added staff accounts that never verified their email within
+    30 days — the point of verification is to keep a bad/fake email from
+    sitting around as a permanent unusable account, so it's dropped instead
+    of nagging forever. Called lazily from UserViewSet.get_queryset (same
+    no-scheduler-needed convention as expire_stale_queue_tickets above).
+    Targets 'supabase' directly — User is Supabase-authoritative (see
+    api/sync/registry.py), so that's the copy that actually needs cleaning."""
+    cutoff = timezone.now() - timedelta(days=30)
+    User.objects.using('supabase').filter(email_verified=False, created_at__lt=cutoff).delete()
+
+
 def filter_collected(start_date=None, end_date=None):
     qs = Ticket.objects.filter(status='COLLECTED')
     if start_date:
@@ -46,7 +79,7 @@ def filter_collected(start_date=None, end_date=None):
     return qs
 
 
-def expire_stale_queue_tickets(actor=None):
+def expire_stale_queue_tickets():
     """Auto-cancel ISSUED tickets left over from a previous day and free their vehicle.
 
     A vehicle checked into the queue but never dispatched before the terminal closes
@@ -69,7 +102,6 @@ def expire_stale_queue_tickets(actor=None):
         routes = set()
         reason = 'Auto-cancelled: vehicle was not dispatched before end of day.'
         now = timezone.now()
-        logs = []
         for ticket in stale:
             ticket.status = 'CANCELLED'
             ticket.reason = reason
@@ -77,17 +109,8 @@ def expire_stale_queue_tickets(actor=None):
             vehicle_ids.add(ticket.vehicle_id)
             if ticket.route_id:
                 routes.add(ticket.route_id)
-            logs.append(AuditLog(
-                user=actor if actor and getattr(actor, 'is_authenticated', False) else None,
-                action='UPDATE',
-                model_name='Ticket',
-                object_id=str(ticket.id),
-                object_repr=str(ticket)[:255],
-                changes={'status': 'CANCELLED', 'reason': reason, 'auto_expired': True},
-            ))
 
         Ticket.objects.bulk_update(stale, ['status', 'reason', 'updated_at'])
-        AuditLog.objects.bulk_create(logs)
 
         # The driver checked in for that stale shift never got dispatched, so
         # the vehicle reverts to its registered owner rather than staying
@@ -106,20 +129,36 @@ def promote_queue_front(route):
     """Mark whichever QUEUED ticket is now earliest-in-line for `route` as having
     reached the loading zone, if it isn't marked already.
 
-    Call this right after a ticket is queued (it may already be the front) and
+    Call this right after a ticket is queued (it may already be the front),
     right after the previous front ticket leaves the queue (dispatch/cancel/
-    expiry), so the next vehicle's estimated-departure clock starts when it
-    actually reaches the front of the line — not back when it originally
-    joined the queue.
+    expiry), and after a manual drag-and-drop reorder, so the next vehicle's
+    estimated-departure clock starts when it actually reaches the front of
+    the line — not back when it originally joined the queue.
     """
     if not route:
         return
-    front = Ticket.objects.filter(
-        route=route, mode='QUEUE', status='QUEUED',
-    ).order_by('issued_at').first()
-    if front and front.loading_started_at is None:
+    queued = list(
+        Ticket.objects.filter(route=route, mode='QUEUE', status='QUEUED')
+        .order_by('queue_rank', 'issued_at')
+    )
+    if not queued:
+        return
+
+    front, rest = queued[0], queued[1:]
+    if front.loading_started_at is None:
         front.loading_started_at = timezone.now()
         front.save(update_fields=['loading_started_at'])
+
+    # A manual reorder can bump a vehicle that already started loading back
+    # off the front (e.g. swapping it out for repair) without it ever
+    # leaving the queue. Clear its clock so that if it's later promoted back
+    # to front, it gets a fresh estimate instead of resuming the old one.
+    stale = [t for t in rest if t.loading_started_at is not None or t.extra_loading_minutes]
+    for t in stale:
+        t.loading_started_at = None
+        t.extra_loading_minutes = 0
+    if stale:
+        Ticket.objects.bulk_update(stale, ['loading_started_at', 'extra_loading_minutes'])
 
 
 def record_audit_log(user, action, model_name, object_id='', object_repr='', changes=None):
