@@ -85,8 +85,9 @@ export default function PaperRangeModal({ series, onClose, onSaved }) {
 
         <form className="usr-modal-body" onSubmit={submit}>
           <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-secondary)" }}>
-            For tickets handed out outside the system. These numbers are skipped by the system and counted in stock
-            and that day's expected cash. Series range: {series.start_no}–{series.end_no}.
+            For tickets handed out outside the system. These numbers are skipped by the system and counted in stock.
+            Their cash was remitted at the treasury, so it is not added to the day's cash to remit — record one range
+            per day. Series range: {series.start_no}–{series.end_no}.
           </p>
 
           <div className="usr-form-grid">

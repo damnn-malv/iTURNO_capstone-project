@@ -6,7 +6,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from ..models import Ticket, TicketPrice, Vehicle, Route, RemittanceBatch, Collection, Deposit, AuditLog, TicketSeries, PaperIssuance
+from ..models import Ticket, TicketPrice, Vehicle, Route, RemittanceBatch, Collection, Deposit, AuditLog, TicketSeries
 from ..serializers import TicketSerializer, RemittanceBatchSerializer, AuditLogSerializer
 from .helpers import summarize, parse_iso_datetime, record_audit_log, parse_date_start, parse_date_end, expire_stale_queue_tickets, paginate_request, paper_numbers_by_series
 
@@ -231,9 +231,6 @@ def remittance_batches(request):
         ticket_ids = data.get('ticket_ids') or []
         if ticket_ids:
             Ticket.objects.filter(pk__in=ticket_ids, remittance_batch__isnull=True).update(remittance_batch=batch)
-        paper_ids = data.get('paper_issuance_ids') or []
-        if paper_ids:
-            PaperIssuance.objects.filter(pk__in=paper_ids, remittance_batch__isnull=True).update(remittance_batch=batch)
         return Response({'id': batch.id, 'status': 'created'}, status=201)
 
     batches = RemittanceBatch.objects.select_related('issued_by').order_by('-issued_at')

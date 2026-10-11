@@ -80,3 +80,18 @@ class PaperIssuanceTests(TestCase):
         self.assertIsNone(TicketSeriesSerializer(self.series).data['last_used_no'])
         self._paper(1, 624)
         self.assertEqual(TicketSeriesSerializer(self.series).data['last_used_no'], 624)
+
+    def test_paper_cash_is_reported_but_not_expected(self):
+        from datetime import date
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from .models import User
+        from .views.reports import eod_reconciliation
+        user = User.objects.create_user(username='b', password='x', role='SUPERADMIN')
+        self._paper(1, 494)  # 494 x 10 = 4,940, remitted at the treasury
+        req = APIRequestFactory().get('/report/eod-reconciliation/', {'date': date.today().isoformat()})
+        force_authenticate(req, user=user)
+        data = eod_reconciliation(req).data
+        self.assertEqual(data['paper_count'], 494)
+        self.assertEqual(data['paper_amount'], 4940.0)
+        self.assertEqual(data['expected_cash'], 0.0)
+        self.assertEqual(data['difference'], 0.0)

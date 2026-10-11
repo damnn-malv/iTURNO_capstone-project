@@ -1,4 +1,5 @@
 import { peso, getToday } from "../reportHook";
+import PaperNotice from "../../../../components/notices/PaperNotice";
 
 export default function EodReconciliation({
   eodDate,
@@ -36,6 +37,7 @@ export default function EodReconciliation({
           <div className="rpt-summary-total">{eodLoading ? "…" : peso(expectedCash)}</div>
         </div>
       </div>
+      {!eodLoading && <PaperNotice count={eod?.paper_count} amount={eod?.paper_amount} />}
     </div>
   );
 }

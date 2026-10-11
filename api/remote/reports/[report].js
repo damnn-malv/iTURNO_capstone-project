@@ -192,10 +192,10 @@ async function eodReconciliation(req, res, supabase) {
   if (oErr) throw oErr;
 
   const checkoutCount = dispatchedToday.length;
-  // Paper-issued tickets have no api_ticket row but their cash is still remitted.
+  // Paper-issued tickets were remitted at the treasury outside the system: reported, never expected here.
   const paperCount = paperToday.reduce((s, p) => s + (p.to_no - p.from_no + 1), 0);
   const paperAmount = Math.round(paperToday.reduce((s, p) => s + (p.to_no - p.from_no + 1) * (Number(p.series?.ticket_form?.price) || 0), 0) * 100) / 100;
-  const expectedCash = Math.round((dispatchedToday.reduce((s, t) => s + (Number(t.collection_amount) || 0), 0) + paperAmount) * 100) / 100;
+  const expectedCash = Math.round(dispatchedToday.reduce((s, t) => s + (Number(t.collection_amount) || 0), 0) * 100) / 100;
   const actualCash = Math.round((batchesToday || []).reduce((s, b) => s + (Number(b.total_amount) || 0), 0) * 100) / 100;
 
   const bySeries = {};

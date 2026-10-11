@@ -110,12 +110,12 @@ def eod_reconciliation(request):
     checkout_count = len(dispatched_today)
     expected_cash = round(sum(float(t.collection_amount or 0) for t in dispatched_today), 2)
 
-    # Tickets handed out on paper that day have no Ticket row but their cash is
-    # still remitted, so they belong in the expected side too.
+    # Tickets handed out on paper (downtime) were remitted at the treasury the same
+    # way as before the system, so their cash is reported for information only and
+    # never counted as owed through a batch here.
     paper_today = list(PaperIssuance.objects.filter(used_on=datetime.strptime(date_str, '%Y-%m-%d').date()).select_related('series__ticket_form'))
     paper_count = sum(p.count for p in paper_today)
     paper_amount = round(sum(float(p.amount) for p in paper_today), 2)
-    expected_cash = round(expected_cash + paper_amount, 2)
 
     # A late-filed remittance explicitly names which day it covers (covers_date) so
     # it's attributed to that day's reconciliation regardless of when it was typed
