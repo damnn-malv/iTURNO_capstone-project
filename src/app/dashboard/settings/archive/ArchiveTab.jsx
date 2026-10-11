@@ -42,6 +42,22 @@ const SECTIONS = [
     columns: ["Batch ID", "Issued At", "Total Amount"],
     cells: (b) => [b.batch_code || b.id, fmtDate(b.issued_at), peso(b.total_amount)],
   },
+  {
+    key: "routes",
+    label: "Routes",
+    path: "/routes/",
+    columns: ["Route", "Vehicles", "Tickets"],
+    cells: (r) => [r.full_name, r.vehicle_count ?? 0, r.ticket_count ?? 0],
+    restore: (r) => ({ origin: r.origin, is_archived: false }),
+  },
+  {
+    key: "puvtypes",
+    label: "PUV Types",
+    path: "/puvtypes/",
+    columns: ["Name", "Terminal Price", "Vehicles"],
+    cells: (t) => [t.name, peso(t.terminal_price), t.vehicle_count ?? 0],
+    restore: (t) => ({ name: t.name, terminal_price: t.terminal_price, is_archived: false }),
+  },
 ];
 
 export default function ArchiveTab() {
@@ -74,6 +90,18 @@ export default function ArchiveTab() {
 
   const section = SECTIONS.find((s) => s.key === active);
   const list = rows[active] || [];
+  const colSpan = section.columns.length + (section.restore ? 1 : 0);
+
+  const handleRestore = async (item) => {
+    try {
+      await apiService.put(`${section.path}${item.id}/`, section.restore(item));
+      setRows((prev) => ({ ...prev, [active]: prev[active].filter((r) => r.id !== item.id) }));
+      showToast?.(`${section.label} restored`, "success");
+    } catch (err) {
+      console.error("Failed to restore:", err);
+      showToast?.(err.message || "Failed to restore", "info");
+    }
+  };
 
   return (
     <>
@@ -93,19 +121,25 @@ export default function ArchiveTab() {
           <thead>
             <tr>
               {section.columns.map((c) => <th key={c}>{c}</th>)}
+              {section.restore && <th className="set-th-actions">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={section.columns.length} className="set-table-state">Loading archive...</td></tr>
+              <tr><td colSpan={colSpan} className="set-table-state">Loading archive...</td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={section.columns.length} className="set-table-state">Nothing archived</td></tr>
+              <tr><td colSpan={colSpan} className="set-table-state">Nothing archived</td></tr>
             ) : (
               list.map((item) => (
                 <tr key={item.id} className="set-row">
                   {section.cells(item).map((cell, i) => (
                     <td key={i} className={i === 0 ? "set-cell-label" : "set-cell-meta"}>{cell}</td>
                   ))}
+                  {section.restore && (
+                    <td className="set-cell-actions">
+                      <button className="set-add-btn" onClick={() => handleRestore(item)}>Restore</button>
+                    </td>
+                  )}
                 </tr>
               ))
             )}

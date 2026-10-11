@@ -36,7 +36,7 @@ const TABS = [
   {
     key: "archive",
     label: "Archive",
-    description: "Restore archived vehicles, drivers, requisitions, and remittance batches",
+    description: "Restore archived vehicles, drivers, requisitions, remittance batches, routes, and PUV types",
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="3" y="4" width="18" height="4" rx="1" />
@@ -64,6 +64,14 @@ const DeleteIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
     <polyline points="3 6 5 6 21 6" />
     <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+  </svg>
+);
+
+const ArchiveIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+    <rect x="3" y="4" width="18" height="4" rx="1" />
+    <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+    <path d="M10 12h4" />
   </svg>
 );
 
@@ -215,16 +223,25 @@ function Settings() {
     }
   };
 
-  const handleDeletePUVType = async (id) => {
-    const name = puvTypes.find(pt => pt.id === id)?.name;
-    if (!(await showConfirm?.(`Delete PUV type "${name}"? This cannot be undone.`))) return;
+  // PUV types and routes are archived rather than deleted so the vehicles and
+  // tickets that reference them keep their data (restore from the Archive tab).
+  const impactNote = (counts) => {
+    const used = counts.filter(([n]) => n > 0).map(([n, label]) => `${n} ${label}`);
+    return used.length
+      ? `${used.join(" and ")} use it. They keep their records, but it won't be selectable for new ones.`
+      : "Nothing uses it yet. It will be hidden from selection.";
+  };
+
+  const handleArchivePUVType = async (pt) => {
+    const note = impactNote([[pt.vehicle_count, "vehicle(s)"]]);
+    if (!(await showConfirm?.(`Archive PUV type "${pt.name}"? ${note} You can restore it from the Archive tab.`))) return;
     try {
-      await apiService.deletePUVType(id);
-      setPuvTypes(puvTypes.filter(pt => pt.id !== id));
-      showToast?.("PUV type deleted", "success");
+      await apiService.updatePUVType(pt.id, { name: pt.name, terminal_price: pt.terminal_price, is_archived: true });
+      setPuvTypes(puvTypes.filter(p => p.id !== pt.id));
+      showToast?.("PUV type archived", "success");
     } catch (err) {
-      console.error("Failed to delete PUV type:", err);
-      showToast?.(err.message || "Failed to delete PUV type", "info");
+      console.error("Failed to archive PUV type:", err);
+      showToast?.(err.message || "Failed to archive PUV type", "info");
     }
   };
 
@@ -251,16 +268,16 @@ function Settings() {
     }
   };
 
-  const handleDeleteRoute = async (id) => {
-    const name = routes.find(r => r.id === id)?.origin;
-    if (!(await showConfirm?.(`Delete route "${name}"? This cannot be undone.`))) return;
+  const handleArchiveRoute = async (route) => {
+    const note = impactNote([[route.vehicle_count, "vehicle(s)"], [route.ticket_count, "ticket(s)"]]);
+    if (!(await showConfirm?.(`Archive route "${route.origin}"? ${note} You can restore it from the Archive tab.`))) return;
     try {
-      await apiService.deleteRoute(id);
-      setRoutes(routes.filter(r => r.id !== id));
-      showToast?.("Route deleted", "success");
+      await apiService.updateRoute(route.id, { origin: route.origin, is_archived: true });
+      setRoutes(routes.filter(r => r.id !== route.id));
+      showToast?.("Route archived", "success");
     } catch (err) {
-      console.error("Failed to delete route:", err);
-      showToast?.(err.message || "Failed to delete route", "info");
+      console.error("Failed to archive route:", err);
+      showToast?.(err.message || "Failed to archive route", "info");
     }
   };
 
@@ -620,9 +637,9 @@ function Settings() {
                             </div>
                           </td>
                           <td className="set-cell-actions">
-                            <button className="set-delete-btn" onClick={() => handleDeletePUVType(pt.id)}>
-                              <DeleteIcon />
-                              Delete
+                            <button className="set-delete-btn" onClick={() => handleArchivePUVType(pt)}>
+                              <ArchiveIcon />
+                              Archive
                             </button>
                           </td>
                         </tr>
@@ -709,9 +726,9 @@ function Settings() {
                               </div>
                             </td>
                             <td className="set-cell-actions">
-                              <button className="set-delete-btn" onClick={() => handleDeleteRoute(route.id)}>
-                                <DeleteIcon />
-                                Delete
+                              <button className="set-delete-btn" onClick={() => handleArchiveRoute(route)}>
+                                <ArchiveIcon />
+                                Archive
                               </button>
                             </td>
                           </tr>

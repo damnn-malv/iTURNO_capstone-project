@@ -14,20 +14,55 @@ import { resolveDateRange, inRange } from "../../_lib/dateRange.js";
 // All writable, all SUPERADMIN-only (CAN_EDIT_SETTINGS). Route is the only
 // one with public read access; the rest require SUPERADMIN even to view.
 
+// Archived rows are hidden from lists unless ?is_archived=true (mirrors
+// ArchivableSettingMixin in backend/api/views/viewsets.py).
+const wantsArchived = (req) => ["1", "true", "yes"].includes(String(req.query.is_archived ?? "false").toLowerCase());
+
+// Rows referencing `id` per check ({ table, column, label }) — in-use items can
+// only be archived, never deleted.
+async function usageOf(supabase, id, checks) {
+  const counts = await Promise.all(checks.map(async ({ table, column }) => {
+    const { count, error } = await supabase.from(table).select("id", { count: "exact", head: true }).eq(column, id);
+    if (error) throw error;
+    return count || 0;
+  }));
+  return checks.map((c, i) => ({ ...c, count: counts[i] })).filter((c) => c.count);
+}
+
+async function rejectIfInUse(res, supabase, table, id, checks) {
+  const used = await usageOf(supabase, id, checks);
+  if (!used.length) return false;
+  const { data } = await supabase.from(table).select("*").eq("id", id).maybeSingle();
+  const name = data?.origin ?? data?.name ?? "This item";
+  res.status(409).json({ detail: `"${name}" is still used by ${used.map((u) => `${u.count} ${u.label}`).join(" and ")}. Archive it instead.` });
+  return true;
+}
+
+const ROUTE_USAGE = [
+  { table: "api_vehicle", column: "route_id", label: "vehicle(s)" },
+  { table: "api_ticket", column: "route_id", label: "ticket(s)" },
+];
+const PUV_USAGE = [{ table: "api_vehicle", column: "transportation_id_id", label: "vehicle(s)" }];
+
 async function routesResource(req, res, supabase, payload) {
   if (req.method === "GET") {
     const { rangeStart, rangeEnd } = resolveDateRange(req.query);
-    const [{ data: routes, error: rErr }, { data: tickets, error: tErr }] = await Promise.all([
-      supabase.from("api_route").select("*").order("origin", { ascending: true }),
+    const [{ data: routes, error: rErr }, { data: tickets, error: tErr }, { data: vehicles, error: vErr }] = await Promise.all([
+      supabase.from("api_route").select("*").eq("is_archived", wantsArchived(req)).order("origin", { ascending: true }),
       supabase.from("api_ticket").select("route_id,vehicle_id,collection_amount,issued_at,dispatched_at"),
+      supabase.from("api_vehicle").select("route_id"),
     ]);
     if (rErr) throw rErr;
     if (tErr) throw tErr;
+    if (vErr) throw vErr;
     const shaped = routes.map((r) => {
       const routeTickets = (tickets || []).filter((t) => t.route_id === r.id && inRange(t.issued_at, rangeStart, rangeEnd));
       const revenueTickets = routeTickets.filter((t) => t.dispatched_at);
       return {
-        id: r.id, origin: r.origin, is_active: r.is_active, created_at: r.created_at, updated_at: r.updated_at,
+        id: r.id, origin: r.origin, is_active: r.is_active, is_archived: r.is_archived, created_at: r.created_at, updated_at: r.updated_at,
+        estimated_loading_minutes: r.estimated_loading_minutes,
+        vehicle_count: (vehicles || []).filter((v) => v.route_id === r.id).length,
+        ticket_count: (tickets || []).filter((t) => t.route_id === r.id).length,
         full_name: `${r.origin} - San Fernando`,
         checked_in_today: new Set(routeTickets.map((t) => t.vehicle_id)).size,
         revenue_in_range: Math.round(revenueTickets.reduce((s, t) => s + (Number(t.collection_amount) || 0), 0) * 100) / 100,
@@ -56,10 +91,11 @@ async function routesResource(req, res, supabase, payload) {
   if (req.method === "PATCH" || req.method === "PUT") {
     const id = req.query.id;
     if (!id) return void res.status(400).json({ detail: "id query param is required" });
-    const { origin, is_active } = req.body || {};
+    const { origin, is_active, is_archived } = req.body || {};
     const updates = {};
     if (origin !== undefined) updates.origin = origin;
     if (is_active !== undefined) updates.is_active = is_active;
+    if (is_archived !== undefined) updates.is_archived = is_archived;
     const { data, error } = await supabase.from("api_route").update(updates).eq("id", id).select().single();
     if (error) throw error;
     res.status(200).json(data);
@@ -68,6 +104,7 @@ async function routesResource(req, res, supabase, payload) {
   if (req.method === "DELETE") {
     const id = req.query.id;
     if (!id) return void res.status(400).json({ detail: "id query param is required" });
+    if (await rejectIfInUse(res, supabase, "api_route", id, ROUTE_USAGE)) return;
     const { error } = await supabase.from("api_route").delete().eq("id", id);
     if (error) throw error;
     res.status(204).end();
@@ -164,14 +201,24 @@ async function accountChangeBlocker(supabase, payload, target, role, isActive, d
   return null;
 }
 
-function simpleCrud(table, { createFields, requiredField = "name" }) {
+// `usage` makes the table archivable: lists hide archived rows, PATCH accepts
+// is_archived, and DELETE is refused while other rows still reference it.
+function simpleCrud(table, { createFields, requiredField = "name", usage }) {
+  const editableFields = usage ? [...createFields, "is_archived"] : createFields;
   return async (req, res, supabase, payload) => {
     // SUPERADMIN-only for every method, reads included — see the file-level comment.
     requireRole(payload, CAN_EDIT_SETTINGS);
 
     if (req.method === "GET") {
-      const { data, error } = await supabase.from(table).select("*").order(requiredField, { ascending: true });
+      let query = supabase.from(table).select("*").order(requiredField, { ascending: true });
+      if (usage) query = query.eq("is_archived", wantsArchived(req));
+      const { data, error } = await query;
       if (error) throw error;
+      if (usage) {
+        const { data: refs, error: refErr } = await supabase.from(usage[0].table).select(usage[0].column);
+        if (refErr) throw refErr;
+        for (const row of data) row.vehicle_count = refs.filter((v) => v[usage[0].column] === row.id).length;
+      }
       res.status(200).json(data);
       return;
     }
@@ -192,7 +239,7 @@ function simpleCrud(table, { createFields, requiredField = "name" }) {
       const id = req.query.id;
       if (!id) return void res.status(400).json({ detail: "id query param is required" });
       const body = req.body || {};
-      const updates = Object.fromEntries(createFields.filter((f) => body[f] !== undefined).map((f) => [f, body[f]]));
+      const updates = Object.fromEntries(editableFields.filter((f) => body[f] !== undefined).map((f) => [f, body[f]]));
       const { data, error } = await supabase.from(table).update(updates).eq("id", id).select().single();
       if (error) throw error;
       res.status(200).json(data);
@@ -201,6 +248,7 @@ function simpleCrud(table, { createFields, requiredField = "name" }) {
     if (req.method === "DELETE") {
       const id = req.query.id;
       if (!id) return void res.status(400).json({ detail: "id query param is required" });
+      if (usage && (await rejectIfInUse(res, supabase, table, id, usage))) return;
       const { error } = await supabase.from(table).delete().eq("id", id);
       if (error) throw error;
       res.status(204).end();
@@ -318,7 +366,7 @@ const RESOURCES = {
   routes: routesResource,
   users: usersResource,
   "ticket-forms": simpleCrud("api_ticketform", { createFields: ["name", "price"], requiredField: "name" }),
-  "puv-types": simpleCrud("api_puvtype", { createFields: ["name", "terminal_price"], requiredField: "name" }),
+  "puv-types": simpleCrud("api_puvtype", { createFields: ["name", "terminal_price"], requiredField: "name", usage: PUV_USAGE }),
   "wip-mode": wipModeResource,
   backfill: backfillResource,
 };

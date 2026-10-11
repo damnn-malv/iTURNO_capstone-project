@@ -292,22 +292,28 @@ class TicketPriceSerializer(serializers.ModelSerializer):
         fields = ['id', 'amount', 'effective_date']
 
 class PUVTypeSerializer(serializers.ModelSerializer):
+    # Annotated by PUVTypeViewSet.get_queryset so the archive confirm can show impact.
+    vehicle_count = serializers.IntegerField(read_only=True, default=None)
+
     class Meta:
         model = PUVType
-        fields = ['id', 'name', 'terminal_price']
+        fields = ['id', 'name', 'terminal_price', 'is_archived', 'vehicle_count']
 
 class RouteSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     checked_in_today = serializers.SerializerMethodField()
     revenue_in_range = serializers.SerializerMethodField()
     avg_loading_minutes = serializers.SerializerMethodField()
+    # Annotated by RouteViewSet.get_queryset so the archive confirm can show impact.
+    vehicle_count = serializers.IntegerField(read_only=True, default=None)
+    ticket_count = serializers.IntegerField(read_only=True, default=None)
 
     class Meta:
         model = Route
         fields = [
-            'id', 'origin', 'is_active', 'created_at', 'updated_at', 'full_name',
+            'id', 'origin', 'is_active', 'is_archived', 'created_at', 'updated_at', 'full_name',
             'checked_in_today', 'revenue_in_range', 'estimated_loading_minutes',
-            'avg_loading_minutes',
+            'avg_loading_minutes', 'vehicle_count', 'ticket_count',
         ]
 
     def get_full_name(self, obj):

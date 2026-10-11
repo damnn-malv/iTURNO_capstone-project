@@ -118,6 +118,9 @@ class Route(models.Model):
 
     origin = models.CharField(max_length=100, unique=True, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    # Retired from dropdowns/settings but kept so vehicles and ticket history
+    # still resolve to it. In-use routes can't be deleted — only archived.
+    is_archived = models.BooleanField(default=False, db_index=True)
     # Manually configured turnaround estimate (minutes) used to project the next
     # departure time once a vehicle reaches the front of this route's queue.
     # Null falls back to a global default — see DEFAULT_ESTIMATED_LOADING_MINUTES
@@ -384,6 +387,8 @@ class PUVType(models.Model):
     # Exact total (ticket price x quantity) a vehicle of this type must be charged
     # per ticket issuance; 0 disables the check for the type.
     terminal_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # See Route.is_archived — in-use types can only be archived, never deleted.
+    is_archived = models.BooleanField(default=False, db_index=True)
 
     def __str__(self):
         return self.name

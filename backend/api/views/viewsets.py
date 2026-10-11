@@ -244,9 +244,37 @@ class DriverViewSet(AuditLogMixin, viewsets.ModelViewSet):
         return qs
 
 
-class RouteViewSet(AuditLogMixin, viewsets.ModelViewSet):
+class Conflict(APIException):
+    status_code = 409
+    default_code = 'conflict'
+
+
+class ArchivableSettingMixin:
+    """Route / PUV type: lists hide archived rows unless ?is_archived=true, and a
+    row still referenced by vehicles/tickets can only be archived, never deleted.
+    `usage` maps each queryset annotation to the label shown in the block message."""
+    usage = {}
+
+    def get_queryset(self):
+        qs = super().get_queryset().annotate(
+            **{name: Count(rel, distinct=True) for name, (rel, _) in self.usage.items()}
+        )
+        if self.action == 'list':
+            flag = self.request.query_params.get('is_archived', 'false')
+            qs = qs.filter(is_archived=flag.lower() in ('1', 'true', 'yes'))
+        return qs
+
+    def perform_destroy(self, instance):
+        used = [f"{getattr(instance, name)} {label}" for name, (_, label) in self.usage.items() if getattr(instance, name)]
+        if used:
+            raise Conflict(f'"{instance}" is still used by {" and ".join(used)}. Archive it instead.')
+        super().perform_destroy(instance)
+
+
+class RouteViewSet(ArchivableSettingMixin, AuditLogMixin, viewsets.ModelViewSet):
     queryset = Route.objects.all()
     serializer_class = RouteSerializer
+    usage = {'vehicle_count': ('vehicles', 'vehicle(s)'), 'ticket_count': ('tickets', 'ticket(s)')}
 
 
 class VehicleViewSet(AuditLogMixin, viewsets.ModelViewSet):
@@ -783,9 +811,10 @@ class TicketPriceViewSet(AuditLogMixin, viewsets.ModelViewSet):
     serializer_class = TicketPriceSerializer
 
 
-class PUVTypeViewSet(AuditLogMixin, viewsets.ModelViewSet):
+class PUVTypeViewSet(ArchivableSettingMixin, AuditLogMixin, viewsets.ModelViewSet):
     queryset = PUVType.objects.all()
     serializer_class = PUVTypeSerializer
+    usage = {'vehicle_count': ('vehicles', 'vehicle(s)')}
 
 
 class TicketFormViewSet(AuditLogMixin, viewsets.ModelViewSet):
