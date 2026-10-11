@@ -95,3 +95,30 @@ class PaperIssuanceTests(TestCase):
         self.assertEqual(data['paper_amount'], 4940.0)
         self.assertEqual(data['expected_cash'], 0.0)
         self.assertEqual(data['difference'], 0.0)
+
+
+class ArchivableSettingsTests(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient
+        from .models import Route, User
+        self.client = APIClient()
+        self.client.force_authenticate(User.objects.create_user(username='c', password='x', role='SUPERADMIN'))
+        self.route = Route.objects.create(origin='Bacnotan')
+        self.puv = PUVType.objects.create(name='Jeepney')
+
+    def test_in_use_cannot_be_deleted_but_can_be_archived_and_restored(self):
+        Vehicle.objects.create(plate_number='ABC123', route=self.route, transportation_id=self.puv)
+        for path in (f'/api/routes/{self.route.id}/', f'/api/puvtypes/{self.puv.id}/'):
+            res = self.client.delete(path)
+            self.assertEqual(res.status_code, 409, path)
+            self.assertIn('Archive it instead', res.data['detail'])
+
+        self.assertEqual(self.client.put(f'/api/routes/{self.route.id}/', {'origin': 'Bacnotan', 'is_archived': True}).status_code, 200)
+        self.assertEqual(self.client.get('/api/routes/').data, [])
+        archived = self.client.get('/api/routes/?is_archived=true').data
+        self.assertEqual([(r['id'], r['vehicle_count']) for r in archived], [(self.route.id, 1)])
+        self.client.put(f'/api/routes/{self.route.id}/', {'origin': 'Bacnotan', 'is_archived': False})
+        self.assertEqual(len(self.client.get('/api/routes/').data), 1)
+
+    def test_unused_can_be_deleted(self):
+        self.assertEqual(self.client.delete(f'/api/routes/{self.route.id}/').status_code, 204)
