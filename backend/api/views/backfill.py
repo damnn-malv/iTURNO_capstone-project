@@ -279,7 +279,7 @@ def backfill_manual(request):
     return Response({
         'outcome': 'ok', 'committed': commit, 'ticket_ids': ticket_ids,
         'vehicle': resolved['vehicle'].plate_number, 'driver': str(resolved['driver']),
-        'route': resolved['route'].full_name if resolved['route'] else None,
+        'route': resolved['route'].origin if resolved['route'] else None,
         'ticket_type': resolved['form'].name, 'quantity': resolved['quantity'],
         'unit_price': float(resolved['form'].price), 'total_amount': total_amount,
         'available': None if resolved['units'] else _available_quantity(resolved['form'].id, resolved['series_id']),

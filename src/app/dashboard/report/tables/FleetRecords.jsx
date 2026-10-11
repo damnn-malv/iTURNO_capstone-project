@@ -52,7 +52,7 @@ export default function FleetRecords({
         <span className="rpt-plate">{v.plate_number}</span>
       </td>
       <td className={cellClass}>
-        {v.route_detail ? `${v.route_detail.origin} - San Fernando` : v.route || <span className="rpt-na">No route</span>}
+        {v.route_detail ? v.route_detail.origin : v.route || <span className="rpt-na">No route</span>}
       </td>
       <td className={cellClass}>
         {v.transportation_name || v.transportation_id || <span className="rpt-na">—</span>}

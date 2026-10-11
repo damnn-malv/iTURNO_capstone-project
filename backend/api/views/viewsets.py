@@ -6,6 +6,7 @@ from django.core.files.uploadedfile import UploadedFile
 from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
 from django.db.models import Count, Q
+from django.db.models.functions import Length
 from django.template.loader import render_to_string
 from django.utils import timezone
 from rest_framework import viewsets
@@ -129,14 +130,14 @@ class UserViewSet(AuditLogMixin, viewsets.ModelViewSet):
         # _state.db when no custom router is configured.
         return User.objects.using('supabase').all()
 
-    def _guard_account_change(self, target, role, is_active, deleting=False):
+    def _guard_account_change(self, target, role, is_active):
         """Accounts belong to people, roles are permissions: several people may share a
         role, but the system must never lose its last active admin or let someone lock
         themselves out. Enforced here (not just in the UI) so no client can bypass it."""
-        losing_access = deleting or not is_active or role != target.role
+        losing_access = not is_active or role != target.role
         if target.pk == self.request.user.pk and losing_access:
-            raise ValidationError('You cannot deactivate, delete or change the role of your own account.')
-        if target.role == 'SUPERADMIN' and target.is_active and (deleting or not is_active or role != 'SUPERADMIN'):
+            raise ValidationError('You cannot deactivate or change the role of your own account.')
+        if target.role == 'SUPERADMIN' and target.is_active and (not is_active or role != 'SUPERADMIN'):
             other_admins = User.objects.using('supabase').filter(role='SUPERADMIN', is_active=True).exclude(pk=target.pk)
             if not other_admins.exists():
                 raise ValidationError('This is the last active Admin. Promote or create another Admin first.')
@@ -153,13 +154,9 @@ class UserViewSet(AuditLogMixin, viewsets.ModelViewSet):
         self._guard_account_change(target, data.get('role', target.role), data.get('is_active', target.is_active))
         return super().perform_update(serializer)
 
-    def perform_destroy(self, instance):
-        self._guard_account_change(instance, instance.role, instance.is_active, deleting=True)
-        # Deleting orphans the person's history (FKs are SET_NULL), so only accounts
-        # that never did anything may be removed; everyone else gets deactivated.
-        if instance.last_login or instance.audit_logs.exists():
-            raise ValidationError('This account has activity history and cannot be deleted. Deactivate it instead.')
-        super().perform_destroy(instance)
+    def destroy(self, request, *args, **kwargs):
+        # Accounts are never deleted (it would orphan their history) — deactivate instead.
+        raise ValidationError('Staff accounts cannot be deleted. Deactivate the account instead.')
 
     @action(detail=True, methods=['post'])
     def resend_verification(self, request, pk=None):
@@ -551,7 +548,11 @@ class TicketViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         expire_stale_queue_tickets()
 
-        paged = paginate_request(request, self.get_queryset().order_by('-created_at'))
+        # Backfilled batches share one created_at, so break ties newest-ticket-first —
+        # by id length then id, since ids are numeric strings ("9" must sort below "14503").
+        paged = paginate_request(
+            request, self.get_queryset().order_by('-created_at', Length('id').desc(), '-id'),
+        )
         if paged is not None:
             page_num, page_size, total, sliced = paged
             serializer = self.get_serializer(sliced, many=True)

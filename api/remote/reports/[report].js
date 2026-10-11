@@ -137,7 +137,7 @@ async function collectionsReport(req, res, supabase) {
     issued_date: phDateKey(t.issued_at),
     driver: t.driver ? `${t.driver.last_name}, ${t.driver.first_name}` : "",
     vehicle: t.vehicle?.plate_number || "",
-    route: t.route ? `${t.route.origin} - San Fernando` : "",
+    route: t.route ? t.route.origin : "",
     collection_amount: Number(t.collection_amount) || 0,
     status: t.status,
   }));

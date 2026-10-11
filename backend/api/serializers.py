@@ -317,7 +317,7 @@ class RouteSerializer(serializers.ModelSerializer):
         ]
 
     def get_full_name(self, obj):
-        return f"{obj.origin} - San Fernando"
+        return obj.origin
 
     def get_avg_loading_minutes(self, obj):
         # Recent-history reference for whoever is setting estimated_loading_minutes —

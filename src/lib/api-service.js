@@ -480,10 +480,6 @@ export const apiService = {
     return this.put(`/users/${id}/`, data);
   },
 
-  deleteUser(id) {
-    return this.delete(`/users/${id}/`);
-  },
-
   resendVerification(id) {
     return this.post(`/users/${id}/resend_verification/`);
   },

@@ -67,10 +67,14 @@ export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, su
 
   const editSlot = (id, fn) => setSlots((prev) => prev.map((s) => (s.id === id ? fn(s) : s)));
 
+  // Each hour can only be used by one time block — add vehicles to the existing
+  // block instead of making a second one for the same time.
+  const usedHours = new Set(slots.map((s) => s.hour));
   const addSlot = () => {
-    const last = slots[slots.length - 1];
-    const next = last ? Math.min(Number(last.hour) + 1, 23) : 7;
-    setSlots((prev) => [...prev, newSlot(String(next).padStart(2, "0"))]);
+    const lastHour = Number(slots[slots.length - 1]?.hour ?? 6);
+    const free = HOURS.find((h) => Number(h.value) > lastHour && !usedHours.has(h.value))
+      || HOURS.find((h) => !usedHours.has(h.value));
+    if (free) setSlots((prev) => [...prev, newSlot(free.value)]);
   };
 
   const series = ticketSeries.find((t) => String(t.id) === seriesId);
@@ -181,7 +185,11 @@ export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, su
                 value={slot.hour}
                 onChange={(e) => editSlot(slot.id, (s) => ({ ...s, hour: e.target.value }))}
               >
-                {HOURS.map((h) => <option key={h.value} value={h.value}>{h.label}</option>)}
+                {HOURS.map((h) => (
+                  <option key={h.value} value={h.value} disabled={h.value !== slot.hour && usedHours.has(h.value)}>
+                    {h.label}{h.value !== slot.hour && usedHours.has(h.value) ? " (already added)" : ""}
+                  </option>
+                ))}
               </select>
             </label>
             {slots.length > 1 && (
@@ -220,7 +228,7 @@ export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, su
       ))}
 
       <div className="set-add-row">
-        <button className="set-add-btn" onClick={addSlot}>+ Add another time</button>
+        <button className="set-add-btn" onClick={addSlot} disabled={usedHours.size >= HOURS.length}>+ Add another time</button>
       </div>
 
       <div className="set-add-row">

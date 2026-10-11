@@ -134,7 +134,7 @@ class Route(models.Model):
 
     @property
     def full_name(self):
-        return f"{self.origin} - {self.DESTINATION}"
+        return self.origin
 
     @property
     def acronym(self):

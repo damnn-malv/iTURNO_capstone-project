@@ -17,7 +17,7 @@ export function shapeRouteDetail(r) {
   return {
     id: r.id,
     origin: r.origin,
-    full_name: `${r.origin} - San Fernando`,
+    full_name: r.origin,
     destination: "San Fernando",
     is_active: r.is_active,
     created_at: r.created_at,
@@ -86,7 +86,7 @@ export function shapeTicket(t) {
     active_user: t.active_user_id ?? null,
     active_user_name: t.active_user_name || null, // real column now, see Ticket.save() in models.py
     route: t.route?.id ?? t.route ?? null,
-    route_name: t.route ? `${t.route.origin} - San Fernando` : "",
+    route_name: t.route ? t.route.origin : "",
     mode: t.mode,
     series: t.series
       ? {
@@ -130,7 +130,7 @@ export function shapeRoutesWithStats(routes, tickets) {
       is_active: r.is_active,
       created_at: r.created_at,
       updated_at: r.updated_at,
-      full_name: `${r.origin} - San Fernando`,
+      full_name: r.origin,
       checked_in_today,
       revenue_in_range: Math.round(revenue_in_range * 100) / 100,
     };

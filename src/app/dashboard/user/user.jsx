@@ -138,19 +138,6 @@ function User({ userRole }) {
     }
   };
 
-  const handleDelete = async (id) => {
-    const confirmed = await showConfirm("Permanently delete this account? Only accounts with no activity can be deleted — otherwise deactivate it.");
-    if (!confirmed) return;
-    try {
-      await apiService.deleteUser(id);
-      fetchUsers();
-      showToast("Staff account deleted successfully");
-    } catch (err) {
-      setError(err.message);
-      showToast(err.message || "Failed to delete staff account", "info");
-    }
-  };
-
   const filteredUsers = users.filter((u) => {
     const q = searchTerm.toLowerCase().trim();
     if (!q) return true;
@@ -329,25 +316,6 @@ function User({ userRole }) {
                             {user.is_active ? "Deactivate" : "Reactivate"}
                           </button>
                         )}
-                        <button
-                          className="usr-btn usr-btn--delete"
-                          onClick={() => handleDelete(user.id)}
-                        >
-                          <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.2"
-                          >
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                            <path d="M10 11v6M14 11v6" />
-                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                          </svg>
-                          Delete
-                        </button>
                       </div>
                     </td>
                   </tr>

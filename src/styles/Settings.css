@@ -809,22 +809,34 @@
 }
 
 .tbf-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
+  column-count: 2;
+  column-gap: 10px;
+}
+
+@media (max-width: 700px) {
+  .tbf-chips { column-count: 1; }
 }
 
 .tbf-chip {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px 4px 10px;
-  border-radius: 999px;
+  gap: 8px;
+  break-inside: avoid;
+  margin-bottom: 6px;
+  padding: 6px 8px 6px 12px;
+  border-radius: 8px;
   background: var(--bg-active);
   border: 1px solid var(--gold);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
+}
+
+.tbf-chip-no {
+  min-width: 22px;
+}
+
+.tbf-chip button {
+  margin-left: auto;
 }
 
 .tbf-chip button {

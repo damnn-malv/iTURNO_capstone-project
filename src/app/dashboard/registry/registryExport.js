@@ -3,7 +3,7 @@ import { getDriverCode } from "../driver/driver-utils";
 
 const buildVehicleRow = (v) => ({
   "Plate Number": v.plate_number,
-  Route: v.route_detail ? `${v.route_detail.origin} - San Fernando` : v.route || "—",
+  Route: v.route_detail ? v.route_detail.origin : v.route || "—",
   Transportation: v.transportation_name || v.transportation_id || "—",
   "Franchise #": v.franchise_number || "—",
   "Franchise Expiration": v.franchise_expiration_date || "—",
