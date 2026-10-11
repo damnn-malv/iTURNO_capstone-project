@@ -585,20 +585,6 @@ export const apiService = {
     return this.get("/settings/backfill");
   },
 
-  previewTicketBackfill(file, importReason) {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("import_reason", importReason);
-    return this.post("/backfill/preview/", formData);
-  },
-
-  importTicketBackfill(file, importReason) {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("import_reason", importReason);
-    return this.post("/backfill/import/", formData);
-  },
-
   getBackfillHistory() {
     return this.get("/backfill/history/");
   },

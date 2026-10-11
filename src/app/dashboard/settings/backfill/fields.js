@@ -10,6 +10,7 @@
 export const F_TICKET_ID = "Ticket Number";
 export const F_PLATE = "Vehicle Plate Number";
 export const F_TICKET_TYPE = "Ticket Type";
+export const F_SERIES = "Ticket Series";
 export const F_QUANTITY = "Ticket Amount";
 export const F_ISSUED_AT = "Date and Time Issued";
 export const F_STAFF_EMAIL = "Staff Email";

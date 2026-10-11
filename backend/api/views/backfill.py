@@ -29,6 +29,7 @@ from .viewsets import IsSupervisorOrAdminForWrite, _consume_series_fifo
 F_TICKET_ID = 'Ticket Number'
 F_PLATE = 'Vehicle Plate Number'
 F_TICKET_TYPE = 'Ticket Type'
+F_SERIES = 'Ticket Series'  # optional TicketSeries id — draw numbers from that one booklet only
 F_QUANTITY = 'Ticket Amount'
 F_ISSUED_AT = 'Date and Time Issued'
 F_STAFF_EMAIL = 'Staff Email'
@@ -125,6 +126,13 @@ def _resolve_batch(row):
     if not form:
         return None, 'error', f"{F_TICKET_TYPE} not found: '{ticket_type}'"
 
+    series_id = None
+    if get(F_SERIES):
+        series = TicketSeries.objects.filter(id=get(F_SERIES) if get(F_SERIES).isdigit() else 0).first()
+        if not series or series.ticket_form_id != form.id:
+            return None, 'error', f"{F_SERIES} '{get(F_SERIES)}' not found for {form.name}"
+        series_id = series.id
+
     exact_ticket_id = get(F_TICKET_ID)
     units = None
     quantity = 1
@@ -172,16 +180,18 @@ def _resolve_batch(row):
 
     return {
         'vehicle': vehicle, 'driver': driver, 'route': route, 'mode': mode,
-        'form': form, 'quantity': quantity, 'units': units, 'active_user': active_user,
+        'form': form, 'series_id': series_id, 'quantity': quantity, 'units': units, 'active_user': active_user,
         'historical_dt': historical_dt, 'reason': reason,
     }, 'ok', None
 
 
-def _available_quantity(ticket_form_id):
+def _available_quantity(ticket_form_id, series_id=None):
     """Non-locking readonly estimate of how many tickets are left for a denomination —
     for preview/dry-run messaging only. The authoritative, race-safe count only ever
     happens inside _reserve_and_create's transaction via _consume_series_fifo."""
     series_list = TicketSeries.objects.filter(ticket_form_id=ticket_form_id, requisition__is_archived=False)
+    if series_id:
+        series_list = series_list.filter(id=series_id)
     return sum(
         max(int(s.end_no) - int(s.start_no) + 1 - s.tickets.count(), 0) for s in series_list
     )
@@ -194,7 +204,7 @@ def _reserve_and_create(resolved):
     with transaction.atomic():
         units = resolved['units']
         if units is None:
-            units = _consume_series_fifo(resolved['form'].id, resolved['quantity'])
+            units = _consume_series_fifo(resolved['form'].id, resolved['quantity'], resolved['series_id'])
         tickets = []
         for series, ticket_id in units:
             ticket = Ticket.objects.create(
@@ -239,6 +249,19 @@ def backfill_manual(request):
 
     total_amount = float(resolved['form'].price) * resolved['quantity']
     ticket_ids = None
+    if not commit and resolved['units'] is None:
+        # Which numbers this entry would get. A batch previews its rows one call at a
+        # time, so `preview_offset` = how many earlier rows would draw from the same
+        # stock first. Nothing is written; the numbers aren't held, so a live dispatch
+        # in between can still take them (hence the WIP-mode advice).
+        try:
+            offset = int(request.data.get('preview_offset') or 0)
+            with transaction.atomic():
+                units = _consume_series_fifo(resolved['form'].id, offset + resolved['quantity'], resolved['series_id'])
+        except ValidationError as exc:
+            detail = exc.detail.get('quantity') if isinstance(exc.detail, dict) else exc.detail
+            return Response({'outcome': 'error', 'reason': str(detail[0] if isinstance(detail, list) else detail)}, status=200)
+        ticket_ids = [ticket_id for _, ticket_id in units[offset:]]
     if commit:
         try:
             tickets = _reserve_and_create(resolved)
@@ -259,7 +282,7 @@ def backfill_manual(request):
         'route': resolved['route'].full_name if resolved['route'] else None,
         'ticket_type': resolved['form'].name, 'quantity': resolved['quantity'],
         'unit_price': float(resolved['form'].price), 'total_amount': total_amount,
-        'available': None if resolved['units'] else _available_quantity(resolved['form'].id),
+        'available': None if resolved['units'] else _available_quantity(resolved['form'].id, resolved['series_id']),
     })
 
 
