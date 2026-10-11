@@ -117,6 +117,12 @@ async function usersResource(req, res, supabase, payload) {
     for (const f of EDITABLE_USER_FIELDS) {
       if (body[f] !== undefined) updates[f] = body[f];
     }
+    if (updates.role !== undefined || updates.is_active !== undefined) {
+      const { data: target, error: tErr } = await supabase.from("api_user").select("id, role, is_active").eq("id", id).single();
+      if (tErr) throw tErr;
+      const msg = await accountChangeBlocker(supabase, payload, target, updates.role ?? target.role, updates.is_active ?? target.is_active);
+      if (msg) return void res.status(400).json({ detail: msg });
+    }
     if (body.new_password) {
       updates.password = hashDjangoPassword(body.new_password);
       updates.must_reset_password = true;
@@ -129,12 +135,33 @@ async function usersResource(req, res, supabase, payload) {
   if (req.method === "DELETE") {
     const id = req.query.id;
     if (!id) return void res.status(400).json({ detail: "id query param is required" });
+    const { data: target, error: tErr } = await supabase.from("api_user").select("id, role, is_active, last_login").eq("id", id).single();
+    if (tErr) throw tErr;
+    const blocker = await accountChangeBlocker(supabase, payload, target, target.role, target.is_active, true);
+    if (blocker) return void res.status(400).json({ detail: blocker });
+    const { count } = await supabase.from("api_auditlog").select("id", { count: "exact", head: true }).eq("user_id", id);
+    if (target.last_login || count > 0) {
+      return void res.status(400).json({ detail: "This account has activity history and cannot be deleted. Deactivate it instead." });
+    }
     const { error } = await supabase.from("api_user").delete().eq("id", id);
     if (error) throw error;
     res.status(204).end();
     return;
   }
   res.status(405).json({ detail: "Method not allowed" });
+}
+
+// Mirror of UserViewSet._guard_account_change in backend/api/views/viewsets.py.
+async function accountChangeBlocker(supabase, payload, target, role, isActive, deleting = false) {
+  if (String(target.id) === String(payload.sub) && (deleting || !isActive || role !== target.role)) {
+    return "You cannot deactivate, delete or change the role of your own account.";
+  }
+  if (target.role === "SUPERADMIN" && target.is_active && (deleting || !isActive || role !== "SUPERADMIN")) {
+    const { count } = await supabase.from("api_user").select("id", { count: "exact", head: true })
+      .eq("role", "SUPERADMIN").eq("is_active", true).neq("id", target.id);
+    if (!count) return "This is the last active Admin. Promote or create another Admin first.";
+  }
+  return null;
 }
 
 function simpleCrud(table, { createFields, requiredField = "name" }) {

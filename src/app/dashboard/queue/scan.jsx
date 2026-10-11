@@ -43,9 +43,8 @@ function Scan() {
   }, [result]);
 
   // The overlay never pauses scanning — a new QR replaces it right away.
-  const { videoRef, canvasRef, status } = useQrScanner(
-    (text) => postToQueue({ type: "scan", text }),
-    { alwaysOn: true },
+  const { videoRef, canvasRef, status } = useQrScanner((text) =>
+    postToQueue({ type: "scan", text }),
   );
 
   return (

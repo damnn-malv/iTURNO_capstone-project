@@ -133,28 +133,18 @@
   align-items: center;
   gap: 7px;
   padding: 8px 18px;
-  border: none;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--navy);
-  color: #fff;
+  background: var(--bg-surface);
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.18s, box-shadow 0.18s;
+  transition: background 0.18s;
 }
 
 .dashboard-scan-btn:hover {
-  background: var(--navy-hover, #1a2744);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-}
-
-.dark .dashboard-scan-btn {
-  background: var(--gold);
-  color: #1a1a2e;
-}
-
-.dark .dashboard-scan-btn:hover {
-  background: var(--gold-hover, #d4af37);
+  background: var(--bg-hover);
 }
 
 .dashboard-date-filter input[type="date"]:focus {

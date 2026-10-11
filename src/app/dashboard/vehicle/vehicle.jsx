@@ -9,6 +9,7 @@ import {
   buildDriverAddress,
 } from "./vehicleHook";
 import VehicleModal from "./vehicleModal";
+import { getExpiryStatus } from "../driver/driver-utils";
 import { exportVehiclesPDF } from "../registry/registryExport";
 
 import React, { useState } from "react";
@@ -39,7 +40,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
     handleEdit,
     handleAdd,
     closeModal,
-    handleDelete,
+    handleArchive,
   } = useVehicle();
 
   const [internalSearch, setInternalSearch] = useState("");
@@ -314,11 +315,15 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                       )}
                     </td>
                     <td>
-                      <span
-                        className={`veh-status ${STATUS_COLOR[vehicle.status] || "veh-status--default"}`}
-                      >
-                        {STATUS_LABEL[vehicle.status] || vehicle.status}
-                      </span>
+                      {vehicle.status === "AVAILABLE" && getExpiryStatus(vehicle.franchise_expiration_date) === "expired" ? (
+                        <span className="veh-status veh-status--expired">Franchise Expired</span>
+                      ) : (
+                        <span
+                          className={`veh-status ${STATUS_COLOR[vehicle.status] || "veh-status--default"}`}
+                        >
+                          {STATUS_LABEL[vehicle.status] || vehicle.status}
+                        </span>
+                      )}
                     </td>
                     <td>
                       <div className="veh-actions">
@@ -353,7 +358,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                         </button>
                         <button
                           className="veh-btn veh-btn--delete"
-                          onClick={() => handleDelete(vehicle.id)}
+                          onClick={() => handleArchive(vehicle.id)}
                         >
                           <svg
                             width="12"
@@ -368,7 +373,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                             <path d="M10 11v6M14 11v6" />
                             <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
                           </svg>
-                          Delete
+                          Archive
                         </button>
                       </div>
                     </td>
@@ -407,19 +412,6 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
           <div className="veh-modal veh-modal--profile" onClick={(e) => e.stopPropagation()}>
             <div className="veh-modal-header">
               <div className="veh-modal-header-left">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#c9a84c"
-                  strokeWidth="2"
-                >
-                  <rect x="1" y="3" width="15" height="13" rx="1" />
-                  <path d="M16 8h4l3 3v5h-7V8z" />
-                  <circle cx="5.5" cy="18.5" r="2.5" />
-                  <circle cx="18.5" cy="18.5" r="2.5" />
-                </svg>
                 <h2 className="veh-modal-title">
                   {editing ? "Vehicle Profile" : "Register New Vehicle"}
                 </h2>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { apiService } from "../../../lib/api-service";
 import { getPhDateString } from "../../../lib/phDate";
+import { getExpiryStatus, getIwpStatus } from "../driver/driver-utils";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 export const statusColor = {
@@ -29,9 +30,10 @@ export function useQueue(userRole = "") {
   const [issueError, setIssueError] = useState("");
 
   const [ticketSeries, setTicketSeries] = useState([]);
-  const [selectedSeriesId, setSelectedSeriesId] = useState(
+  const [chosenSeriesId, setSelectedSeriesId] = useState(
     () => localStorage.getItem("lastSelectedSeriesId") || ""
   );
+  const [seriesOverrideId, setSeriesOverrideId] = useState("");
   const [ticketQuantity, setTicketQuantity] = useState(1);
   const [vehicleDriverMap, setVehicleDriverMap] = useState(() => {
     try {
@@ -54,7 +56,7 @@ export function useQueue(userRole = "") {
 
   const fetchVehicles = async () => {
     try {
-      setVehicles(await apiService.getVehicles());
+      setVehicles(await apiService.getVehicles({ is_archived: "false" }));
     } catch {
       /* silent */
     }
@@ -62,7 +64,7 @@ export function useQueue(userRole = "") {
 
   const fetchDrivers = async () => {
     try {
-      setDrivers(await apiService.getDrivers());
+      setDrivers(await apiService.getDrivers({ is_archived: "false" }));
     } catch {
       /* silent */
     }
@@ -87,6 +89,7 @@ export function useQueue(userRole = "") {
 
   const updateSelectedSeriesId = (id) => {
     setSelectedSeriesId(id);
+    setSeriesOverrideId("");
     localStorage.setItem("lastSelectedSeriesId", id);
   };
 
@@ -172,6 +175,14 @@ export function useQueue(userRole = "") {
     // Driver must be ACTIVE
     if (driver.status !== "ACTIVE") {
       return fail("Selected driver is not active and cannot be assigned.");
+    }
+
+    // An expired franchise / IWP blocks check-in until renewed in the registry
+    if (getExpiryStatus(vehicle.franchise_expiration_date) === "expired") {
+      return fail(`${vehicle.plate_number}'s franchise has expired — renew it before checking in.`);
+    }
+    if (getIwpStatus(driver) === "expired") {
+      return fail("Selected driver's IWP has expired — renew it before checking in.");
     }
 
     // Queue check-ins no longer pick a denomination/series or quantity here —
@@ -292,6 +303,27 @@ export function useQueue(userRole = "") {
       .sort((a, b) => (parseInt(a.start_no) || 0) - (parseInt(b.start_no) || 0));
   }, [ticketSeries]);
 
+  // One entry per denomination; FIFO means the oldest series (lowest start_no) is issued first.
+  const denominations = useMemo(() => {
+    const seen = new Set();
+    return availableSeries.filter((s) => {
+      const key = s.ticket_form_label || "Unspecified";
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [availableSeries]);
+
+  const selectedSeriesId = useMemo(() => {
+    const chosen = availableSeries.find((s) => String(s.id) === String(chosenSeriesId));
+    if (!chosen) return denominations[0] ? String(denominations[0].id) : "";
+    const label = chosen.ticket_form_label || "Unspecified";
+    const override = availableSeries.find((s) => String(s.id) === String(seriesOverrideId));
+    if (override && (override.ticket_form_label || "Unspecified") === label) return String(override.id);
+    const head = denominations.find((s) => (s.ticket_form_label || "Unspecified") === label);
+    return String(head.id);
+  }, [availableSeries, denominations, chosenSeriesId, seriesOverrideId]);
+
   const ticketFee = useMemo(() => {
     const series = availableSeries.find((s) => String(s.id) === String(selectedSeriesId));
     return Number(series?.ticket_form_price || 0);
@@ -317,7 +349,9 @@ export function useQueue(userRole = "") {
     // Computed
     availableVehicles,
     activeDrivers,
-    availableSeries,
+    availableSeries: denominations,
+    allSeries: availableSeries,
+    setSeriesOverrideId,
     selectedSeriesId,
     setSelectedSeriesId: updateSelectedSeriesId,
     ticketQuantity,

@@ -6,6 +6,7 @@ from django.contrib.auth.models import AbstractUser
 >>>>>>> upstream/main
 from django.core.validators import EmailValidator
 from django.db import models
+from django.utils import timezone
 
 
 LOCAL_ADMIN_PK_BASE = 1_000_000
@@ -136,6 +137,10 @@ class Driver(models.Model):
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
 
+    @property
+    def iwp_expired(self):
+        # Valid through the expiry day itself; no date on file is not treated as expired.
+        return bool(self.iwp_expiration_date and self.iwp_expiration_date < timezone.localdate())
 
     def __str__(self):
         return f"{self.last_name}, {self.first_name}".strip()
@@ -227,6 +232,10 @@ class Vehicle(models.Model):
             models.Index(fields=['status', 'is_archived'], name='api_vehicle_status_9de6a2_idx'),
             models.Index(fields=['route', 'is_archived'], name='api_vehicle_route_i_33d88b_idx'),
         ]
+
+    @property
+    def franchise_expired(self):
+        return bool(self.franchise_expiration_date and self.franchise_expiration_date < timezone.localdate())
 
     def __str__(self):
         return self.plate_number
@@ -358,6 +367,40 @@ class TicketSeries(models.Model):
 
     def __str__(self):
         return f"Series {self.series_no} ({self.start_no}–{self.end_no})"
+
+
+class PaperIssuance(models.Model):
+    """A range of physical ticket numbers handed out outside the system (downtime,
+    or remitted without it). The numbers are reserved so the allocator skips them,
+    and counted toward stock and that day's expected cash. The amount is derived
+    (count x the ticket form's price) so it can't drift from the price list."""
+    REASON_CHOICES = [('SYSTEM_DOWN', 'System down'), ('REMITTED_WITHOUT_SYSTEM', 'Remitted without system'), ('OTHER', 'Other')]
+
+    series = models.ForeignKey(TicketSeries, on_delete=models.CASCADE, related_name='paper_issuances')
+    from_no = models.PositiveIntegerField()
+    to_no = models.PositiveIntegerField()
+    used_on = models.DateField(db_index=True)
+    reason = models.CharField(max_length=30, choices=REASON_CHOICES, default='SYSTEM_DOWN')
+    note = models.CharField(max_length=255, blank=True, default="")
+    recorded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='paper_issuances')
+    recorded_by_name = models.CharField(max_length=150, blank=True, default="")
+    remittance_batch = models.ForeignKey('RemittanceBatch', on_delete=models.SET_NULL, null=True, blank=True, related_name='paper_issuances')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-used_on', '-id']
+
+    @property
+    def count(self):
+        return self.to_no - self.from_no + 1
+
+    @property
+    def amount(self):
+        form = self.series.ticket_form
+        return self.count * (form.price if form else self.series.unit_value)
+
+    def __str__(self):
+        return f"Paper {self.from_no}–{self.to_no} (series {self.series_id})"
 
 
 class TicketPrice(models.Model):

@@ -176,7 +176,7 @@ export function useVehicle() {
   const fetchDrivers = async () => {
     try {
       setError(null);
-      const data = await apiService.getDrivers();
+      const data = await apiService.getDrivers({ is_archived: "false" });
       setDrivers(data);
     } catch (err) {
       console.error(err.message);
@@ -203,7 +203,7 @@ export function useVehicle() {
 
   const fetchVehicles = async () => {
     try {
-      const data = await apiService.getVehicles();
+      const data = await apiService.getVehicles({ is_archived: "false" });
       setVehicles(data);
     } catch (err) {
       setError(err.message);
@@ -334,16 +334,16 @@ export function useVehicle() {
     setRouteError("");
   };
 
-  const handleDelete = async (id) => {
-    const confirmed = await showConfirm("Are you sure you want to delete this vehicle record?");
+  const handleArchive = async (id) => {
+    const confirmed = await showConfirm("Archive this vehicle? You can restore it from Settings → Archive.");
     if (!confirmed) return;
     try {
-      await apiService.deleteVehicle(id);
+      await apiService.patch(`/vehicles/${id}/`, { is_archived: true });
       fetchVehicles();
-      showToast("Vehicle record deleted successfully");
+      showToast("Vehicle archived");
     } catch (err) {
       setError(err.message);
-      showToast(err.message || "Failed to delete vehicle", "info");
+      showToast(err.message || "Failed to archive vehicle", "info");
     }
   };
 
@@ -371,6 +371,6 @@ export function useVehicle() {
     handleEdit,
     handleAdd,
     closeModal,
-    handleDelete,
+    handleArchive,
   };
 }

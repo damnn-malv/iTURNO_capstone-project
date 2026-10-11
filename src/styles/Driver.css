@@ -84,22 +84,20 @@
   align-items: center;
   gap: 8px;
   padding: 9px 18px;
-  background: linear-gradient(135deg, #2d5016 0%, #4a7c28 100%);
-  color: #fff;
-  border: none;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
-  box-shadow: 0 3px 10px rgba(45,80,22,0.25);
   white-space: nowrap;
 }
 
 .drv-export-qr-btn:hover {
   opacity: 0.88;
   transform: translateY(-1px);
-  box-shadow: 0 5px 16px rgba(45,80,22,0.3);
 }
 
 .drv-export-qr-btn:active { transform: translateY(0); }
@@ -277,6 +275,7 @@
 
 .drv-status--active   { background: rgba(34,197,94,0.12);  color: #15803d; }
 .drv-status--inactive { background: var(--bg-page); color: var(--text-secondary); border: 1px solid var(--border); }
+.drv-status--expired  { background: rgba(239,68,68,0.12); color: #b91c1c; }
 .drv-status--duty     { background: rgba(59,130,246,0.12); color: #1d4ed8; }
 
 /* Action buttons */
@@ -304,10 +303,12 @@
 .drv-btn:active { transform: translateY(0); }
 
 .drv-btn--edit {
-  background: linear-gradient(135deg, var(--gold) 0%, #e2be6e 100%);
-  color: #1a2744;
-  box-shadow: 0 2px 8px rgba(201,168,76,0.25);
+  background: var(--bg-page);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
 }
+
+.drv-btn--edit:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 .drv-btn--delete {
   background: rgba(239,68,68,0.1);

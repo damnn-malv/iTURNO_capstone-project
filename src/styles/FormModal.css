@@ -2,12 +2,11 @@
 
 .usr-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(10,16,35,0.55); backdrop-filter: blur(4px); display: flex; align-items: flex-start; justify-content: center; padding: 24px; overflow-y: auto; animation: fm-fade 0.2s ease; }
 .usr-modal { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 640px; max-height: min(90vh, 820px); margin: auto; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 80px rgba(10,16,35,0.28); animation: fm-rise 0.28s cubic-bezier(0.34,1.56,0.64,1); }
-.usr-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%); flex-shrink: 0; }
+.usr-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 16px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
 .usr-modal-header-left { display: flex; align-items: center; gap: 14px; }
-.usr-modal-header-left > svg { box-sizing: content-box; width: 18px; height: 18px; padding: 11px; border-radius: 12px; background: rgba(201,168,76,0.16); border: 1px solid rgba(201,168,76,0.35); stroke: var(--gold); flex-shrink: 0; }
-.usr-modal-title { font-size: 16px; font-weight: 700; color: #fff; margin: 0; letter-spacing: -0.01em; }
-.usr-modal-close { background: none; border: none; cursor: pointer; color: #fff; opacity: 0.65; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 8px; transition: opacity 0.15s, background 0.15s; }
-.usr-modal-close:hover { opacity: 1; background: rgba(255,255,255,0.12); }
+.usr-modal-title { font-size: 17px; font-weight: 700; color: var(--text-primary); margin: 0; }
+.usr-modal-close { background: none; border: none; cursor: pointer; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 6px; transition: background 0.15s; }
+.usr-modal-close:hover { background: var(--bg-hover); }
 .usr-modal-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; flex: 1 1 auto; }
 
 /* hero (photo / name card) */
@@ -47,12 +46,11 @@
 
 .drv-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(10,16,35,0.55); backdrop-filter: blur(4px); display: flex; align-items: flex-start; justify-content: center; padding: 24px; overflow-y: auto; animation: fm-fade 0.2s ease; }
 .drv-modal { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 640px; max-height: min(90vh, 820px); margin: auto; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 80px rgba(10,16,35,0.28); animation: fm-rise 0.28s cubic-bezier(0.34,1.56,0.64,1); }
-.drv-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%); flex-shrink: 0; }
+.drv-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 16px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
 .drv-modal-header-left { display: flex; align-items: center; gap: 14px; }
-.drv-modal-header-left > svg { box-sizing: content-box; width: 18px; height: 18px; padding: 11px; border-radius: 12px; background: rgba(201,168,76,0.16); border: 1px solid rgba(201,168,76,0.35); stroke: var(--gold); flex-shrink: 0; }
-.drv-modal-title { font-size: 16px; font-weight: 700; color: #fff; margin: 0; letter-spacing: -0.01em; }
-.drv-modal-close { background: none; border: none; cursor: pointer; color: #fff; opacity: 0.65; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 8px; transition: opacity 0.15s, background 0.15s; }
-.drv-modal-close:hover { opacity: 1; background: rgba(255,255,255,0.12); }
+.drv-modal-title { font-size: 17px; font-weight: 700; color: var(--text-primary); margin: 0; }
+.drv-modal-close { background: none; border: none; cursor: pointer; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 6px; transition: background 0.15s; }
+.drv-modal-close:hover { background: var(--bg-hover); }
 .drv-modal-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; flex: 1 1 auto; }
 
 /* hero (photo / name card) */
@@ -92,12 +90,11 @@
 
 .veh-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(10,16,35,0.55); backdrop-filter: blur(4px); display: flex; align-items: flex-start; justify-content: center; padding: 24px; overflow-y: auto; animation: fm-fade 0.2s ease; }
 .veh-modal { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 640px; max-height: min(90vh, 820px); margin: auto; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 80px rgba(10,16,35,0.28); animation: fm-rise 0.28s cubic-bezier(0.34,1.56,0.64,1); }
-.veh-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%); flex-shrink: 0; }
+.veh-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 16px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
 .veh-modal-header-left { display: flex; align-items: center; gap: 14px; }
-.veh-modal-header-left > svg { box-sizing: content-box; width: 18px; height: 18px; padding: 11px; border-radius: 12px; background: rgba(201,168,76,0.16); border: 1px solid rgba(201,168,76,0.35); stroke: var(--gold); flex-shrink: 0; }
-.veh-modal-title { font-size: 16px; font-weight: 700; color: #fff; margin: 0; letter-spacing: -0.01em; }
-.veh-modal-close { background: none; border: none; cursor: pointer; color: #fff; opacity: 0.65; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 8px; transition: opacity 0.15s, background 0.15s; }
-.veh-modal-close:hover { opacity: 1; background: rgba(255,255,255,0.12); }
+.veh-modal-title { font-size: 17px; font-weight: 700; color: var(--text-primary); margin: 0; }
+.veh-modal-close { background: none; border: none; cursor: pointer; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 6px; transition: background 0.15s; }
+.veh-modal-close:hover { background: var(--bg-hover); }
 .veh-modal-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; flex: 1 1 auto; }
 
 /* hero (photo / name card) */

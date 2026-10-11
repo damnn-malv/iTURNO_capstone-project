@@ -765,3 +765,33 @@
   .dispatch-modal-body   { padding: 16px; }
   .dispatch-modal-footer { flex-direction: column; }
 }
+.dispatch-series-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.dispatch-series-row .dispatch-modal-select {
+  flex: 1;
+}
+
+.dispatch-series-toggle {
+  flex: none;
+  padding: 0 14px;
+  border: 1px solid var(--border, #d9d9d9);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dispatch-series-toggle:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.dispatch-series-row + .dispatch-modal-select {
+  margin-top: 8px;
+}

@@ -7,8 +7,8 @@ from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from ..models import TicketPrice, Ticket, RemittanceBatch
-from .helpers import filter_collected, summarize, parse_date_start, parse_date_end
+from ..models import TicketPrice, Ticket, RemittanceBatch, PaperIssuance
+from .helpers import paper_numbers_by_series, filter_collected, summarize, parse_date_start, parse_date_end
 
 
 @api_view(['GET'])
@@ -110,6 +110,13 @@ def eod_reconciliation(request):
     checkout_count = len(dispatched_today)
     expected_cash = round(sum(float(t.collection_amount or 0) for t in dispatched_today), 2)
 
+    # Tickets handed out on paper (downtime) were remitted at the treasury the same
+    # way as before the system, so their cash is reported for information only and
+    # never counted as owed through a batch here.
+    paper_today = list(PaperIssuance.objects.filter(used_on=datetime.strptime(date_str, '%Y-%m-%d').date()).select_related('series__ticket_form'))
+    paper_count = sum(p.count for p in paper_today)
+    paper_amount = round(sum(float(p.amount) for p in paper_today), 2)
+
     # A late-filed remittance explicitly names which day it covers (covers_date) so
     # it's attributed to that day's reconciliation regardless of when it was typed
     # in; older/normal same-day batches (covers_date is null) fall back to the
@@ -128,13 +135,15 @@ def eod_reconciliation(request):
         if t.series_id:
             by_series.setdefault(t.series_id, []).append(t)
 
+    paper_by_series = paper_numbers_by_series(list(by_series))
     ticket_number_gaps = []
-    for series_tickets in by_series.values():
+    for series_id, series_tickets in by_series.items():
         try:
             numbers = sorted(int(t.id) for t in series_tickets)
         except ValueError:
             continue
-        missing = [n for n in range(numbers[0], numbers[-1] + 1) if n not in numbers]
+        reserved = paper_by_series.get(series_id, set())
+        missing = [n for n in range(numbers[0], numbers[-1] + 1) if n not in numbers and n not in reserved]
         if missing:
             series_obj = series_tickets[0].series
             ticket_number_gaps.append({
@@ -153,6 +162,8 @@ def eod_reconciliation(request):
     return Response({
         'date': date_str,
         'checkout_count': checkout_count,
+        'paper_count': paper_count,
+        'paper_amount': paper_amount,
         'expected_cash': expected_cash,
         'actual_cash': actual_cash,
         'difference': round(expected_cash - actual_cash, 2),

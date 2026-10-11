@@ -5,7 +5,7 @@ from django.db.models import Max, Sum
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
-from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Requisition, TicketSeries, RoamingLog, AuditLog, BackupRecord, BackfillRecord, WipMode
+from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, Route, RemittanceBatch, Deposit, Collection, TicketForm, Requisition, TicketSeries, PaperIssuance, RoamingLog, AuditLog, BackupRecord, BackfillRecord, WipMode
 from .sms import send_sms_async, queue_position_message
 
 
@@ -197,20 +197,25 @@ class TicketSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         {"driver_id": "Selected driver is not active and cannot be assigned."}
                     )
+                if vehicle.franchise_expired:
+                    raise serializers.ValidationError(
+                        {"vehicle_id": f"{vehicle.plate_number}'s franchise has expired — renew it before checking in."}
+                    )
+                if driver.iwp_expired:
+                    raise serializers.ValidationError(
+                        {"driver_id": "Selected driver's IWP has expired — renew it before checking in."}
+                    )
 
             series = None
             if series_id:
-                # start_no/end_no are the original allotted range and stay fixed —
-                # remaining stock is derived from how many Ticket rows already
-                # reference this series, same convention as _consume_series_fifo
-                # (dispatch) uses, so the two paths can't hand out the same number.
-                series = TicketSeries.objects.select_for_update().get(id=series_id)
-                original_start = int(series.start_no)
-                end = int(series.end_no)
-                next_no = original_start + series.tickets.count()
-                if next_no > end:
-                    raise serializers.ValidationError({"series_id": "This ticket series is depleted."})
-                validated_data['id'] = str(next_no)
+                # Same allocator dispatch uses, so every issuing path agrees on which
+                # numbers are free (system tickets, legacy overlaps, paper ranges).
+                # Imported here to avoid a circular import — views.viewsets imports
+                # this module.
+                from .views.viewsets import _consume_series_fifo
+                series_form_id = TicketSeries.objects.values_list('ticket_form_id', flat=True).get(id=series_id)
+                [(series, ticket_id)] = _consume_series_fifo(series_form_id, 1, series_id)
+                validated_data['id'] = ticket_id
 
             if is_roam:
                 # Roam check-in is also check-out — the toll is paid on the spot
@@ -380,12 +385,41 @@ class CollectionSerializer(serializers.ModelSerializer):
         model = Collection
         fields = "__all__"
 
+class PaperIssuanceSerializer(serializers.ModelSerializer):
+    series_no = serializers.CharField(source='series.series_no', read_only=True)
+    count = serializers.IntegerField(read_only=True)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
+    def validate(self, attrs):
+        series, start, end = attrs['series'], attrs['from_no'], attrs['to_no']
+        if start > end:
+            raise serializers.ValidationError({"to_no": "End number must not be lower than the start number."})
+        if not (int(series.start_no) <= start and end <= int(series.end_no)):
+            raise serializers.ValidationError({"from_no": f"Range must sit inside series {series.series_no} ({series.start_no}–{series.end_no})."})
+        used = Ticket.objects.filter(id__in=[str(n) for n in range(start, end + 1)]).values_list('id', flat=True)
+        if used:
+            raise serializers.ValidationError({"from_no": f"Ticket {min(used, key=int)} is already issued in the system."})
+        clash = PaperIssuance.objects.filter(series=series, from_no__lte=end, to_no__gte=start).first()
+        if clash:
+            raise serializers.ValidationError({"from_no": f"Overlaps an earlier paper range ({clash.from_no}–{clash.to_no})."})
+        return attrs
+
+    class Meta:
+        model = PaperIssuance
+        fields = [
+            'id', 'series', 'series_no', 'from_no', 'to_no', 'count', 'amount', 'used_on',
+            'reason', 'note', 'recorded_by_name', 'remittance_batch', 'created_at',
+        ]
+        read_only_fields = ['recorded_by_name', 'remittance_batch']
+
+
 class TicketSeriesSerializer(serializers.ModelSerializer):
     ticket_form_label = serializers.CharField(source='ticket_form.name', read_only=True, allow_null=True)
     ticket_form_price = serializers.DecimalField(source='ticket_form.price', read_only=True, allow_null=True, max_digits=10, decimal_places=2)
     issued_to_name = serializers.CharField(source='issued_to.username', read_only=True, allow_null=True)
     beginning = serializers.SerializerMethodField()
     remaining = serializers.SerializerMethodField()
+    last_used_no = serializers.SerializerMethodField()
 
     def _get_original_pcs(self, obj):
         start = int(obj.start_no or 0)
@@ -408,14 +442,37 @@ class TicketSeriesSerializer(serializers.ModelSerializer):
         return max(original - tickets_before_today, 0)
 
     def get_remaining(self, obj):
-        original = self._get_original_pcs(obj)
-        if hasattr(obj, '_total_issued'):
-            total_issued = obj._total_issued
-        else:
-            total_issued = self._get_tickets_issued(obj)
-        return max(original - total_issued, 0)
+        # Ticket.id is the printed number and is unique across every series, so a
+        # number inside this range that another (legacy/overlapping) series already
+        # issued is not available here either. Count free numbers, not just own issues.
+        from bisect import bisect_left, bisect_right
+        if not hasattr(self, '_used_numbers'):
+            self._used_numbers = sorted(
+                int(i) for i in Ticket.objects.values_list('id', flat=True) if str(i).isdigit()
+            )
+        start = int(obj.start_no or 0)
+        end = int(obj.end_no or 0)
+        used = bisect_right(self._used_numbers, end) - bisect_left(self._used_numbers, start)
+        used += sum(p.count for p in obj.paper_issuances.all())
+        return max(self._get_original_pcs(obj) - used, 0)
+
+    def get_last_used_no(self, obj):
+        """Highest number in this range already used, by a system ticket or a paper range."""
+        self.get_remaining(obj)  # ensures self._used_numbers is loaded
+        from bisect import bisect_right
+        start, end = int(obj.start_no or 0), int(obj.end_no or 0)
+        i = bisect_right(self._used_numbers, end)
+        last = self._used_numbers[i - 1] if i and self._used_numbers[i - 1] >= start else None
+        paper_last = max((p.to_no for p in obj.paper_issuances.all()), default=None)
+        return max((n for n in (last, paper_last) if n is not None), default=None)
 
     def validate(self, attrs):
+        # The column stays nullable (SET_NULL when a form is deleted, and legacy rows),
+        # but a series can't be created or edited into having no ticket form.
+        if 'ticket_form' in attrs or self.instance is None:
+            if not attrs.get('ticket_form'):
+                raise serializers.ValidationError({"ticket_form": "Ticket form is required."})
+
         # Ticket.id is the bare printed number and is the primary key across every
         # series (archived ones included), so a range that overlaps any other series
         # would later collide when those numbers are issued.
@@ -447,7 +504,7 @@ class TicketSeriesSerializer(serializers.ModelSerializer):
             'pad_no', 'box_no', 'start_no', 'end_no',
             'unit_value', 'total_value', 'requisition',
             'issued_to', 'issued_to_name', 'date_issued',
-            'beginning', 'remaining',
+            'beginning', 'remaining', 'last_used_no',
             'created_at', 'updated_at',
         ]
 

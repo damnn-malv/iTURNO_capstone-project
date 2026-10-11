@@ -8,7 +8,7 @@ from rest_framework.response import Response
 
 from ..models import Ticket, TicketPrice, Vehicle, Route, RemittanceBatch, Collection, Deposit, AuditLog, TicketSeries
 from ..serializers import TicketSerializer, RemittanceBatchSerializer, AuditLogSerializer
-from .helpers import summarize, parse_iso_datetime, record_audit_log, parse_date_start, parse_date_end, expire_stale_queue_tickets, paginate_request
+from .helpers import summarize, parse_iso_datetime, record_audit_log, parse_date_start, parse_date_end, expire_stale_queue_tickets, paginate_request, paper_numbers_by_series
 
 
 @api_view(['GET'])
@@ -117,9 +117,10 @@ def dashboard_stats(request):
     # Total physical ticket stock left across active (non-archived) requisitions —
     # same "remaining" math as TicketSeriesSerializer.get_remaining, aggregated.
     ticket_stock_remaining = 0
+    paper = paper_numbers_by_series()
     for series in TicketSeries.objects.filter(requisition__is_archived=False).annotate(issued_count=Count('tickets')):
         original = max(int(series.end_no or 0) - int(series.start_no or 0) + 1, 0)
-        ticket_stock_remaining += max(original - series.issued_count, 0)
+        ticket_stock_remaining += max(original - series.issued_count - len(paper.get(series.id, ())), 0)
 
     return Response({
         'today_total': summarize(range_dispatched, fallback_amount),

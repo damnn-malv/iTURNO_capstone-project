@@ -55,11 +55,9 @@ export default function Report() {
 
   const [requisitionData, setRequisitionData] = useState([]);
   const [requisitionMeta, setRequisitionMeta] = useState(EMPTY_PAGE_META);
-  const [requisitionArchived, setRequisitionArchived] = useState(false);
 
   const [remittanceData, setRemittanceData] = useState([]);
   const [remittanceMeta, setRemittanceMeta] = useState(EMPTY_PAGE_META);
-  const [remittanceArchived, setRemittanceArchived] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -156,7 +154,7 @@ export default function Report() {
   const fetchRequisitionRaw = useCallback(async (page = 1) => {
     const qs = buildParams();
     const res = await authFetch(
-      `/requisitions/?page=${page}&page_size=${PAGE_SIZE}&is_archived=${requisitionArchived}${qs ? `&${qs}` : ""}`,
+      `/requisitions/?page=${page}&page_size=${PAGE_SIZE}&is_archived=false${qs ? `&${qs}` : ""}`,
     );
     const data = await res.json();
     return {
@@ -165,12 +163,12 @@ export default function Report() {
       totalPages: data.total_pages || Math.max(Math.ceil((data.count || 0) / PAGE_SIZE), 1),
       page: data.page || page,
     };
-  }, [buildParams, requisitionArchived]);
+  }, [buildParams]);
 
   const fetchRemittanceRaw = useCallback(async (page = 1) => {
     const qs = buildParams();
     const res = await authFetch(
-      `/report/remittance/?page=${page}&page_size=${PAGE_SIZE}&is_archived=${remittanceArchived}${qs ? `&${qs}` : ""}`,
+      `/report/remittance/?page=${page}&page_size=${PAGE_SIZE}&is_archived=false${qs ? `&${qs}` : ""}`,
     );
     const data = await res.json();
     return {
@@ -179,7 +177,7 @@ export default function Report() {
       totalPages: data.total_pages || Math.max(Math.ceil((data.count || 0) / PAGE_SIZE), 1),
       page: data.page || page,
     };
-  }, [buildParams, remittanceArchived]);
+  }, [buildParams]);
 
   const fetchRequisitionPage = useCallback(async () => {
     try {
@@ -236,20 +234,20 @@ export default function Report() {
   const fetchRequisitionExportRows = useCallback(async () => {
     const qs = buildParams();
     const res = await authFetch(
-      `/requisitions/?is_archived=${requisitionArchived}${qs ? `&${qs}` : ""}`,
+      `/requisitions/?is_archived=false${qs ? `&${qs}` : ""}`,
     );
     const data = await res.json();
     return Array.isArray(data) ? data : data.results || [];
-  }, [buildParams, requisitionArchived]);
+  }, [buildParams]);
 
   const fetchRemittanceExportRows = useCallback(async () => {
     const qs = buildParams();
     const res = await authFetch(
-      `/report/remittance/?is_archived=${remittanceArchived}${qs ? `&${qs}` : ""}`,
+      `/report/remittance/?is_archived=false${qs ? `&${qs}` : ""}`,
     );
     const data = await res.json();
     return Array.isArray(data) ? data : data.results || [];
-  }, [buildParams, remittanceArchived]);
+  }, [buildParams]);
 
   useEffect(() => {
     setLoading(true);
@@ -259,15 +257,10 @@ export default function Report() {
     );
   }, []);
 
-  // Refetches on mount and whenever the Active/Archived requisition tab flips.
   useEffect(() => {
     fetchRequisitionPage();
-  }, [requisitionArchived]);
-
-  // Refetches on mount and whenever the Active/Archived remittance tab flips.
-  useEffect(() => {
     fetchRemittancePage();
-  }, [remittanceArchived]);
+  }, []);
 
   const handleDateChange = (field, value) => {
     setFilters((prev) => {
@@ -481,15 +474,11 @@ export default function Report() {
         onRequisitionFetchPage={fetchRequisitionRaw}
         onRequisitionFetchAll={fetchRequisitionExportRows}
         onExportRequisitionsPDF={handleExportRequisitionsPDF}
-        requisitionArchived={requisitionArchived}
-        onRequisitionArchivedChange={setRequisitionArchived}
         remittanceData={remittanceData}
         remittanceMeta={remittanceMeta}
         onRemittanceFetchPage={fetchRemittanceRaw}
         onRemittanceFetchAll={fetchRemittanceExportRows}
         onExportRemittancePDF={handleExportRemittancePDF}
-        remittanceArchived={remittanceArchived}
-        onRemittanceArchivedChange={setRemittanceArchived}
         pageSize={PAGE_SIZE}
       />
 

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useQueue } from "./useQueue";
 import Dispatch from "../dispatch/dispatch";
-import { useQrScanner, SCANNER_STATUS_LABEL } from "./useQrScanner";
 import { useScanChannel } from "../../../lib/useScanChannel";
 import { getIwpStatus, getExpiryStatus } from "../driver/driver-utils";
 import "../../../styles/Queue.css";
@@ -26,6 +25,8 @@ function Queue({ userRole }) {
     availableVehicles,
     activeDrivers,
     availableSeries,
+    allSeries,
+    setSeriesOverrideId,
     selectedSeriesId,
     setSelectedSeriesId,
     ticketQuantity,
@@ -74,7 +75,7 @@ function Queue({ userRole }) {
     }
   };
 
-  // A QR read by either the built-in scanner or the /scan camera tab selects the
+  // A QR read by the /scan camera tab selects the
   // vehicle here; the operator then checks in. The camera tab is only told about
   // a pending vehicle and a successful check-in — never errors.
   const postToCamera = useScanChannel((msg) => {
@@ -128,9 +129,6 @@ function Queue({ userRole }) {
     }
   };
 
-  const { videoRef, canvasRef, enabled, toggle, status } =
-    useQrScanner(handleScannedText);
-
   // Ticket issuance clears the selected vehicle/driver in the hook, but the
   // plate/driver search inputs are local text state here — clear them too so
   // the fields are ready for the next entry instead of showing stale text.
@@ -156,13 +154,25 @@ function Queue({ userRole }) {
           <button
             type="button"
             className="dashboard-scan-btn"
+            onClick={() => window.open("/public-view", "_blank", "noopener,noreferrer")}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              <polyline points="15 3 21 3 21 9" />
+              <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+            Public View
+          </button>
+          <button
+            type="button"
+            className="dashboard-scan-btn"
             onClick={() => window.open("/scan", "_blank", "noopener,noreferrer")}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
               <line x1="7" y1="12" x2="17" y2="12" />
             </svg>
-            Scan Camera
+            QR Camera
           </button>
         </div>
       </div>
@@ -215,31 +225,7 @@ function Queue({ userRole }) {
 
             {/* Vehicle search / select */}
             <div className="queue-field queue-vehicle-combobox">
-              <div className="queue-scanner-row">
-                <label className="queue-label">Vehicle (Plate Number)</label>
-                <span className="queue-scanner">
-                  <span
-                    className={`queue-scanner-dot queue-scanner-dot--${status}`}
-                  />
-                  <span className="queue-scanner-text">
-                    {SCANNER_STATUS_LABEL[status]}
-                  </span>
-                  <button
-                    type="button"
-                    className="queue-scanner-toggle"
-                    onClick={toggle}
-                  >
-                    {enabled ? "Turn off" : "Turn on"}
-                  </button>
-                </span>
-              </div>
-              <video
-                ref={videoRef}
-                className="queue-scanner-hidden"
-                muted
-                playsInline
-              />
-              <canvas ref={canvasRef} className="queue-scanner-hidden" />
+              <label className="queue-label">Vehicle (Plate Number)</label>
               <div className="queue-search-wrap">
                 <SearchIcon className="queue-search-icon" />
                 <input
@@ -430,6 +416,8 @@ function Queue({ userRole }) {
         {/* ── Dispatch board (queued vehicles) ── */}
         <Dispatch
           availableSeries={availableSeries}
+          allSeries={allSeries}
+          setSeriesOverrideId={setSeriesOverrideId}
           selectedSeriesId={selectedSeriesId}
           setSelectedSeriesId={setSelectedSeriesId}
           ticketQuantity={ticketQuantity}

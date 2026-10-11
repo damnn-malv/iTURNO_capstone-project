@@ -13,7 +13,7 @@ To extend either list, just add the model here — nothing else needs to
 change.
 """
 from api.models import (
-    Vehicle, Driver, Ticket, TicketSeries, Requisition,
+    Vehicle, Driver, Ticket, TicketSeries, PaperIssuance, Requisition,
     RemittanceBatch, Deposit, Collection, AuditLog, WipMode,
     User, Route, TicketPrice, TicketForm, PUVType,
 )
@@ -26,7 +26,7 @@ from api.models import (
 # them with custom logic (not a plain mirror), so it doesn't fit either list's
 # generic push/pull semantics.
 PUSH_MODELS = [
-    Vehicle, Driver, Ticket, TicketSeries, Requisition,
+    Vehicle, Driver, Ticket, TicketSeries, PaperIssuance, Requisition,
     RemittanceBatch, Deposit, Collection, AuditLog, WipMode,
 ]
 

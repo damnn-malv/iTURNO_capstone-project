@@ -64,8 +64,8 @@ export function useMobileScan() {
 
   const fetchData = useCallback(async () => {
     const [v, d, tf, s, t] = await Promise.all([
-      apiService.getVehicles(),
-      apiService.getDrivers(),
+      apiService.getVehicles({ is_archived: "false" }),
+      apiService.getDrivers({ is_archived: "false" }),
       apiService.getTicketForms(),
       apiService.request("/ticket-series/"),
       apiService.getTickets({ status: "QUEUED" }),

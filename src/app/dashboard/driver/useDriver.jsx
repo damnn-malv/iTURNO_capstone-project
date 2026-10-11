@@ -76,7 +76,7 @@ export function useDriver() {
 
   const fetchDrivers = async () => {
     try {
-      const data = await apiService.getDrivers();
+      const data = await apiService.getDrivers({ is_archived: "false" });
       setDrivers((data || []).map(normalizeDriverForm));
     } catch (err) {
       setError(err.message);
@@ -156,23 +156,23 @@ export function useDriver() {
     setSubmitAttempted(false);
   };
 
-  const handleDelete = async (id) => {
+  const handleArchive = async (id) => {
     if (isDriverOnActiveTicket(id)) {
       showToast(
-        "Cannot delete this driver — they have an active ticket. Resolve the ticket first.",
+        "Cannot archive this driver — they have an active ticket. Resolve the ticket first.",
         "info",
       );
       return;
     }
-    const confirmed = await showConfirm("Are you sure you want to remove this driver record?");
+    const confirmed = await showConfirm("Archive this driver? You can restore them from Settings → Archive.");
     if (!confirmed) return;
     try {
-      await apiService.deleteDriver(id);
+      await apiService.patch(`/drivers/${id}/`, { is_archived: true });
       fetchDrivers();
-      showToast("Driver record deleted successfully");
+      showToast("Driver archived");
     } catch (err) {
       setError(err.message);
-      showToast(err.message || "Failed to delete driver", "info");
+      showToast(err.message || "Failed to archive driver", "info");
     }
   };
 
@@ -190,6 +190,6 @@ export function useDriver() {
     handleEdit,
     handleAdd,
     closeModal,
-    handleDelete,
+    handleArchive,
   };
 }

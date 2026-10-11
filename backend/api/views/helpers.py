@@ -200,3 +200,15 @@ def summarize(ticket_list, fallback_amount=0.0):
         for t in ticket_list
     ), 2)
     return {'count': count, 'total': total}
+
+
+def paper_numbers_by_series(series_ids=None):
+    """{series_id: set of ticket numbers (as int)} reserved by paper issuances."""
+    from ..models import PaperIssuance
+    qs = PaperIssuance.objects.all()
+    if series_ids is not None:
+        qs = qs.filter(series_id__in=series_ids)
+    out = {}
+    for sid, a, b in qs.values_list('series_id', 'from_no', 'to_no'):
+        out.setdefault(sid, set()).update(range(a, b + 1))
+    return out
