@@ -317,7 +317,7 @@ class RouteSerializer(serializers.ModelSerializer):
         ]
 
     def get_full_name(self, obj):
-        return f"{obj.origin} - San Fernando"
+        return obj.origin
 
     def get_avg_loading_minutes(self, obj):
         # Recent-history reference for whoever is setting estimated_loading_minutes —
@@ -604,7 +604,7 @@ class BackfillRecordSerializer(serializers.ModelSerializer):
         model = BackfillRecord
         fields = [
             'id', 'source', 'source_display', 'created_by', 'created_by_name',
-            'ticket_count', 'reason', 'issued_at', 'csv_filename', 'has_csv', 'created_at',
+            'ticket_count', 'reason', 'issued_at', 'csv_filename', 'has_csv', 'entries', 'created_at',
         ]
 
     def get_has_csv(self, obj):

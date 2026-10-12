@@ -48,7 +48,7 @@ from .auth import (
 
 from .backfill import (
     wip_mode_config,
-    backfill_manual,
+    backfill_batch,
     backfill_preview,
     backfill_import,
     backfill_history,

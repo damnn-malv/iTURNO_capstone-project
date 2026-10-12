@@ -200,13 +200,13 @@ export default function Dashboard() {
   const [toDate, setToDate] = useState(today);
 
   const handleFromChange = (value) => {
-    if (value > today) value = today;
+    if (!value || value > today) value = today;
     setFromDate(value);
     if (value > toDate) setToDate(value);
   };
 
   const handleToChange = (value) => {
-    if (value > today) value = today;
+    if (!value || value > today) value = today;
     setToDate(value);
     if (value < fromDate) setFromDate(value);
   };
@@ -495,13 +495,8 @@ export default function Dashboard() {
                       </div>
                       <div className="dashboard-route-item-info">
                         <span className="dashboard-route-item-name">
-                          {route.full_name || route.origin}
+                          {route.origin}
                         </span>
-                        {route.origin && route.full_name && (
-                          <span className="dashboard-route-item-sub">
-                            {route.origin}
-                          </span>
-                        )}
                       </div>
                       <div className="dashboard-route-item-stats">
                         <div

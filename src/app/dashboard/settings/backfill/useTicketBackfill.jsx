@@ -1,19 +1,5 @@
 import { useEffect, useState } from "react";
 import { apiService, IS_REMOTE } from "../../../../lib/api-service";
-import {
-  F_TICKET_ID, F_PLATE, F_TICKET_TYPE, F_QUANTITY, F_ISSUED_AT, F_STAFF_EMAIL, F_MODE, F_NOTES,
-} from "./fields";
-
-const EMPTY_ROW = {
-  [F_TICKET_ID]: "",
-  [F_PLATE]: "",
-  [F_TICKET_TYPE]: "",
-  [F_QUANTITY]: "1",
-  [F_ISSUED_AT]: "",
-  [F_STAFF_EMAIL]: "",
-  [F_MODE]: "Queue",
-  [F_NOTES]: "",
-};
 
 export function useTicketBackfill() {
   const [wipMode, setWipMode] = useState(null);
@@ -21,15 +7,9 @@ export function useTicketBackfill() {
   const [togglingWip, setTogglingWip] = useState(false);
 
   const [vehicles, setVehicles] = useState([]);
-  const [ticketForms, setTicketForms] = useState([]);
+  const [ticketSeries, setTicketSeries] = useState([]);
 
-  const [manualRow, setManualRow] = useState(EMPTY_ROW);
-  const [manualPreview, setManualPreview] = useState(null);
-  const [manualBusy, setManualBusy] = useState(false);
-
-  const [csvFile, setCsvFile] = useState(null);
-  const [csvReport, setCsvReport] = useState(null);
-  const [csvBusy, setCsvBusy] = useState(false);
+  const [submitBusy, setSubmitBusy] = useState(false);
 
   // Remote has no live preview (see submitManualBackfill's comment in
   // api-service.js) — this list of queued requests + their apply status is
@@ -76,7 +56,7 @@ export function useTicketBackfill() {
     fetchRemoteRequests();
     fetchHistory();
     apiService.getVehicles({ is_archived: "false" }).then(setVehicles).catch((err) => console.error("Failed to load vehicles:", err));
-    apiService.getTicketForms().then(setTicketForms).catch((err) => console.error("Failed to load ticket forms:", err));
+    apiService.request("/ticket-series/").then((r) => setTicketSeries(Array.isArray(r) ? r : r.results || [])).catch((err) => console.error("Failed to load ticket series:", err));
   }, []);
 
   const toggleWipMode = async (nextActive) => {
@@ -90,77 +70,27 @@ export function useTicketBackfill() {
     }
   };
 
-  const updateManualField = (field, value) => {
-    setManualRow((prev) => ({ ...prev, [field]: value }));
-    setManualPreview(null);
-  };
-
-  const resetManualRow = () => {
-    setManualRow(EMPTY_ROW);
-    setManualPreview(null);
-  };
-
-  const previewManualRow = async () => {
-    setManualBusy(true);
+  // The whole batch goes in one call and is saved all-or-nothing. Returns one result
+  // per row, in order, so the caller can show which row (if any) blocked the save.
+  const submitRows = async (rows, commit) => {
+    setSubmitBusy(true);
     try {
-      const result = await apiService.submitManualBackfill(manualRow, false);
-      setManualPreview(result);
-      return result;
+      const data = await apiService.submitBackfillBatch(rows, commit);
+      // Remote only queues, so it has no per-row results.
+      const results = rows.map((row, i) => ({ row, ...(data.results?.[i] || { outcome: data.outcome }) }));
+      if (commit && data.outcome === "ok") await (IS_REMOTE ? fetchRemoteRequests() : fetchHistory());
+      return results;
+    } catch (err) {
+      return rows.map((row) => ({ row, outcome: "error", reason: err.message || "Request failed" }));
     } finally {
-      setManualBusy(false);
+      setSubmitBusy(false);
     }
-  };
-
-  const confirmManualRow = async () => {
-    setManualBusy(true);
-    try {
-      const result = await apiService.submitManualBackfill(manualRow, true);
-      if (result.outcome === "ok") {
-        resetManualRow();
-        if (IS_REMOTE) await fetchRemoteRequests();
-        else await fetchHistory();
-      }
-      return result;
-    } finally {
-      setManualBusy(false);
-    }
-  };
-
-  const previewCsv = async (importReason) => {
-    if (!csvFile) return;
-    setCsvBusy(true);
-    try {
-      const result = await apiService.previewTicketBackfill(csvFile, importReason);
-      setCsvReport(result);
-      return result;
-    } finally {
-      setCsvBusy(false);
-    }
-  };
-
-  const importCsv = async (importReason) => {
-    if (!csvFile) return;
-    setCsvBusy(true);
-    try {
-      const result = await apiService.importTicketBackfill(csvFile, importReason);
-      setCsvReport(result);
-      await fetchHistory();
-      return result;
-    } finally {
-      setCsvBusy(false);
-    }
-  };
-
-  const resetCsv = () => {
-    setCsvFile(null);
-    setCsvReport(null);
   };
 
   return {
     wipMode, wipLoading, togglingWip, toggleWipMode,
-    vehicles, ticketForms,
-    manualRow, manualPreview, manualBusy, updateManualField, resetManualRow, previewManualRow, confirmManualRow,
-    csvFile, setCsvFile, csvReport, csvBusy, previewCsv, importCsv, resetCsv,
+    vehicles, ticketSeries,
+    submitBusy, submitRows,
     remoteRequests, remoteRequestsLoading,
     history, historyLoading,
   };

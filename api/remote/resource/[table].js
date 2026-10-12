@@ -92,7 +92,10 @@ const RESOURCES = {
   tickets: {
     table: "api_ticket",
     select: TICKET_SELECT,
-    order: { column: "issued_at", ascending: false },
+    // created_at to match TicketViewSet.list; id breaks ties within a backfilled
+    // batch (shared created_at). PostgREST can't order by length(id) like the LAN
+    // side, so mixed-length ids inside one batch would sort lexicographically.
+    order: [{ column: "created_at", ascending: false }, { column: "id", ascending: false }],
     filters: ["status", "mode"],
     // Mirrors TicketViewSet.get_queryset's start_date/end_date (backend/api/views/viewsets.py:246-257),
     // which filters created_at against Philippine-time day boundaries (backend/api/views/helpers.py) —
@@ -168,8 +171,10 @@ export default async function handler(req, res) {
   try {
     let query = supabaseAdmin()
       .from(resource.table)
-      .select(resource.select, page ? { count: "exact" } : undefined)
-      .order(resource.order.column, { ascending: resource.order.ascending });
+      .select(resource.select, page ? { count: "exact" } : undefined);
+    for (const { column, ascending } of [resource.order].flat()) {
+      query = query.order(column, { ascending });
+    }
 
     for (const field of resource.filters) {
       const value = filters[field];

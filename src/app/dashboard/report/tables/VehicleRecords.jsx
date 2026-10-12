@@ -17,7 +17,7 @@ export default function VehicleRecords({
   const searched = visibleVehicles.filter((v) => {
     if (!search) return true;
     const q = search.toLowerCase();
-    const route = v.route_detail ? `${v.route_detail.origin} - San Fernando` : v.route || "";
+    const route = v.route_detail ? v.route_detail.origin : v.route || "";
     return [v.plate_number, route, v.active_driver_name]
       .some((val) => val && val.toLowerCase().includes(q));
   });
@@ -30,7 +30,7 @@ export default function VehicleRecords({
         <span className="rpt-plate">{v.plate_number}</span>
       </td>
       <td className={cellClass}>
-        {v.route_detail ? `${v.route_detail.origin} - San Fernando` : v.route}
+        {v.route_detail ? v.route_detail.origin : v.route}
       </td>
       <td className={cellClass}>
         {v.active_driver_name || <span className="rpt-na">Unassigned</span>}

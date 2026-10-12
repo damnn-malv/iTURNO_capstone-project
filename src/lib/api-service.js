@@ -72,7 +72,7 @@ const REMOTE_WRITABLE = [
   // see sync/registry.py's PUSH_MODELS) — queues a RemoteBackfillRequest row
   // instead, applied by the LAN's next sync cycle. Only accepted while
   // WipMode is active (api/remote/settings/[resource].js enforces this).
-  { prefix: "/backfill/manual/", remote: "/settings/backfill", methods: ["POST"] },
+  { prefix: "/backfill/batch/", remote: "/settings/backfill", methods: ["POST"] },
 ];
 
 // Exported for the few places that build fetch() URLs directly instead of
@@ -480,10 +480,6 @@ export const apiService = {
     return this.put(`/users/${id}/`, data);
   },
 
-  deleteUser(id) {
-    return this.delete(`/users/${id}/`);
-  },
-
   resendVerification(id) {
     return this.post(`/users/${id}/resend_verification/`);
   },
@@ -569,12 +565,13 @@ export const apiService = {
     return this.put("/settings/wip-mode/", { is_active: isActive });
   },
 
-  // Remotely (only while WIP is active — enforced server-side), this queues
-  // a RemoteBackfillRequest instead of creating the ticket outright, so
-  // `commit` is meaningless there: there's no remote preview, every call
-  // queues for real. See useTicketBackfill's IS_REMOTE branching.
-  submitManualBackfill(row, commit) {
-    return this.post("/backfill/manual/", { ...row, commit });
+  // One call for a whole screen's worth of entries (see backfill.py's run_batch):
+  // saved all-or-nothing as a single history entry. Remotely (only while WIP is
+  // active - enforced server-side) it queues ONE RemoteBackfillRequest holding
+  // every row instead, so `commit` is meaningless there: no remote preview, every
+  // call queues for real. See useTicketBackfill's IS_REMOTE branching.
+  submitBackfillBatch(rows, commit) {
+    return this.post("/backfill/batch/", { rows, commit });
   },
 
   // Remote-only: recent RemoteBackfillRequest rows and their apply status,
@@ -583,20 +580,6 @@ export const apiService = {
   // need to list them.
   getRemoteBackfillRequests() {
     return this.get("/settings/backfill");
-  },
-
-  previewTicketBackfill(file, importReason) {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("import_reason", importReason);
-    return this.post("/backfill/preview/", formData);
-  },
-
-  importTicketBackfill(file, importReason) {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("import_reason", importReason);
-    return this.post("/backfill/import/", formData);
   },
 
   getBackfillHistory() {

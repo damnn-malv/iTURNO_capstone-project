@@ -164,7 +164,7 @@ class Route(models.Model):
 
     @property
     def full_name(self):
-        return f"{self.origin} - {self.DESTINATION}"
+        return self.origin
 
     @property
     def acronym(self):
@@ -561,6 +561,8 @@ class BackfillRecord(models.Model):
     issued_at = models.DateTimeField(null=True, blank=True)
     csv_filename = models.CharField(max_length=255, blank=True, default="")
     csv_file = models.FileField(upload_to='backfill_csv/', null=True, blank=True)
+    # Every ticket this entry added: [{ticket_id, time, vehicle, driver, route, amount}].
+    entries = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:

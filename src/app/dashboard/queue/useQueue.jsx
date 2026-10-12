@@ -300,10 +300,14 @@ export function useQueue(userRole = "") {
         pcs: s.remaining ?? 0,
       }))
       .filter((s) => s.pcs > 0)
-      .sort((a, b) => (parseInt(a.start_no) || 0) - (parseInt(b.start_no) || 0));
+      .sort(
+        (a, b) =>
+          (Date.parse(a.created_at) || 0) - (Date.parse(b.created_at) || 0) ||
+          (Number(a.id) || 0) - (Number(b.id) || 0),
+      );
   }, [ticketSeries]);
 
-  // One entry per denomination; FIFO means the oldest series (lowest start_no) is issued first.
+  // One entry per denomination; FIFO means the earliest-created series is issued first.
   const denominations = useMemo(() => {
     const seen = new Set();
     return availableSeries.filter((s) => {
