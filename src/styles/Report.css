@@ -779,3 +779,45 @@
   background: var(--gold-dim);
   color: var(--gold);
 }
+/* ── Period chips (filter bar) ── */
+.rpt-filter-bar { align-items: center; justify-content: flex-start; }
+.rpt-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.rpt-chip {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.rpt-chip:hover { border-color: var(--navy); }
+.rpt-chip--active { background: var(--navy); border-color: var(--navy); color: #fff; }
+.dark .rpt-chip--active { background: var(--gold); border-color: var(--gold); color: #1a2744; }
+
+.rpt-filter-range {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.rpt-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.rpt-spinner--dark { border-color: var(--border); border-top-color: var(--navy); }
+
+/* ── Row actions (View + download) ── */
+.rpt-row-actions { display: flex; gap: 8px; align-items: center; }
+.rpt-btn--icon { padding: 8px 10px; }

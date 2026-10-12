@@ -1,13 +1,12 @@
 import React, { useState } from "react";
 import {
   DataTable, Toolbar, SearchInput, StatusBadge, IconButton, Pagination, SectionHeader, PrimaryButton, SortSelect,
-  FilterMenu, FilterGroup, FilterOption, FilterChips, UnitInput, ArchiveIcon, ArrowRightIcon,
+  FilterMenu, FilterGroup, FilterOption, FilterChips, UnitInput, ArchiveIcon,
 } from "../../../components/ui/kit";
 
 const PAGE_SIZE = 10;
 // Mirrors DEFAULT_ESTIMATED_LOADING_MINUTES on the backend (views/records.py).
 const DEFAULT_LOADING_MINUTES = 5;
-const DESTINATION = "San Fernando";
 
 const AVG_OPTIONS = [
   { value: "any", label: "Any" },
@@ -22,7 +21,6 @@ const SORTS = [
   { value: "route-desc", label: "Sort: Route Z–A" },
 ];
 
-const destinationOf = (route) => route.destination || DESTINATION;
 const effectiveDefault = (route) => route.estimated_loading_minutes ?? DEFAULT_LOADING_MINUTES;
 // Positive: recent average is slower than the configured default.
 const avgDelta = (route) => (route.avg_loading_minutes == null ? null : route.avg_loading_minutes - effectiveDefault(route));
@@ -69,11 +67,7 @@ function RoutesSection({
       key: "route",
       header: "Route",
       render: (r) => (
-        <span className="ui-route">
-          {r.origin}
-          <span className="ui-route-arrow"><ArrowRightIcon /></span>
-          {destinationOf(r)}
-        </span>
+        <span className="ui-route">{r.origin}</span>
       ),
     },
     {

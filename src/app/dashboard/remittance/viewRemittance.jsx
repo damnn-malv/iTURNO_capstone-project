@@ -1,7 +1,7 @@
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import { ButtonLabel, useFeedback } from "../../../components/ui/kit";
-import { printRemittanceReport } from "./exportRemittancePDF";
-import { apiService } from "../../../lib/api-service";
+import { downloadRemittancePDF } from "./exportRemittancePDF";
+import { useCashierName } from "./useCashierName";
 
 function formatCurrency(val) {
   return "₱" + Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -53,27 +53,29 @@ function BlankRows({ count, cols }) {
 }
 
 export default function ViewRemittance({ batch, onClose }) {
-  const reportRef = useRef(null);
   const { notify } = useFeedback();
-  const [exporting, setExporting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const cashier = useCashierName(batch?.id);
 
   if (!batch) return null;
 
-  const exportXlsx = async () => {
-    if (exporting) return;
-    setExporting(true);
+  const runExport = (setBusy, exporter) => async function run() {
+    setBusy(true);
     try {
-      await apiService.downloadRemittanceXlsx(batch.id, `Remittance_${batch.batch_code || batch.id}.xlsx`);
+      await exporter();
     } catch (err) {
       notify.error({
         title: "Couldn't export the official form",
         message: err?.message?.replace(/^Error:\s*/, "") || "Nothing was changed. Check your connection and try again.",
-        onRetry: exportXlsx,
+        onRetry: run,
       });
     } finally {
-      setExporting(false);
+      setBusy(false);
     }
   };
+  const exportPdf = runExport(setExportingPdf, async () => {
+    await downloadRemittancePDF(batch, cashier.name);
+  });
 
   const collections = (batch.collections || []).map(getCollectionFields);
   const deposits = (batch.deposits || []).map(getDepositFields);
@@ -96,27 +98,20 @@ export default function ViewRemittance({ batch, onClose }) {
             <h2 className="rem-modal-title">Report of Collections and Deposits</h2>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button className="rem-btn rem-btn--export" onClick={exportXlsx} disabled={exporting} aria-busy={exporting || undefined}>
+            <button className="rem-btn rem-btn--export" onClick={exportPdf} disabled={exportingPdf} aria-busy={exportingPdf || undefined}>
               <ButtonLabel
-                busy={exporting}
+                busy={exportingPdf}
                 busyLabel="Exporting..."
                 icon={
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
+                    <polyline points="6 9 6 2 18 2 18 9" />
+                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                    <rect x="6" y="14" width="12" height="8" />
                   </svg>
                 }
               >
-                Export Excel (.xlsx)
+                Export PDF
               </ButtonLabel>
-            </button>
-            <button className="rem-btn rem-btn--export" onClick={() => printRemittanceReport(reportRef.current, batch)}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <polyline points="6 9 6 2 18 2 18 9" />
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                <rect x="6" y="14" width="12" height="8" />
-              </svg>
-              Print / Export PDF
             </button>
             <button className="rem-modal-close" onClick={onClose} aria-label="Close">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -126,7 +121,7 @@ export default function ViewRemittance({ batch, onClose }) {
           </div>
         </div>
 
-        <div className="rem-modal-body rem-report" ref={reportRef}>
+        <div className="rem-modal-body rem-report">
           {/* Report Title */}
           <div className="rem-report-title">
             <strong>REPORT OF COLLECTIONS AND DEPOSITS</strong>
@@ -326,7 +321,7 @@ export default function ViewRemittance({ batch, onClose }) {
                 verified and acknowledge receipt of the above stated amount.
               </p>
               <div className="rem-report-sig">
-                <strong>MYLA D. ORTEGA</strong>
+                <strong>{cashier.name}</strong>
                 <span>Name and Signature Cashier/Treasurer</span>
               </div>
             </div>

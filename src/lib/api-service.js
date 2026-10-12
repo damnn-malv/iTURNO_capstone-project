@@ -492,6 +492,11 @@ export const apiService = {
     return this.get("/current-user/");
   },
 
+  // Self-service: the server only accepts name and contact number here.
+  updateCurrentUser(data) {
+    return this.patch("/current-user/", data);
+  },
+
   getDashboardStats(params = {}) {
     const qs = new URLSearchParams(params).toString();
     return this.get(`/dashboard/stats/${qs ? `?${qs}` : ""}`);
@@ -624,37 +629,38 @@ export const apiService = {
     return this.post(`/system/backups/${id}/restore/`);
   },
 
-  async downloadSystemBackup(id, filename) {
+  // Lets the user choose where the backup file goes. Must run straight from a click (before any await).
+  // Resolves to a file handle, or null when cancelled or unsupported (then the browser's normal download is used).
+  async pickBackupSaveHandle(suggestedName) {
+    if (!window.showSaveFilePicker) return null;
+    try {
+      return await window.showSaveFilePicker({
+        suggestedName,
+        types: [{ description: "Backup file", accept: { "application/json": [".json"] } }],
+      });
+    } catch (err) {
+      if (err.name === "AbortError") return null;
+      throw err;
+    }
+  },
+
+  async downloadSystemBackup(id, filename, fileHandle = null) {
     const token = sessionStorage.getItem("accessToken");
     const res = await fetch(`${API_BASE_URL}/system/backups/${id}/download/`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!res.ok) throw new Error(`Failed to download backup (HTTP ${res.status})`);
     const blob = await res.blob();
+    if (fileHandle) {
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = filename || `backup.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  },
-
-  async downloadRemittanceXlsx(id, filename) {
-    const token = sessionStorage.getItem("accessToken");
-    const endpoint = IS_REMOTE
-      ? `${API_BASE_URL}/reports/remittance-xlsx?id=${id}`
-      : `${API_BASE_URL}/remittance/${id}/export-xlsx/`;
-    const res = await fetch(endpoint, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-    if (!res.ok) throw new Error(`Failed to export remittance report (HTTP ${res.status})`);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename || "Remittance_Report.xlsx";
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -743,25 +749,11 @@ export const handleLogin = async (
       if (userRes.ok) {
         const user = await userRes.json();
         const displayName = user.first_name ? user.first_name : user.username;
-        const label = roleLabel(user.role);
-
-        // The dashboard shows a centered welcome card from this. "Last signed in" is the
-        // previous sign-in on this browser (the backend does not record last login).
-        const lastKey = `lastSignIn:${user.email || user.username}`;
-        let lastSignIn = null;
-        try {
-          lastSignIn = localStorage.getItem(lastKey);
-          localStorage.setItem(lastKey, new Date().toISOString());
-          sessionStorage.setItem("welcomeCard", JSON.stringify({ name: displayName, role: label, lastSignIn }));
-        } catch {
-          if (showToast)
-            showToast(`Welcome, ${label} ${displayName}!`, "success");
-        }
-      } else {
-        if (showToast) showToast("Welcome back!", "success");
+        if (showToast)
+          showToast(`Welcome, ${roleLabel(user.role)} ${displayName}!`, "success");
       }
     } catch {
-      if (showToast) showToast("Welcome back!", "success");
+      // greeting is optional
     }
 
     // Remote (Vercel) reuses the same dashboard as the LAN — its data hooks

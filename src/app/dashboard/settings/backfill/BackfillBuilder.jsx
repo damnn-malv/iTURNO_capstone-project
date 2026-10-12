@@ -243,7 +243,7 @@ export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, su
       ))}
 
       <div className="set-add-row">
-        <button className="set-add-btn" onClick={addSlot} disabled={usedHours.size >= HOURS.length}>+ Add another time</button>
+        <button className="tbf-plain-btn" onClick={addSlot} disabled={usedHours.size >= HOURS.length}>+ Add another time</button>
       </div>
 
       <div className="set-add-row">

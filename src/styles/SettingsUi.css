@@ -510,7 +510,6 @@
 
 /* ── Routes cells ── */
 .ui-route { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; }
-.ui-route-arrow { display: inline-flex; color: var(--ui-muted); }
 
 .ui-avg { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .ui-avg-value { font-weight: 600; white-space: nowrap; }
@@ -1021,12 +1020,7 @@
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.28);
   text-align: center;
   pointer-events: auto;
-  animation: ui-note-in 0.18s ease-out;
 }
-
-.ui-note--error { border-top: 4px solid #b42318; }
-
-@keyframes ui-note-in { from { opacity: 0; transform: translateY(6px) scale(0.97); } to { opacity: 1; transform: none; } }
 
 .ui-note-x {
   position: absolute;
@@ -1108,7 +1102,7 @@
 .ui-pstep--active .ui-pstep-mark { border-color: transparent; }
 
 @media (prefers-reduced-motion: reduce) {
-  .ui-spinner, .ui-skel, .ui-note { animation-duration: 2.5s; }
+  .ui-spinner, .ui-skel { animation-duration: 2.5s; }
   .ui-progress-fill { transition: none; }
 }
 
@@ -1128,62 +1122,3 @@
 
 .ui-busy-title { font-size: 16px; font-weight: 700; }
 .ui-busy-hint { margin-top: 2px; font-size: 13px; color: var(--ui-muted); }
-
-/* Welcome card after sign in */
-.ui-overlay--welcome {
-  z-index: 1200;
-  background: rgba(15, 23, 42, 0.45);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
-}
-
-.ui-welcome {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 440px;
-  max-width: 100%;
-  padding: 32px 32px 34px;
-  overflow: hidden;
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  border-radius: 20px;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.35);
-  text-align: center;
-  animation: ui-note-in 0.2s ease-out;
-}
-
-.ui-welcome-greeting { margin: 0; font-size: 24px; font-weight: 700; line-height: 1.2; }
-.ui-welcome-name { margin: 2px 0 12px; font-family: 'Source Serif 4', Georgia, serif; font-size: 46px; font-weight: 700; line-height: 1.1; word-break: break-word; }
-
-.ui-welcome-role {
-  padding: 5px 16px;
-  border-radius: 999px;
-  background: var(--gold-dim);
-  color: #8a5a0b;
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.dark .ui-welcome-role { color: var(--gold); }
-
-.ui-welcome-last {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 14px 18px;
-  margin-top: 24px;
-  border-radius: 12px;
-  background: var(--bg-hover);
-  font-size: 14px;
-  color: var(--ui-muted);
-  text-align: left;
-}
-
-.ui-welcome-last strong { color: var(--text-primary); }
-
-.ui-welcome-btn { width: 100%; justify-content: center; height: 54px; margin-top: 24px; font-size: 16px; }

@@ -16,6 +16,13 @@ export const statusColor = {
 export const getTicketDisplayId = (ticket) =>
   ticket?.queue_code || String(ticket?.id || "").replace(/^TICKET-/i, "");
 
+// The vehicle type's terminal price must equal ticket price x quantity, so the
+// quantity is derived rather than typed; 1 when the type has no terminal price.
+export const ticketsNeeded = (vehicle, fee) => {
+  const cap = Number(vehicle?.terminal_price || 0);
+  return cap > 0 && fee > 0 && cap % fee === 0 ? cap / fee : 1;
+};
+
 // ─── Custom Hook ──────────────────────────────────────────────────────────────
 export function useQueue(userRole = "") {
   const [tickets, setTickets] = useState([]);
@@ -34,7 +41,6 @@ export function useQueue(userRole = "") {
     () => localStorage.getItem("lastSelectedSeriesId") || ""
   );
   const [seriesOverrideId, setSeriesOverrideId] = useState("");
-  const [ticketQuantity, setTicketQuantity] = useState(1);
   const [vehicleDriverMap, setVehicleDriverMap] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("vehicleDriverMap") || "{}");
@@ -214,7 +220,7 @@ export function useQueue(userRole = "") {
       }
     }
 
-    const quantity = Math.max(1, parseInt(ticketQuantity) || 1);
+    const quantity = ticketsNeeded(vehicle, ticketFee);
 
     const series = availableSeries.find((s) => String(s.id) === String(selectedSeriesId));
     if (!series) {
@@ -226,7 +232,7 @@ export function useQueue(userRole = "") {
 
     const cap = Number(vehicle.terminal_price || 0);
     if (cap > 0 && ticketFee * quantity !== cap) {
-      return fail(`Total collection amount (₱${(ticketFee * quantity).toFixed(2)}) must match the ${vehicle.transportation_name} terminal price of ₱${cap.toFixed(2)}.`);
+      return fail(`The ${vehicle.transportation_name} terminal price of ₱${cap.toFixed(2)} isn't a multiple of this ticket form's ₱${ticketFee.toFixed(2)} — pick a different ticket form.`);
     }
 
     try {
@@ -271,7 +277,6 @@ export function useQueue(userRole = "") {
       setSelectedVehicle(null);
       setSelectedDriver(null);
       setShowDriverModal(false);
-      setTicketQuantity(1);
 
       setTimeout(() => setSuccessMessage(""), 3000);
       return { ticket: issuedTickets[0] };
@@ -358,8 +363,7 @@ export function useQueue(userRole = "") {
     setSeriesOverrideId,
     selectedSeriesId,
     setSelectedSeriesId: updateSelectedSeriesId,
-    ticketQuantity,
-    setTicketQuantity,
+    ticketQuantity: ticketsNeeded(selectedVehicle, ticketFee),
     // Actions
     fetchTickets,
     fetchTicketSeries,

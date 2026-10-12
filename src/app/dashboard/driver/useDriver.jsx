@@ -1,25 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiService } from "../../../lib/api-service";
 import { useConfirm, useToast } from "../../../components/ui/ToastConfirmContext";
-import { buildDriverPayload, normalizeDriverForm } from "./driver-utils";
-
-const REQUIRED_FIELD_MESSAGES = {
-  first_name: "First name is required.",
-  last_name: "Last name is required.",
-  iwp_number: "IWP number is required to generate a QR code.",
-  contact: "Contact number is required.",
-};
-
-const validateDriverForm = (form) => {
-  const errors = {};
-  for (const [key, message] of Object.entries(REQUIRED_FIELD_MESSAGES)) {
-    if (!form[key]?.toString().trim()) errors[key] = message;
-  }
-  if (!errors.iwp_number && !/^\d{12}$/.test(form.iwp_number.toString().trim())) {
-    errors.iwp_number = "IWP number must be exactly 12 digits.";
-  }
-  return errors;
-};
+import { buildDriverPayload, normalizeDriverForm, validateDriverForm } from "./driver-utils";
 
 const EMPTY_FORM = {
   first_name: "",

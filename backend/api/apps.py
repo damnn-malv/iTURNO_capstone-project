@@ -8,3 +8,5 @@ class ApiConfig(AppConfig):
         from api.ws import signals  # noqa: F401
         from api.sync import signals as sync_signals
         sync_signals.connect()
+        from api import auto_backup
+        auto_backup.start()

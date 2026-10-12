@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { apiService } from "../../../lib/api-service";
 import { ButtonLabel, useFeedback } from "../../../components/ui/kit";
+import CashierNameInput from "./CashierNameInput";
+import { useCashierName } from "./useCashierName";
+import { downloadRemittancePDF } from "./exportRemittancePDF";
 
 function formatCurrency(val) {
   return "₱" + Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -186,6 +189,7 @@ const CreateBatchForm = ({ targetDate, onSaved }) => {
   );
 
   const [certified, setCertified] = useState(false);
+  const cashier = useCashierName();
   const amountsMismatch = totalRemittances !== totalCollections;
   const nothingToRemit = totalRemittances <= 0;
   const saveBlocked = amountsMismatch || nothingToRemit || !certified;
@@ -203,8 +207,10 @@ const CreateBatchForm = ({ targetDate, onSaved }) => {
       ticket_ids: todayTickets.map((t) => t.id),
     };
     setSaving(true);
+    let cashierName = "";
     try {
       await apiService.post("/report/remittance/", payload);
+      cashierName = cashier.save(batchId);
     } catch (err) {
       console.error("Failed to save batch", err);
       notify.error({ title: "Couldn't save batch", message: err?.message?.replace(/^Error:\s*/, "") || "Nothing was changed. Check your connection and try again.", onRetry: handleSave });
@@ -213,7 +219,19 @@ const CreateBatchForm = ({ targetDate, onSaved }) => {
     }
     window.dispatchEvent(new Event("remittance-batch-saved"));
     onSaved();
-    notify.success({ title: "Remittance batch saved", message: `${batchId} was recorded.` });
+
+    // The batch is already recorded, so a failed download is only a warning —
+    // the PDF can still be exported from the batch's view screen.
+    try {
+      await downloadRemittancePDF(
+        { id: batchId, batch_code: batchId, issued_by_name: accountableOfficer, issued_at: new Date().toISOString(), collections, deposits },
+        cashierName,
+      );
+      notify.success({ title: "Remittance batch saved", message: `${batchId} was recorded and its PDF downloaded.` });
+    } catch (err) {
+      console.error("Failed to download remittance PDF", err);
+      notify.success({ title: "Remittance batch saved", message: `${batchId} was recorded, but its PDF couldn't be downloaded. Export it from the batch view.` });
+    }
   };
 
   return (
@@ -385,6 +403,9 @@ const CreateBatchForm = ({ targetDate, onSaved }) => {
             <div className="rem-info-grid" style={{ gridTemplateColumns: "1fr" }}>
               <Field label="Prepared By">
                 <input type="text" className="rem-input" value={accountableOfficer} disabled />
+              </Field>
+              <Field label="Cashier / Treasurer">
+                <CashierNameInput {...cashier} disabled={saving} className="rem-input" />
               </Field>
             </div>
           </div>

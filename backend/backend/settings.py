@@ -153,6 +153,10 @@ DATABASES = {
 SYNC_INTERVAL_SECONDS = int(os.getenv('SYNC_INTERVAL_SECONDS', '10'))
 SYNC_BATCH_SIZE = int(os.getenv('SYNC_BATCH_SIZE', '200'))
 
+# Scheduled backups saved to media/backups (set AUTO_BACKUP_KEEP=0 to disable)
+AUTO_BACKUP_INTERVAL_HOURS = int(os.getenv('AUTO_BACKUP_INTERVAL_HOURS', '24'))
+AUTO_BACKUP_KEEP = int(os.getenv('AUTO_BACKUP_KEEP', '7'))
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators

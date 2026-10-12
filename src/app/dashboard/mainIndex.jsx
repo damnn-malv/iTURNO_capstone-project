@@ -21,8 +21,8 @@ import {
 import { apiService } from "../../lib/api-service";
 import { useConfirm } from "../../components/ui/ToastConfirmContext";
 import { BusyOverlay, FeedbackProvider } from "../../components/ui/kit";
-import WelcomeCard from "../../components/ui/WelcomeCard";
 import ForcePasswordChange from "../../components/auth/ForcePasswordChange";
+import ProfileModal from "../../components/auth/ProfileModal";
 import GlobalNotices from "../../components/notices/GlobalNotices";
 import "./../../styles/mainIndex.css";
 import sfcLogo from "../../pictures/sfc-nobg-logo.png";
@@ -93,11 +93,7 @@ function mainIndex() {
   );
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  // Set by the login flow; shown once, then cleared so a refresh does not show it again.
-  const [welcome, setWelcome] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem("welcomeCard")); } catch { return null; }
-  });
-  useEffect(() => { sessionStorage.removeItem("welcomeCard"); }, []);
+  const [profileOpen, setProfileOpen] = useState(false);
   const showConfirm = useConfirm();
   const location = useLocation();
 
@@ -163,8 +159,14 @@ function mainIndex() {
   return (
     <FeedbackProvider>
     <div className="shell">
-      {welcome && <WelcomeCard {...welcome} onClose={() => setWelcome(null)} />}
       <BusyOverlay open={signingOut} title="Signing out..." />
+      {profileOpen && (
+        <ProfileModal
+          user={currentUser}
+          onSaved={(updated) => setCurrentUser((prev) => ({ ...prev, ...updated }))}
+          onClose={() => setProfileOpen(false)}
+        />
+      )}
       <header className="mobile-header">
         <button
           type="button"
@@ -205,10 +207,15 @@ function mainIndex() {
         </div>
         {/* User footer */}
         <div className="header-user">
-          <div className="header-user-info">
+          <button
+            type="button"
+            className="header-user-info"
+            onClick={() => setProfileOpen(true)}
+            title="Edit my profile"
+          >
             <div className="header-user-name">{userName}</div>
             <div className="header-user-role">{userRoleLabel}</div>
-          </div>
+          </button>
 
           {/* Theme toggle */}
           <button

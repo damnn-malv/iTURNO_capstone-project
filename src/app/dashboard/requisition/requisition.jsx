@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useRequisition } from "./useRequisition";
 import RequisitionFormModal from "./RequisitionFormModal";
 import PaperRangeModal from "./PaperRangeModal";
@@ -16,6 +16,23 @@ function formatDate(val) {
   return isNaN(d) ? "—" : d.toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" });
 }
 
+const fmt = (n) => Number(n || 0).toLocaleString();
+const count = (n, word) => `${fmt(n)} ${word}${n === 1 ? "" : "s"}`;
+
+// Does this series contain the ticket number being searched for?
+function seriesHasTicket(ts, query) {
+  const n = Number(query);
+  return Number.isFinite(n) && n >= Number(ts.start_no) && n <= Number(ts.end_no);
+}
+
+function Chevron({ open }) {
+  return (
+    <svg className={`rq-chevron ${open ? "rq-chevron--open" : ""}`} width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path d="M3 4.5l3 3 3-3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function Requisition() {
   const {
     ticketForms,
@@ -29,7 +46,6 @@ function Requisition() {
     removeSeriesItem,
     computeTotal,
     handleSave,
-    allSeries,
     inventory,
     approvedBy,
     setApprovedBy,
@@ -38,32 +54,33 @@ function Requisition() {
 
   const [expandedDenom, setExpandedDenom] = useState(null);
   const [paperSeries, setPaperSeries] = useState(null);
+  const [search, setSearch] = useState("");
 
-  const toggleDenom = (denom) =>
-    setExpandedDenom((prev) => (prev === denom ? null : denom));
+  const query = search.replace(/[,\s]/g, "");
 
-  const denomOptions = Object.keys(inventory.byDenomination);
+  // Series with stock left, grouped by denomination. A ticket-number search keeps only the series containing it.
+  const groups = useMemo(
+    () =>
+      Object.entries(inventory.byDenomination)
+        .map(([denom, d]) => {
+          const inStock = d.series.filter((ts) => ts.remaining > 0);
+          return { denom, ...d, seriesCount: inStock.length, shown: query ? inStock.filter((ts) => seriesHasTicket(ts, query)) : inStock };
+        })
+        .filter((g) => (query ? g.shown.length > 0 : g.series.length > 0)),
+    [inventory, query]
+  );
+
+  const toggleDenom = (denom) => setExpandedDenom((prev) => (prev === denom ? null : denom));
 
   return (
     <div className="req-page">
-      {/* Header */}
       <div className="req-header">
-        <div className="req-header-left">
-          <div>
-            <h1 className="req-title">Requisition & Issue Voucher</h1>
-            
-          </div>
-        </div>
-        <button
-          type="button"
-          className="req-new-btn"
-          onClick={() => setShowForm(true)}
-        >
-          + New Requisition
+        <h1 className="req-title">Ticket Requisition</h1>
+        <button type="button" className="req-new-btn" onClick={() => setShowForm(true)}>
+          + New requisition
         </button>
       </div>
 
-      {/* Modal */}
       <RequisitionFormModal
         showForm={showForm}
         setShowForm={setShowForm}
@@ -83,135 +100,111 @@ function Requisition() {
         <PaperRangeModal series={paperSeries} onClose={() => setPaperSeries(null)} onSaved={refresh} />
       )}
 
-      {/* First load: skeleton rows instead of a blank table */}
-      {loading ? (
-        <div className="req-table-wrap" aria-busy="true">
-          <div className="req-report-section-header">
-            <h3 className="req-report-section-label">COLLECTIONS & DEPOSITS</h3>
-          </div>
-          <table className="req-table">
-            <thead>
-              <tr>
-                <th>Den.</th>
-                <th className="text-right">Quantity</th>
-                <th className="text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody aria-hidden="true">
-              {[0, 1, 2, 3].map((r) => (
-                <tr key={r}>
-                  <td><span className="ui-skel" style={{ width: ["46%", "34%", "52%", "40%"][r] }} /></td>
-                  <td className="text-right"><span className="ui-skel" style={{ width: "40%", marginLeft: "auto" }} /></td>
-                  <td className="text-right"><span className="ui-skel" style={{ width: "50%", marginLeft: "auto" }} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="rq-card" aria-busy={loading}>
+        <div className="rq-card-head">
+          <h3 className="rq-card-title">COLLECTIONS & DEPOSITS</h3>
+          <input
+            type="search"
+            className="rq-search"
+            placeholder="Find a ticket number"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Find a ticket number"
+          />
         </div>
-      ) : (
-        <>
-          {/* Collections & Deposits by Denomination */}
-          <div className="req-table-wrap">
-            <div className="req-report-section-header">
-              <h3 className="req-report-section-label">COLLECTIONS & DEPOSITS</h3>
-            </div>
-            <table className="req-table">
-              <thead>
-                <tr>
-                  <th>Den.</th>
-                  <th className="text-right">Quantity</th>
-                  <th className="text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {denomOptions.length > 0 ? (
-                  denomOptions.map((denom) => {
-                    const d = inventory.byDenomination[denom];
-                    const isExpanded = expandedDenom === denom;
-                    return (
-                      <React.Fragment key={denom}>
-                        <tr
-                          onClick={() => toggleDenom(denom)}
-                          className={`req-row--clickable ${isExpanded ? "req-row--active" : ""}`}
-                        >
-                          <td>
-                            <span className={`req-expand-icon ${isExpanded ? "req-expand-icon--open" : ""}`}>&#9654;</span>
-                            {denom}
-                            <span className="req-expand-hint">{isExpanded ? "Hide series" : "View series"}</span>
-                          </td>
-                          <td className="text-right">{d.totalQty.toLocaleString()}</td>
-                          <td className="text-right">{formatCurrency(d.totalValue)}</td>
-                        </tr>
-                        {isExpanded && d.series.length > 0 && (
-                          <tr className="req-series-row">
-                            <td colSpan={3}>
-                              <table className="req-series-table">
-                                <thead>
-                                  <tr>
-                                    <th>Series No.</th>
-                                    <th>Date Created</th>
-                                    <th className="text-right">Beginning</th>
-                                    <th className="text-right">Remaining</th>
-                                    <th className="text-right">Amount</th>
-                                    {!IS_REMOTE && <th className="text-right">Action</th>}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {d.series.filter((ts) => ts.remaining > 0).map((ts) => (
-                                      <tr key={ts.id}>
-                                        <td>
-                                          {ts.series_no || "—"}{" "}
-                                          <span style={{ color: "var(--text-secondary)" }}>
-                                            ({ts.last_used_no != null ? `ended ${ts.last_used_no}` : "none used"})
-                                          </span>
-                                        </td>
-                                        <td>{formatDate(ts.created_at)}</td>
-                                        <td className="text-right">{(ts.beginning ?? ts.pcs ?? 0).toLocaleString()}</td>
-                                        <td className="text-right">{(ts.remaining ?? ts.pcs ?? 0).toLocaleString()}</td>
-                                        <td className="text-right">{formatCurrency(ts.current_value)}</td>
-                                        {!IS_REMOTE && (
-                                          <td className="text-right">
-                                            <button type="button" className="req-new-btn" style={{ padding: "3px 10px", fontSize: 11 }}
-                                              onClick={() => setPaperSeries(ts)}>
-                                              Paper range
-                                            </button>
-                                          </td>
-                                        )}
-                                      </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={3} style={{ textAlign: "center", color: "var(--text-secondary)", padding: "30px 16px" }}>
-                      No ticket stock — click "+ New Requisition" to add stock
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              {denomOptions.length > 0 && (
-                <tfoot>
-                  <tr className="req-table-footer">
-                    <td><strong>TOTAL</strong></td>
-                    <td className="text-right">
-                      <strong>{inventory.totalStock.toLocaleString()}</strong>
-                    </td>
-                    <td className="text-right">
-                      <strong>{formatCurrency(inventory.totalValue)}</strong>
-                    </td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+
+        <div className="rq-cols rq-cols--denom rq-head">
+          <span>Denomination</span>
+          <span className="rq-num">Quantity</span>
+          <span className="rq-num">Amount</span>
+        </div>
+
+        {loading ? (
+          <div aria-hidden="true">
+            {[0, 1, 2].map((r) => (
+              <div key={r} className="rq-cols rq-cols--denom rq-denom">
+                <span className="ui-skel" style={{ width: ["46%", "34%", "52%"][r] }} />
+                <span className="ui-skel" style={{ width: "40%", marginLeft: "auto" }} />
+                <span className="ui-skel" style={{ width: "50%", marginLeft: "auto" }} />
+              </div>
+            ))}
           </div>
-        </>
-      )}
+        ) : groups.length === 0 ? (
+          <p className="rq-empty">
+            {query ? `No series contains ticket ${search.trim()}` : 'No ticket stock — click "+ New requisition" to add stock'}
+          </p>
+        ) : (
+          groups.map((g) => {
+            const open = !!query || expandedDenom === g.denom;
+            return (
+              <div key={g.denom}>
+                <button
+                  type="button"
+                  className={`rq-cols rq-cols--denom rq-denom ${open ? "rq-denom--open" : ""}`}
+                  onClick={() => toggleDenom(g.denom)}
+                  aria-expanded={open}
+                >
+                  <span className="rq-denom-name">
+                    <Chevron open={open} />
+                    <span>
+                      <strong>{g.denom}</strong>
+                      <small>{g.seriesCount} series</small>
+                    </span>
+                  </span>
+                  <span className="rq-num">{fmt(g.totalQty)}</span>
+                  <span className="rq-num">{formatCurrency(g.totalValue)}</span>
+                </button>
+
+                {open && (
+                  <div className="rq-series">
+                    <div className="rq-cols rq-cols--series rq-series-head">
+                      <span>Series range</span>
+                      <span>Received</span>
+                      <span>Last issued no.</span>
+                      <span>Remaining</span>
+                      <span className="rq-num">Amount</span>
+                    </div>
+                    {g.shown.map((ts) => {
+                      const total = ts.pcs || ts.remaining;
+                      const pct = total > 0 ? Math.min(100, (ts.remaining / total) * 100) : 0;
+                      return (
+                        <div key={ts.id} className="rq-cols rq-cols--series rq-series-row">
+                          <span>
+                            <span className="rq-mono">{fmt(ts.start_no)} - {fmt(ts.end_no)}</span>
+                            <small>{count(ts.pcs, "ticket")}</small>
+                          </span>
+                          <span>{formatDate(ts.created_at)}</span>
+                          <span className="rq-mono">{ts.last_used_no != null ? fmt(ts.last_used_no) : "None yet"}</span>
+                          <span>
+                            <span className="rq-remaining"><strong>{fmt(ts.remaining)}</strong> of {fmt(total)}</span>
+                            <span className="rq-bar"><span style={{ width: `${pct}%` }} /></span>
+                          </span>
+                          <span className="rq-num">
+                            {formatCurrency(ts.current_value)}
+                            {!IS_REMOTE && (
+                              <button type="button" className="rq-link" onClick={() => setPaperSeries(ts)}>
+                                Paper range
+                              </button>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+
+        {!loading && groups.length > 0 && (
+          <div className="rq-cols rq-cols--denom rq-total">
+            <span>TOTAL ON HAND</span>
+            <span className="rq-num">{fmt(inventory.totalStock)}</span>
+            <span className="rq-num">{formatCurrency(inventory.totalValue)}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

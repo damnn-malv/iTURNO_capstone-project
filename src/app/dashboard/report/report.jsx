@@ -3,7 +3,9 @@ import { DataTable } from "../../../components/ui/dataTable";
 import {
   STATUS_COLORS,
   getToday,
-  getYearStart,
+  PERIODS,
+  getPeriodRange,
+  formatRangeLabel,
   matchesQueueRow,
   matchesRoamingRow,
   matchesRequisitionRow,
@@ -16,6 +18,7 @@ import { exportTablePDF } from "./exportPDF";
 
 import QueueLog from "./tables/QueueLog";
 import AuditTrail from "./tables/AuditTrail";
+import BackfillHistory from "./tables/BackfillHistory";
 import RequisitionRemittance from "./tables/RequisitionRemittance";
 import { IS_REMOTE, authFetch } from "../../../lib/api-service";
 import "../../../styles/Report.css";
@@ -40,10 +43,8 @@ const mapTicketToLogRow = (t) => ({
 });
 
 export default function Report() {
-  const [filters, setFilters] = useState({
-    startDate: getYearStart(),
-    endDate: getToday(),
-  });
+  const [period, setPeriod] = useState("month");
+  const [filters, setFilters] = useState(() => getPeriodRange("month"));
   const [queueData, setQueueData] = useState([]);
   const [queueMeta, setQueueMeta] = useState(EMPTY_PAGE_META);
 
@@ -249,18 +250,25 @@ export default function Report() {
     return Array.isArray(data) ? data : data.results || [];
   }, [buildParams]);
 
+  // Filters apply live: any change to the date range refetches every table.
   useEffect(() => {
     setLoading(true);
     setError("");
-    Promise.all([fetchQueuePage(), fetchRoamingPage(), fetchAuditPage()]).finally(() =>
-      setLoading(false),
-    );
-  }, []);
+    Promise.all([
+      fetchQueuePage(),
+      fetchRoamingPage(),
+      fetchAuditPage(),
+      fetchRequisitionPage(),
+      fetchRemittancePage(),
+    ]).finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.startDate, filters.endDate]);
 
-  useEffect(() => {
-    fetchRequisitionPage();
-    fetchRemittancePage();
-  }, []);
+  const handlePeriodChange = (key) => {
+    setPeriod(key);
+    const range = getPeriodRange(key);
+    if (range) setFilters(range);
+  };
 
   const handleDateChange = (field, value) => {
     setFilters((prev) => {
@@ -273,22 +281,7 @@ export default function Report() {
     });
   };
 
-  const refetchFiltered = () => {
-    setLoading(true);
-    setError("");
-    Promise.all([
-      fetchQueuePage(),
-      fetchRoamingPage(),
-      fetchAuditPage(),
-      fetchRequisitionPage(),
-      fetchRemittancePage(),
-    ]).finally(() => setLoading(false));
-  };
-
-  const handleClearFilter = () => {
-    setFilters({ startDate: getYearStart(), endDate: getToday() });
-    setTimeout(refetchFiltered, 0);
-  };
+  const handleClearFilter = () => handlePeriodChange("month");
 
   const buildRequisitionExportRow = (r) => ({
     "Date Requested": r.date_requested ? r.date_requested.slice(0, 10) : "—",
@@ -394,60 +387,45 @@ export default function Report() {
 
       {/* Filter Bar */}
       <div className="rpt-filter-bar">
-        <div className="rpt-filter-fields">
-          <div className="rpt-filter-field">
-            <label className="rpt-label">Start Date</label>
+        <span className="rpt-label">Period</span>
+        <div className="rpt-chips">
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              className={`rpt-chip${period === p.key ? " rpt-chip--active" : ""}`}
+              onClick={() => handlePeriodChange(p.key)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {period === "custom" && (
+          <div className="rpt-filter-fields">
             <input
               type="date"
               className="rpt-date-input"
+              aria-label="Start date"
               value={filters.startDate}
               max={getToday()}
               onChange={(e) => handleDateChange("startDate", e.target.value)}
             />
-          </div>
-          <div className="rpt-filter-field">
-            <label className="rpt-label">End Date</label>
             <input
               type="date"
               className="rpt-date-input"
+              aria-label="End date"
               value={filters.endDate}
               min={filters.startDate || undefined}
               max={getToday()}
               onChange={(e) => handleDateChange("endDate", e.target.value)}
             />
           </div>
-        </div>
-        <div className="rpt-filter-actions">
-          <button
-            className="rpt-btn rpt-btn--primary"
-            onClick={refetchFiltered}
-            disabled={loading}
-          >
-            {loading ? (
-              <>
-                <span className="rpt-spinner" /> Loading…
-              </>
-            ) : (
-              <>
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                >
-                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                </svg>
-                Apply Filter
-              </>
-            )}
-          </button>
-          <button
-            className="rpt-btn rpt-btn--secondary"
-            onClick={handleClearFilter}
-          >
-            Clear
+        )}
+        <div className="rpt-filter-range">
+          {loading && <span className="rpt-spinner rpt-spinner--dark" />}
+          <span>{formatRangeLabel(filters.startDate, filters.endDate)}</span>
+          <button type="button" className="rpt-link-btn" onClick={handleClearFilter}>
+            Reset
           </button>
         </div>
       </div>
@@ -489,6 +467,8 @@ export default function Report() {
         onExportPDF={handleExportAuditPDF}
         pageSize={PAGE_SIZE}
       />
+
+      <BackfillHistory />
     </div>
   );
 }

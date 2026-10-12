@@ -12,7 +12,11 @@ const EMPTY_SERIES = {
 };
 
 const FALLBACK_ERROR = "Nothing was changed. Check your connection and try again.";
-const errorMessage = (err) => err?.message?.replace(/^Error:\s*/, "") || FALLBACK_ERROR;
+// Server field errors read "Series No: ticket series with this series no already exists." — spell it out and drop the field prefix.
+const errorMessage = (err) => {
+  const msg = err?.message?.replace(/^Error:\s*/, "").replace(/^Series No:\s*/i, "").replace(/\bseries no\b/gi, "series number");
+  return msg ? msg.charAt(0).toUpperCase() + msg.slice(1) : FALLBACK_ERROR;
+};
 
 export function useRequisition() {
   const { notify, report, confirmAction } = useFeedback();
@@ -146,9 +150,18 @@ export function useRequisition() {
 
   // Add: no confirmation. The Save button shows "Saving..." and the form stays locked until the server answers.
   const handleSave = async () => {
-    const filled = seriesItems.filter((item) => item.start_no || item.end_no);
+    // Untouched blank rows are ignored; any row the user started (form, start or end) must be complete.
+    const filled = seriesItems.filter((item) => item.ticket_form || item.start_no || item.end_no);
+    if (filled.length === 0) {
+      notify.error({ title: "Nothing to save", message: "Add at least one ticket series with a start and end number." });
+      return;
+    }
     if (filled.some((item) => !item.ticket_form)) {
       notify.error({ title: "Select a ticket form", message: "Choose a ticket form for every series item." });
+      return;
+    }
+    if (filled.some((item) => !String(item.start_no).trim() || !String(item.end_no).trim())) {
+      notify.error({ title: "Missing series numbers", message: "Enter both a start and end number for every series item." });
       return;
     }
     setSaving(true);
@@ -164,21 +177,28 @@ export function useRequisition() {
         }),
       });
 
-      for (const item of filled) {
-        await apiService.request("/ticket-series/", {
-          method: "POST",
-          body: JSON.stringify({
-            series_no: `${item.start_no}-${item.end_no}`,
-            ticket_form: item.ticket_form,
-            pad_no: item.pad_no || "",
-            box_no: item.box_no || "",
-            start_no: item.start_no,
-            end_no: item.end_no,
-            unit_value: 0,
-            total_value: parseFloat(item.total_value) || 0,
-            requisition: reqData.id,
-          }),
-        });
+      try {
+        for (const item of filled) {
+          await apiService.request("/ticket-series/", {
+            method: "POST",
+            body: JSON.stringify({
+              series_no: `${item.start_no}-${item.end_no}`,
+              ticket_form: item.ticket_form,
+              pad_no: item.pad_no || "",
+              box_no: item.box_no || "",
+              start_no: item.start_no,
+              end_no: item.end_no,
+              unit_value: 0,
+              total_value: parseFloat(item.total_value) || 0,
+              requisition: reqData.id,
+            }),
+          });
+        }
+      } catch (seriesErr) {
+        // Don't leave an empty requisition behind, and show whatever did get saved.
+        await apiService.request(`/requisitions/${reqData.id}/`, { method: "DELETE" }).catch(() => {});
+        await fetchRequisitions();
+        throw seriesErr;
       }
 
       setSeriesItems([{ ...EMPTY_SERIES }]);

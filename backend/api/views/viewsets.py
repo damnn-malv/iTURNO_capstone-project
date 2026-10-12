@@ -16,8 +16,8 @@ from rest_framework.permissions import IsAuthenticated, BasePermission, SAFE_MET
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, RemittanceBatch, TicketForm, Requisition, TicketSeries, PaperIssuance, RoamingLog, WipMode
-from ..serializers import UserSerializer, DriverSerializer, VehicleSerializer, RouteSerializer, TicketSerializer, TicketPriceSerializer, PUVTypeSerializer, RemittanceBatchSerializer, TicketFormSerializer, RequisitionSerializer, TicketSeriesSerializer, PaperIssuanceSerializer, RoamingLogSerializer
+from ..models import LOCAL_ADMIN_PK_BASE, User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, RemittanceBatch, TicketForm, Requisition, TicketSeries, PaperIssuance, RoamingLog, WipMode
+from ..serializers import UserSerializer, SelfProfileSerializer, DriverSerializer, VehicleSerializer, RouteSerializer, TicketSerializer, TicketPriceSerializer, PUVTypeSerializer, RemittanceBatchSerializer, TicketFormSerializer, RequisitionSerializer, TicketSeriesSerializer, PaperIssuanceSerializer, RoamingLogSerializer
 from ..sms import send_sms_async, queue_next_message
 from ..tokens import sign_email_verification_token
 from .helpers import record_audit_log, expire_stale_queue_tickets, expire_stale_unverified_accounts, supabase_reachable, paper_numbers_by_series, parse_date_start, parse_date_end, paginate_request, promote_queue_front
@@ -97,6 +97,19 @@ class CurrentUserView(APIView):
     def get(self, request):
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
+
+    def patch(self, request):
+        # Same rule as UserViewSet: User is Supabase-authoritative, so an edit made
+        # offline would be wiped by the next pull. Local-only admins never lived there.
+        user = request.user
+        if user.pk < LOCAL_ADMIN_PK_BASE:
+            if not supabase_reachable():
+                raise ServiceUnavailable('Your profile can only be changed while online. Reconnect to the internet and try again.')
+            user = User.objects.using('supabase').get(pk=user.pk)
+        serializer = SelfProfileSerializer(user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(UserSerializer(user).data)
 
 
 class UserViewSet(AuditLogMixin, viewsets.ModelViewSet):

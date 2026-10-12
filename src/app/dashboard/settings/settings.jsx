@@ -435,11 +435,20 @@ function SettingsPage() {
   // the step dialog. `onStage` is called once the server call has finished and only the refresh is left.
   const createBackupOutcome = async (onStage) => {
     try {
-      await apiService.createSystemBackup(newBackupLabel.trim());
+      // The picker needs the click's user gesture, so it opens before the slow server call.
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "_");
+      const handle = await apiService.pickBackupSaveHandle(`backup_${stamp}.json`).catch(() => null);
+      const record = await apiService.createSystemBackup(newBackupLabel.trim());
       onStage?.();
       setNewBackupLabel("");
       await refreshBackups();
-      return { success: { title: "Backup created", message: "Ready to download." } };
+      try {
+        await apiService.downloadSystemBackup(record.id, record.filename, handle);
+      } catch (err) {
+        console.error("Backup created but download failed:", err);
+        return { success: { title: "Backup created", message: "The download failed; use Download in the list." } };
+      }
+      return { success: { title: "Backup created", message: "A copy was downloaded." } };
     } catch (err) {
       console.error("Failed to create backup:", err);
       return { error: { title: "Couldn't create backup", message: errorMessage(err) } };

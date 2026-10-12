@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useQueue } from "./useQueue";
 import Dispatch from "../dispatch/dispatch";
+import SeriesPicker from "./SeriesPicker";
 import { useScanChannel } from "../../../lib/useScanChannel";
 import { getIwpStatus, getExpiryStatus } from "../driver/driver-utils";
 import "../../../styles/Queue.css";
@@ -30,7 +31,6 @@ function Queue({ userRole }) {
     selectedSeriesId,
     setSelectedSeriesId,
     ticketQuantity,
-    setTicketQuantity,
     selectVehicleById,
     handleDriverChange,
     handleIssueTicket,
@@ -140,88 +140,10 @@ function Queue({ userRole }) {
   }, [successMessage]);
 
 
-  return (
-    <div className="queue-page">
-      {/* ── Page Header ── */}
-      <div className="queue-header">
-        <div className="queue-header-left">
-          <div>
-            <h1 className="queue-title">Queue Management</h1>
-          </div>
-        </div>
-        <div className="queue-header-right">
-          <button
-            type="button"
-            className="dashboard-scan-btn"
-            onClick={() => window.open("/public-view", "_blank", "noopener,noreferrer")}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
-            Public View
-          </button>
-          <button
-            type="button"
-            className="dashboard-scan-btn"
-            onClick={() => window.open("/scan", "_blank", "noopener,noreferrer")}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
-              <line x1="7" y1="12" x2="17" y2="12" />
-            </svg>
-            QR Camera
-          </button>
-        </div>
-      </div>
+  const unavailable = (status) => vehicles.filter((v) => v.status === status).length;
 
-      {/* ── Single Column Layout ── */}
-      <div className="queue-single-col">
-        {/* Issue New Ticket Card */}
-        <div className="queue-card">
-
-
-          <div className="queue-card-body">
-            {/* Issuance type radio group */}
-            <div className="queue-field">
-              <label className="queue-label">Issuance Type</label>
-              <div className="queue-type-toggle" role="radiogroup" aria-label="Issuance Type">
-                <label
-                  className={`queue-type-option ${issuanceType === "QUEUE" ? "queue-type-option--active" : ""}`}
-                >
-                  <input
-                    type="radio"
-                    name="issuanceType"
-                    value="QUEUE"
-                    checked={issuanceType === "QUEUE"}
-                    onChange={(e) => setIssuanceType(e.target.value)}
-                  />
-                  
-                  <span className="queue-type-option-text">
-                    <span className="queue-type-option-title">Queue</span>
-                    <span className="queue-type-option-desc">Check in vehicle</span>
-                  </span>
-                </label>
-                <label
-                  className={`queue-type-option ${issuanceType === "ROAM" ? "queue-type-option--active" : ""}`}
-                >
-                  <input
-                    type="radio"
-                    name="issuanceType"
-                    value="ROAM"
-                    checked={issuanceType === "ROAM"}
-                    onChange={(e) => setIssuanceType(e.target.value)}
-                  />
-                  
-                  <span className="queue-type-option-text">
-                    <span className="queue-type-option-title">Roaming</span>
-                    <span className="queue-type-option-desc">Issue ticket now</span>
-                  </span>
-                </label>
-              </div>
-            </div>
-
+  const issueForm = (
+    <>
             {/* Vehicle search / select */}
             <div className="queue-field queue-vehicle-combobox">
               <label className="queue-label">Vehicle (Plate Number)</label>
@@ -264,8 +186,8 @@ function Queue({ userRole }) {
               )}
               {vehicles.length > availableVehicles.length && (
                 <p className="queue-field-hint">
-                  {vehicles.length - availableVehicles.length} vehicle(s)
-                  excluded (Maintenance / Has Active Ticket).
+                  {vehicles.length - availableVehicles.length} not available —{" "}
+                  {unavailable("QUEUED")} already in line, {unavailable("MAINTENANCE")} in maintenance.
                 </p>
               )}
             </div>
@@ -400,16 +322,97 @@ function Queue({ userRole }) {
                 (issuanceType === "ROAM" && !selectedSeriesId)
               }
             >
-              
               {issuingTicket
                 ? "Issuing…"
-                : issuanceType === "ROAM" && ticketQuantity > 1
+                : !selectedVehicle
+                  ? "Pick a vehicle to continue"
+                  : issuanceType === "ROAM" && ticketQuantity > 1
                   ? `Issue ${ticketQuantity} Tickets`
                   : issuanceType === "ROAM"
                     ? "Issue Ticket"
                     : "Check In Vehicle"}
             </button>
+    </>
+  );
+
+  const modes = [
+    { type: "QUEUE", title: "Queue", sub: "Turno", other: "Roaming" },
+    { type: "ROAM", title: "Roaming", sub: "Payasyas", other: "Queue" },
+  ];
+
+  return (
+    <div className="queue-page">
+      {/* ── Page Header ── */}
+      <div className="queue-header">
+        <div className="queue-header-left">
+          <div>
+            <h1 className="queue-title">Queue Management</h1>
           </div>
+        </div>
+        <div className="queue-header-right">
+          <button
+            type="button"
+            className="dashboard-scan-btn"
+            onClick={() => window.open("/public-view", "_blank", "noopener,noreferrer")}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              <polyline points="15 3 21 3 21 9" />
+              <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+            Public View
+          </button>
+          <button
+            type="button"
+            className="dashboard-scan-btn"
+            onClick={() => window.open("/scan", "_blank", "noopener,noreferrer")}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+              <line x1="7" y1="12" x2="17" y2="12" />
+            </svg>
+            QR Camera
+          </button>
+        </div>
+      </div>
+
+      <div className="queue-single-col">
+        <div className="queue-modes">
+          {modes.map(({ type, title, sub, other }) => {
+            const active = issuanceType === type;
+            return (
+              <section
+                key={type}
+                className={`queue-mode${active ? " queue-mode--active" : " queue-mode--off"}`}
+              >
+                <h2 className="queue-mode-title">
+                  {title} - <em>{sub}</em>
+                </h2>
+                {active ? (
+                  <div className="queue-mode-body">
+                    {type === "ROAM" && (
+                      <SeriesPicker
+                        availableSeries={availableSeries}
+                        allSeries={allSeries}
+                        selectedSeriesId={selectedSeriesId}
+                        setSelectedSeriesId={setSelectedSeriesId}
+                        setSeriesOverrideId={setSeriesOverrideId}
+                      />
+                    )}
+                    {issueForm}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="queue-mode-off"
+                    onClick={() => setIssuanceType(type)}
+                  >
+                    <span className="queue-mode-off-note">Off while {other} is active — click to switch</span>
+                  </button>
+                )}
+              </section>
+            );
+          })}
         </div>
 
         {/* ── Dispatch board (queued vehicles) ── */}
@@ -419,8 +422,6 @@ function Queue({ userRole }) {
           setSeriesOverrideId={setSeriesOverrideId}
           selectedSeriesId={selectedSeriesId}
           setSelectedSeriesId={setSelectedSeriesId}
-          ticketQuantity={ticketQuantity}
-          setTicketQuantity={setTicketQuantity}
           onStockChange={fetchTicketSeries}
         />
       </div>

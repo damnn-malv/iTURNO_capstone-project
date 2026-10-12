@@ -405,108 +405,6 @@
   box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.12);
 }
 
-/* ── Issuance type radio toggle ── */
-.queue-type-toggle {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.queue-type-option {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-page);
-  cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background 0.15s,
-    box-shadow 0.15s;
-}
-
-.queue-type-option:hover {
-  border-color: rgba(201, 168, 76, 0.5);
-}
-
-.queue-type-option input[type="radio"] {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-  margin: 0;
-}
-
-.queue-type-option-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  flex-shrink: 0;
-  background: var(--bg-secondary, #f0f0f0);
-  color: var(--text-secondary);
-  transition:
-    background 0.15s,
-    color 0.15s;
-}
-
-.queue-type-option-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.queue-type-option-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-}
-
-.queue-type-option-desc {
-  font-size: 11px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.queue-type-option--active {
-  border-color: var(--navy);
-  background: linear-gradient(
-    135deg,
-    rgba(26, 39, 68, 0.06) 0%,
-    rgba(26, 39, 68, 0.02) 100%
-  );
-  box-shadow: 0 0 0 3px rgba(26, 39, 68, 0.08);
-}
-
-.queue-type-option--active .queue-type-option-icon {
-  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
-  color: var(--gold);
-}
-
-.dark .queue-type-option--active {
-  border-color: var(--gold);
-  background: linear-gradient(
-    135deg,
-    rgba(201, 168, 76, 0.1) 0%,
-    rgba(201, 168, 76, 0.03) 100%
-  );
-  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.12);
-}
-
-@media (max-width: 480px) {
-  .queue-type-toggle {
-    grid-template-columns: 1fr;
-  }
-}
 
 .queue-field-hint {
   font-size: 11.5px;
@@ -1300,4 +1198,122 @@
   font-size: 13px;
   letter-spacing: 0.03em;
   color: inherit;
+}
+/* ── Queue / Roaming mode panels ── */
+.queue-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.queue-mode {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.queue-mode--active {
+  border: 1.5px solid var(--navy);
+  box-shadow: 0 0 0 3px rgba(26, 39, 68, 0.08);
+}
+
+.dark .queue-mode--active {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.12);
+}
+
+.queue-mode-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.queue-mode-title em {
+  font-weight: 600;
+}
+
+.queue-mode-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.queue-mode-off {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.queue-mode-off-note {
+  padding: 11px 14px;
+  border-radius: 8px;
+  background: var(--bg-page);
+  border: 1px solid var(--border-soft);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.queue-mode-off::after {
+  content: "";
+  height: 44px;
+  border-radius: 8px;
+  background: var(--border-soft);
+}
+
+.queue-mode-off:hover .queue-mode-off-note {
+  border-color: rgba(201, 168, 76, 0.5);
+}
+
+.queue-roam-series {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--bg-page);
+}
+
+.queue-roam-series-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.queue-roam-series-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.queue-change-series-btn {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .queue-modes {
+    grid-template-columns: 1fr;
+  }
 }

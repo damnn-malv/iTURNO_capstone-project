@@ -23,9 +23,13 @@ function isValidEmail(value) {
   return EMAIL_PATTERN.test(value);
 }
 
-const Field = ({ label, children }) => (
+const Field = ({ label, required, optional, children }) => (
   <div className="usr-field">
-    <label className="usr-label">{label}</label>
+    <label className="usr-label">
+      {label}
+      {required && <span className="usr-required"> *</span>}
+      {optional && <span className="usr-optional"> (optional)</span>}
+    </label>
     {children}
   </div>
 );
@@ -49,6 +53,9 @@ function User({ userRole }) {
 
   useEffect(() => {
     fetchUsers();
+    // The header's "My profile" editor changes a row in this list.
+    window.addEventListener("profile-updated", fetchUsers);
+    return () => window.removeEventListener("profile-updated", fetchUsers);
   }, []);
 
   const fetchUsers = async () => {
@@ -332,7 +339,7 @@ function User({ userRole }) {
             <div className="usr-modal-header">
               <div className="usr-modal-header-left">
                 <h2 className="usr-modal-title">
-                  {editing ? "Staff Profile" : "Register Staff Account"}
+                  {editing ? "Staff profile" : "Register staff account"}
                 </h2>
               </div>
               <button
@@ -370,19 +377,16 @@ function User({ userRole }) {
 
               {/* Personal Information */}
               <div className="usr-profile-section">
-                <h3 className="usr-profile-section-title">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                    <circle cx="12" cy="7" r="4" />
-                  </svg>
-                  Personal Information
+                <h3 className="usr-section-title">
+                  <span className="usr-section-num">1</span>
+                  Personal information
                 </h3>
                 <div className="usr-form-grid">
-                  <Field label="First Name">
+                  <Field label="First name" required>
                     <input
                       type="text"
                       className={inputCls}
-                      placeholder="First name"
+                      placeholder="e.g. Juan"
                       value={form.first_name}
                       onChange={(e) =>
                         setForm({ ...form, first_name: capitalizeWords(e.target.value) })
@@ -390,22 +394,11 @@ function User({ userRole }) {
                       required
                     />
                   </Field>
-                  <Field label="Middle Name">
+                  <Field label="Last name" required>
                     <input
                       type="text"
                       className={inputCls}
-                      placeholder="Middle name (optional)"
-                      value={form.middle_name}
-                      onChange={(e) =>
-                        setForm({ ...form, middle_name: capitalizeWords(e.target.value) })
-                      }
-                    />
-                  </Field>
-                  <Field label="Last Name">
-                    <input
-                      type="text"
-                      className={inputCls}
-                      placeholder="Last name"
+                      placeholder="e.g. Dela Cruz"
                       value={form.last_name}
                       onChange={(e) =>
                         setForm({ ...form, last_name: capitalizeWords(e.target.value) })
@@ -413,19 +406,27 @@ function User({ userRole }) {
                       required
                     />
                   </Field>
+                  <Field label="Middle name" optional>
+                    <input
+                      type="text"
+                      className={inputCls}
+                      placeholder="e.g. Reyes"
+                      value={form.middle_name}
+                      onChange={(e) =>
+                        setForm({ ...form, middle_name: capitalizeWords(e.target.value) })
+                      }
+                    />
+                  </Field>
                 </div>
               </div>
 
               {/* Account Information */}
               <div className="usr-profile-section">
-                <h3 className="usr-profile-section-title">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="11" width="18" height="11" rx="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                  Account Information
+                <h3 className="usr-section-title">
+                  <span className="usr-section-num">2</span>
+                  Account information
                 </h3>
-                <Field label="Username (Email Address)">
+                <Field label="Username (email address)" required>
                   <input
                     type="email"
                     className={inputCls}
@@ -449,11 +450,9 @@ function User({ userRole }) {
 
               {/* Role & Status */}
               <div className="usr-profile-section">
-                <h3 className="usr-profile-section-title">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
-                  </svg>
-                  Role & Status
+                <h3 className="usr-section-title">
+                  <span className="usr-section-num">3</span>
+                  Role & status
                 </h3>
                 <div className="usr-form-grid">
                   <Field label="Role">
@@ -497,7 +496,7 @@ function User({ userRole }) {
                   type="submit"
                   className="usr-modal-btn usr-modal-btn--submit"
                 >
-                  {editing ? "Update Account" : "Create Account"}
+                  {editing ? "Update account" : "Create account"}
                 </button>
               </div>
             </form>

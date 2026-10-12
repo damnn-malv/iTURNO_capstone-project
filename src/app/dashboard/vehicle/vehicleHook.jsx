@@ -26,6 +26,24 @@ export const STATUS_LABEL = {
   QUEUED: "Queued",
 };
 
+const validateVehicleForm = (form, editing, routeMode, newOrigin) => {
+  const errors = {};
+  if (routeMode === "select" ? !form.route : !newOrigin.trim()) {
+    errors.route = routeMode === "select" ? "Please select a route." : "Please enter a route origin.";
+  }
+  if (!editing && !form.plate_number.trim()) errors.plate_number = "Plate number is required.";
+  if (!form.transportation_id) errors.transportation_id = "Transportation type is required.";
+  if (!form.franchise_number) errors.franchise_number = "Franchise number is required.";
+  else if (!/^\d{2}-\d{5}$/.test(form.franchise_number)) {
+    errors.franchise_number = "Use the format YY-NNNNN (7 digits).";
+  }
+  if (!form.franchise_expiration_date) {
+    errors.franchise_expiration_date = "Franchise expiration date is required.";
+  }
+  if (!form.owner_driver) errors.owner_driver = "Owner driver is required.";
+  return errors;
+};
+
 // Formats free-typed input into LLL-1234 as the user types, auto-inserting the dash.
 export const formatPlateNumber = (value) => {
   const clean = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -44,9 +62,13 @@ export const buildDriverAddress = (driver) => {
 };
 
 // field wrapper for modal
-export const Field = ({ label, children }) => (
+export const Field = ({ label, required, optional, children }) => (
   <div className="veh-field">
-    <label className="veh-label">{label}</label>
+    <label className="veh-label">
+      {label}
+      {required && <span className="veh-required"> *</span>}
+      {optional && <span className="veh-optional"> (optional)</span>}
+    </label>
     {children}
   </div>
 );
@@ -65,11 +87,11 @@ export const RouteField = ({
   selectedRoute,
   destination = DESTINATION,
 }) => (
-  <Field label="Route">
+  <Field label="Route" required>
     {routeMode === "select" && (
       <>
         <select
-          className="veh-select"
+          className={`veh-select${routeError ? " veh-input--error" : ""}`}
           value={form.route}
           onChange={(e) =>
             setForm({
@@ -119,7 +141,7 @@ export const RouteField = ({
         <div className="veh-route-input-row">
           <input
             type="text"
-            className="veh-input"
+            className={`veh-input${routeError ? " veh-input--error" : ""}`}
             placeholder="e.g. Lingsat"
             value={newOrigin}
             onChange={(e) => setNewOrigin(e.target.value)}
@@ -163,7 +185,11 @@ export function useVehicle() {
   const [newOrigin, setNewOrigin] = useState("");
   const [routeError, setRouteError] = useState("");
 
-  const [franchiseError, setFranchiseError] = useState("");
+  // Validates on the fly only after a failed submit, so a field's error clears once it's filled in.
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const fieldErrors = submitAttempted
+    ? validateVehicleForm(form, editing, routeMode, newOrigin)
+    : {};
   const showConfirm = useConfirm();
   const showToast = useToast();
 
@@ -257,11 +283,11 @@ export function useVehicle() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setRouteError("");
-    if (form.franchise_number && !/^\d{2}-\d{5}$/.test(form.franchise_number)) {
-      setFranchiseError("Use the format YY-NNNNN (7 digits).");
+    if (Object.keys(validateVehicleForm(form, editing, routeMode, newOrigin)).length > 0) {
+      setSubmitAttempted(true);
+      showToast("Please fill in the highlighted fields", "info");
       return;
     }
-    setFranchiseError("");
     const { routeId, err } = await resolveRouteId();
     if (err) {
       setRouteError(err);
@@ -298,8 +324,10 @@ export function useVehicle() {
 
       fetchVehicles();
       closeModal();
+      showToast(editing ? "Vehicle updated" : "Vehicle registered", "success");
     } catch (err) {
       setError(err.message);
+      showToast(err.message || "Failed to save vehicle", "info");
     }
   };
 
@@ -319,6 +347,7 @@ export function useVehicle() {
     setRouteMode("select");
     setNewOrigin("");
     setRouteError("");
+    setSubmitAttempted(false);
     setIsModalOpen(true);
   };
 
@@ -328,6 +357,7 @@ export function useVehicle() {
     setRouteMode("select");
     setNewOrigin("");
     setRouteError("");
+    setSubmitAttempted(false);
     setIsModalOpen(true);
   };
 
@@ -371,8 +401,7 @@ export function useVehicle() {
     newOrigin,
     setNewOrigin,
     routeError,
-    franchiseError,
-    setFranchiseError,
+    fieldErrors,
     selectedRoute,
     transportationTypes,
     handleSubmit,

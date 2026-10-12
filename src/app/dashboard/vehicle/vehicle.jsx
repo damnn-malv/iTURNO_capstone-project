@@ -32,8 +32,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
     newOrigin,
     setNewOrigin,
     routeError,
-    franchiseError,
-    setFranchiseError,
+    fieldErrors,
     selectedRoute,
     activeDrivers,
     transportationTypes,
@@ -57,6 +56,10 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
   const filteredDrivers = activeDrivers.filter((d) =>
     (d.name || "").toLowerCase().includes(operatorSearch.toLowerCase().trim())
   );
+
+  const errCls = (base, name) => (fieldErrors[name] ? `${base} veh-input--error` : base);
+  const FieldError = ({ name }) =>
+    fieldErrors[name] ? <p className="veh-field-error">{fieldErrors[name]}</p> : null;
 
   const selectOperator = (driver) => {
     setForm({
@@ -413,7 +416,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
             <div className="veh-modal-header">
               <div className="veh-modal-header-left">
                 <h2 className="veh-modal-title">
-                  {editing ? "Vehicle Profile" : "Register New Vehicle"}
+                  {editing ? "Vehicle profile" : "Register new vehicle"}
                 </h2>
               </div>
               <button
@@ -435,17 +438,20 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="veh-modal-body">
+            <form onSubmit={handleSubmit} noValidate className="veh-modal-body">
 
               {/* Vehicle Information */}
               <div className="veh-profile-section">
-                
+                <h3 className="veh-section-title">
+                  <span className="veh-section-num">1</span>
+                  Vehicle information
+                </h3>
                 <div className="veh-profile-grid">
                   {!editing && (
-                    <Field label="Plate Number">
+                    <Field label="Plate number" required>
                       <input
                         type="text"
-                        className="veh-input"
+                        className={errCls("veh-input", "plate_number")}
                         placeholder="e.g. ABC-1234"
                         value={form.plate_number}
                         maxLength={8}
@@ -455,13 +461,13 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                             plate_number: formatPlateNumber(e.target.value),
                           })
                         }
-                        required
                       />
+                      <FieldError name="plate_number" />
                     </Field>
                   )}
-                  <Field label="Transportation Type">
+                  <Field label="Transportation type" required>
                     <select
-                      className="veh-select"
+                      className={errCls("veh-select", "transportation_id")}
                       value={form.transportation_id || ""}
                       onChange={(e) =>
                         setForm({
@@ -477,12 +483,12 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                         </option>
                       ))}
                     </select>
+                    <FieldError name="transportation_id" />
                   </Field>
-                  <Field label="Franchise Number">
+                  <Field label="Franchise number" required>
                     {(() => {
                       const [yy = "", nnnnn = ""] = (form.franchise_number || "").split("-");
                       const update = (nextYY, nextN) => {
-                        setFranchiseError("");
                         setForm({
                           ...form,
                           franchise_number: nextN ? `${nextYY}-${nextN}` : nextYY,
@@ -494,7 +500,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                             id="franchise-yy"
                             type="text"
                             inputMode="numeric"
-                            className="veh-input"
+                            className={errCls("veh-input", "franchise_number")}
                             placeholder="YY"
                             maxLength={2}
                             style={{ width: "5rem", textAlign: "center" }}
@@ -512,7 +518,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                             id="franchise-n"
                             type="text"
                             inputMode="numeric"
-                            className="veh-input"
+                            className={errCls("veh-input", "franchise_number")}
                             placeholder="NNNNN"
                             maxLength={5}
                             style={{ flex: 1 }}
@@ -529,31 +535,28 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                         </div>
                       );
                     })()}
-                    {franchiseError && (
-                      <p className="veh-field-error">{franchiseError}</p>
-                    )}
+                    <FieldError name="franchise_number" />
+                    {!fieldErrors.franchise_number && <p className="veh-field-hint">Format YY-NNNNN (7 digits).</p>}
                   </Field>
-                  <Field label="Franchise Expiration Date">
+                  <Field label="Franchise expiration date" required>
                     <input
                       type="date"
-                      className="veh-input"
+                      className={errCls("veh-input", "franchise_expiration_date")}
                       value={form.franchise_expiration_date || ""}
                       onChange={(e) =>
                         setForm({ ...form, franchise_expiration_date: e.target.value })
                       }
                     />
+                    <FieldError name="franchise_expiration_date" />
                   </Field>
                 </div>
               </div>
 
               {/* Route & Assignment */}
               <div className="veh-profile-section">
-                <h3 className="veh-profile-section-title">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                    <circle cx="12" cy="10" r="3" />
-                  </svg>
-                  Route & Assignment
+                <h3 className="veh-section-title">
+                  <span className="veh-section-num">2</span>
+                  Route & assignment
                 </h3>
                 <RouteField
                   routes={routes}
@@ -563,17 +566,17 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                   setRouteMode={setRouteMode}
                   newOrigin={newOrigin}
                   setNewOrigin={setNewOrigin}
-                  routeError={routeError}
+                  routeError={routeError || fieldErrors.route}
                   editing={editing}
                   selectedRoute={selectedRoute}
                   destination={DESTINATION}
                 />
                 <div className="veh-profile-grid">
-                  <Field label="Owner Driver">
+                  <Field label="Owner driver" required>
                     <div className="veh-operator-search-wrap">
                       <input
                         type="text"
-                        className="veh-input"
+                        className={errCls("veh-input", "owner_driver")}
                         placeholder="Search operator by name…"
                         value={operatorSearch}
                         onChange={(e) => {
@@ -607,9 +610,10 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                         </ul>
                       )}
                     </div>
+                    <FieldError name="owner_driver" />
                     <p className="veh-field-hint">Only active drivers are shown.</p>
                   </Field>
-                  <Field label="Operator Address">
+                  <Field label="Operator address" optional>
                     <input
                       type="text"
                       className="veh-input"
@@ -625,14 +629,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
 
               {editing && form.qr_code && (
                 <div className="veh-profile-section">
-                  <h3 className="veh-profile-section-title">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <rect x="3" y="3" width="7" height="7" rx="1" />
-                      <rect x="14" y="3" width="7" height="7" rx="1" />
-                      <rect x="3" y="14" width="7" height="7" rx="1" />
-                    </svg>
-                    Vehicle QR Code
-                  </h3>
+                  <h3 className="veh-section-title">Vehicle QR code</h3>
                   <div className="veh-qr-display">
                     <QRCodeSVG
                       value={form.qr_code}
@@ -675,7 +672,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                   type="submit"
                   className="veh-modal-btn veh-modal-btn--submit"
                 >
-                  {editing ? "Update Record" : "Register Vehicle"}
+                  {editing ? "Update vehicle" : "Register vehicle"}
                 </button>
               </div>
             </form>

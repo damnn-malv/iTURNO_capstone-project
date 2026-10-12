@@ -731,16 +731,16 @@
   align-items: center;
   gap: 6px;
   padding: 7px 14px;
-  background: rgba(255,255,255,0.12);
-  color: #fff;
-  border: 1px solid rgba(255,255,255,0.2);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
   border-radius: 7px;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   transition: background 0.15s;
 }
-.rem-btn--export:hover { background: rgba(255,255,255,0.2); }
+.rem-btn--export:hover { background: var(--bg-hover); }
 
 /* ============================================================
    REPORT PREVIEW
@@ -864,6 +864,14 @@
   text-align: center;
 }
 .rem-report-sig strong { font-size: 13px; color: var(--text-primary); }
+.rem-combo { position: relative; width: 100%; }
+.rem-report-sig .rem-combo { max-width: 260px; }
+.rem-combo input { width: 100%; padding-right: 30px; }
+.rem-combo-toggle { position: absolute; top: 0; right: 0; bottom: 0; width: 30px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 14px; }
+.rem-combo-toggle:disabled { cursor: default; opacity: 0.5; }
+.rem-combo-list { position: absolute; z-index: 20; right: 0; bottom: 100%; min-width: 220px; max-width: 100%; margin: 0 0 4px; padding: 4px; list-style: none; max-height: 200px; overflow-y: auto; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15); }
+.rem-combo-option { display: block; width: 100%; padding: 7px 10px; text-align: left; font: inherit; font-size: 13px; color: var(--text-primary); background: transparent; border: none; border-radius: 6px; cursor: pointer; }
+.rem-combo-option:hover { background: var(--bg-hover); }
 .rem-report-sig span { font-size: 10px; color: var(--text-secondary); border-top: 1px solid var(--border); padding-top: 4px; }
 
 @media (max-width: 640px) {

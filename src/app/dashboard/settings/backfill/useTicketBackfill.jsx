@@ -17,11 +17,6 @@ export function useTicketBackfill() {
   const [remoteRequests, setRemoteRequests] = useState([]);
   const [remoteRequestsLoading, setRemoteRequestsLoading] = useState(false);
 
-  // "Who backfilled what, when" — LAN-only, since the stored CSV file lives on
-  // the LAN's local disk and isn't mirrored to Supabase for the remote dashboard.
-  const [history, setHistory] = useState([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-
   const fetchRemoteRequests = () => {
     if (!IS_REMOTE) return Promise.resolve();
     setRemoteRequestsLoading(true);
@@ -30,16 +25,6 @@ export function useTicketBackfill() {
       .then(setRemoteRequests)
       .catch((err) => console.error("Failed to load remote backfill requests:", err))
       .finally(() => setRemoteRequestsLoading(false));
-  };
-
-  const fetchHistory = () => {
-    if (IS_REMOTE) return Promise.resolve();
-    setHistoryLoading(true);
-    return apiService
-      .getBackfillHistory()
-      .then((result) => setHistory(Array.isArray(result) ? result : result.results || []))
-      .catch((err) => console.error("Failed to load backfill history:", err))
-      .finally(() => setHistoryLoading(false));
   };
 
   const fetchWipMode = () => {
@@ -54,7 +39,6 @@ export function useTicketBackfill() {
   useEffect(() => {
     fetchWipMode();
     fetchRemoteRequests();
-    fetchHistory();
     apiService.getVehicles({ is_archived: "false" }).then(setVehicles).catch((err) => console.error("Failed to load vehicles:", err));
     apiService.request("/ticket-series/").then((r) => setTicketSeries(Array.isArray(r) ? r : r.results || [])).catch((err) => console.error("Failed to load ticket series:", err));
   }, []);
@@ -78,7 +62,7 @@ export function useTicketBackfill() {
       const data = await apiService.submitBackfillBatch(rows, commit);
       // Remote only queues, so it has no per-row results.
       const results = rows.map((row, i) => ({ row, ...(data.results?.[i] || { outcome: data.outcome }) }));
-      if (commit && data.outcome === "ok") await (IS_REMOTE ? fetchRemoteRequests() : fetchHistory());
+      if (commit && data.outcome === "ok" && IS_REMOTE) await fetchRemoteRequests();
       return results;
     } catch (err) {
       return rows.map((row) => ({ row, outcome: "error", reason: err.message || "Request failed" }));
@@ -92,6 +76,5 @@ export function useTicketBackfill() {
     vehicles, ticketSeries,
     submitBusy, submitRows,
     remoteRequests, remoteRequestsLoading,
-    history, historyLoading,
   };
 }

@@ -1,6 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { apiService } from "../../../lib/api-service";
 import { useQueueSocket } from "../../../lib/useQueueSocket";
+import { getDriverPhotoUrl } from "../driver/driver-utils";
+import { ticketsNeeded } from "../queue/useQueue";
+import SeriesPicker from "../queue/SeriesPicker";
+import { useToast } from "../../../components/ui/ToastConfirmContext";
 import "../../../styles/Dispatch.css";
 
 // Mirrors DEFAULT_ESTIMATED_LOADING_MINUTES in backend/api/views/records.py —
@@ -8,10 +12,9 @@ import "../../../styles/Dispatch.css";
 const DEFAULT_ESTIMATED_LOADING_MINUTES = 5;
 const EXTEND_OPTIONS_MINUTES = [5, 10, 15];
 
-// The ticket series + quantity picker is shared with the Queue page (roaming
+// The ticket series picker is shared with the Queue page (roaming
 // check-ins use the same selection), so its state lives in useQueue.
-function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () => {}, selectedSeriesId, setSelectedSeriesId, ticketQuantity, setTicketQuantity, onStockChange }) {
-  const [pickSeries, setPickSeries] = useState(false);
+function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () => {}, selectedSeriesId, setSelectedSeriesId, onStockChange }) {
   const selected = allSeries.find((s) => String(s.id) === String(selectedSeriesId));
   const [vehicles, setVehicles] = useState([]);
   const [tickets, setTickets] = useState([]);
@@ -29,11 +32,6 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
   const [reorderingRouteId, setReorderingRouteId] = useState(null);
   const [reorderError, setReorderError] = useState("");
 
-  const [cancelTarget, setCancelTarget] = useState(null);
-  const [cancelReason, setCancelReason] = useState("");
-  const [cancelError, setCancelError] = useState("");
-  const [cancelling, setCancelling] = useState(false);
-
   const [swapTarget, setSwapTarget] = useState(null);
   const [swapDriverId, setSwapDriverId] = useState("");
   const [swapDriverQuery, setSwapDriverQuery] = useState("");
@@ -43,6 +41,11 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
 
   const [dispatchError, setDispatchError] = useState("");
   const [dispatchingVehicleId, setDispatchingVehicleId] = useState(null);
+  const dispatchingRef = useRef(new Set());
+  const showToast = useToast();
+
+  const [plateSearch, setPlateSearch] = useState("");
+  const [routeFilter, setRouteFilter] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -55,19 +58,28 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
     return () => clearInterval(id);
   }, []);
 
+  // Latest-wins: with rapid dispatches several refetches overlap, and an older one
+  // (snapshotted before a vehicle left) would otherwise land last and bring its card back.
+  const fetchSeq = useRef(0);
+
+  // Drivers and routes are config that doesn't move with the queue, and /routes/ is
+  // slow (~1.2s: per-route stats queries), so only the first load pays for them —
+  // silent refetches (socket pings, post-dispatch) just refresh vehicles + tickets.
   const fetchData = async (silent = false) => {
+    const seq = ++fetchSeq.current;
     if (!silent) setLoading(true);
     try {
       const [vehicleData, ticketData, driverData, routeData] = await Promise.all([
         apiService.getVehicles({ status: "QUEUED", is_archived: "false" }),
         apiService.getTickets({ status: "QUEUED" }),
-        apiService.getDrivers({ status: "ACTIVE", is_archived: "false" }),
-        apiService.getRoutes(),
+        silent ? null : apiService.getDrivers({ status: "ACTIVE", is_archived: "false" }),
+        silent ? null : apiService.getRoutes(),
       ]);
+      if (seq !== fetchSeq.current) return;
       setVehicles(vehicleData);
       setTickets(ticketData);
-      setDrivers(driverData);
-      setRoutes(routeData);
+      if (driverData) setDrivers(driverData);
+      if (routeData) setRoutes(routeData);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -89,7 +101,7 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
   // Server already scopes vehicles (status=QUEUED, is_archived=false) and tickets
   // (status=QUEUED) — see fetchData(). This Map indexes the small remaining
   // `tickets` array by vehicle so queue/render logic doesn't rescan it per row
-  // on every render (e.g. every keystroke in the Cancel/Swap modals).
+  // on every render (e.g. every keystroke in the Swap modal).
   const openTicketByVehicleId = useMemo(() => {
     const map = new Map();
     for (const t of tickets) {
@@ -148,23 +160,48 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
   // Deadline for the vehicle currently at the front of its route's line —
   // route's configured estimate (or the shared default), plus any one-off
   // extension applied to just this ticket (see handleExtendLoading).
-  const getLoadingDeadline = (vehicle) => {
+  const getLoadingWindow = (vehicle) => {
     const ticket = openTicketByVehicleId.get(vehicle.id);
     if (!ticket?.loading_started_at) return null;
     const routeId = vehicle.route_detail?.id;
     const routeMinutes = routeId != null ? routeById.get(routeId)?.estimated_loading_minutes : null;
-    const minutes = (routeMinutes ?? DEFAULT_ESTIMATED_LOADING_MINUTES) + (ticket.extra_loading_minutes || 0);
-    return new Date(ticket.loading_started_at).getTime() + minutes * 60000;
+    const totalMs = ((routeMinutes ?? DEFAULT_ESTIMATED_LOADING_MINUTES) + (ticket.extra_loading_minutes || 0)) * 60000;
+    return { deadline: new Date(ticket.loading_started_at).getTime() + totalMs, totalMs };
   };
 
   const formatCountdown = (deadlineMs) => {
     const diffMs = deadlineMs - now;
-    const overdue = diffMs < 0;
     const abs = Math.abs(diffMs);
     const mins = Math.floor(abs / 60000);
     const secs = Math.floor((abs % 60000) / 1000);
-    return `${overdue ? "-" : ""}${mins}:${String(secs).padStart(2, "0")}`;
+    return `${diffMs < 0 ? "+" : ""}${mins}:${String(secs).padStart(2, "0")}`;
   };
+
+  const formatQueuedAt = (vehicle) => {
+    const issuedAt = openTicketByVehicleId.get(vehicle.id)?.issued_at;
+    return issuedAt
+      ? new Date(issuedAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" })
+      : "—";
+  };
+
+  const driverPhotoById = useMemo(() => {
+    const map = new Map();
+    for (const d of drivers) map.set(d.id, getDriverPhotoUrl(d.photo));
+    return map;
+  }, [drivers]);
+
+  const isRouteOverdue = (routeVehicles) => {
+    const win = getLoadingWindow(routeVehicles[0]);
+    return win != null && win.deadline < now;
+  };
+
+  // Plate search narrows the "up next" rows; the front vehicle always stays
+  // visible so a route's dispatch order is never misrepresented.
+  const visibleRoutes = sortedRoutes.filter((name) => {
+    if (routeFilter && routeFilter !== name) return false;
+    const term = plateSearch.trim().toLowerCase();
+    return !term || groupedByRoute[name].vehicles.some((v) => v.plate_number.toLowerCase().includes(term));
+  });
 
   const getDriverName = (vehicle) => {
     if (vehicle.active_driver_name) return vehicle.active_driver_name;
@@ -172,30 +209,41 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
     return ticket?.driver?.name || "—";
   };
 
-  const handleDispatch = async (vehicle) => {
-    if (!selectedSeriesId) {
-      setDispatchError("Please select a ticket series before dispatching.");
-      return;
-    }
-    const quantity = Math.max(1, parseInt(ticketQuantity) || 1);
-    setDispatchingVehicleId(vehicle.id);
+  const quantityFor = (vehicle) => ticketsNeeded(vehicle, Number(selected?.ticket_form_price || 0));
+
+  // Shared by Dispatch and Roam: both pay the terminal fee with the picked series
+  // and take the vehicle off the board.
+  const finalizeVehicle = async (vehicle, { call, setBusyId, doneLabel, failMessage }) => {
+    // Ref, not state: a fast second click lands before the disabled button re-renders.
+    if (dispatchingRef.current.has(vehicle.id)) return;
+    dispatchingRef.current.add(vehicle.id);
+    setBusyId(vehicle.id);
     setDispatchError("");
     try {
-      await apiService.dispatchTicket(vehicle.id, {
-        seriesId: selectedSeriesId,
-        quantity,
-      });
-      // Small delay so the "Dispatching…" state is perceptible before the row
-      // disappears; fetchData(true) reconciles everything else in the background.
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await call(vehicle.id, { seriesId: selectedSeriesId, quantity: quantityFor(vehicle) });
+      showToast(`${vehicle.plate_number} ${doneLabel}`, "success");
       setVehicles((prev) => prev.filter((v) => v.id !== vehicle.id));
       fetchData(true);
       onStockChange?.();
     } catch (err) {
-      setDispatchError(err.message || "Failed to dispatch ticket. Please try again.");
+      setDispatchError(err.message || failMessage);
     } finally {
-      setDispatchingVehicleId(null);
+      dispatchingRef.current.delete(vehicle.id);
+      setBusyId(null);
     }
+  };
+
+  const handleDispatch = (vehicle) => {
+    if (!selectedSeriesId) {
+      setDispatchError("Please select a ticket series before dispatching.");
+      return;
+    }
+    return finalizeVehicle(vehicle, {
+      call: (id, body) => apiService.dispatchTicket(id, body),
+      setBusyId: setDispatchingVehicleId,
+      doneLabel: "dispatched",
+      failMessage: "Failed to dispatch ticket. Please try again.",
+    });
   };
 
   const handleExtendLoading = async (vehicle, minutes) => {
@@ -217,28 +265,17 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
   // Lets a driver anywhere in the line (not just the front) pay the terminal
   // fee now and leave instead of waiting their turn — reuses the same
   // denomination/quantity picker as a normal Dispatch.
-  const handleRoam = async (vehicle) => {
+  const handleRoam = (vehicle) => {
     if (!selectedSeriesId) {
       setDispatchError("Please select a ticket series before converting to roam.");
       return;
     }
-    const quantity = Math.max(1, parseInt(ticketQuantity) || 1);
-    setRoamingVehicleId(vehicle.id);
-    setDispatchError("");
-    try {
-      await apiService.convertToRoam(vehicle.id, {
-        seriesId: selectedSeriesId,
-        quantity,
-      });
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      setVehicles((prev) => prev.filter((v) => v.id !== vehicle.id));
-      fetchData(true);
-      onStockChange?.();
-    } catch (err) {
-      setDispatchError(err.message || "Failed to convert to roam. Please try again.");
-    } finally {
-      setRoamingVehicleId(null);
-    }
+    return finalizeVehicle(vehicle, {
+      call: (id, body) => apiService.convertToRoam(id, body),
+      setBusyId: setRoamingVehicleId,
+      doneLabel: "converted to roam",
+      failMessage: "Failed to convert to roam. Please try again.",
+    });
   };
 
   // Persists a drag-and-drop reorder within one route's line — the backend
@@ -269,6 +306,28 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
       setReorderingRouteId(null);
       fetchData(true);
     }
+  };
+
+  // Drag source + drop target props shared by the front vehicle and the up-next rows.
+  const dragProps = (vehicle, routeName, routeId) => {
+    const canReorder = routeId != null;
+    return {
+      draggable: canReorder,
+      onDragStart: () => canReorder && setDragVehicleId(vehicle.id),
+      onDragOver: (e) => {
+        if (!canReorder) return;
+        e.preventDefault();
+        if (dragOverVehicleId !== vehicle.id) setDragOverVehicleId(vehicle.id);
+      },
+      onDragEnd: () => {
+        setDragVehicleId(null);
+        setDragOverVehicleId(null);
+      },
+      onDrop: (e) => {
+        e.preventDefault();
+        handleReorderDrop(routeName, routeId, vehicle.id);
+      },
+    };
   };
 
   // Server already filters to status=ACTIVE — see fetchData().
@@ -314,60 +373,12 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
         throw new Error("No open ticket found for this vehicle.");
       }
       await apiService.reassignTicketDriver(openTicket.id, swapDriverId);
-      await fetchData();
+      await fetchData(true);
       closeSwapModal();
     } catch (err) {
       setSwapError(err.message || "Failed to reassign driver. Please try again.");
     } finally {
       setSwapping(false);
-    }
-  };
-
-  const openCancelModal = (vehicle) => {
-    setCancelTarget(vehicle);
-    setCancelReason("");
-    setCancelError("");
-  };
-
-  const closeCancelModal = () => {
-    if (cancelling) return;
-    setCancelTarget(null);
-    setCancelReason("");
-    setCancelError("");
-  };
-
-  const handleConfirmCancel = async () => {
-    if (!cancelReason.trim()) {
-      setCancelError("Please provide a reason for cancellation.");
-      return;
-    }
-    setCancelling(true);
-    setCancelError("");
-    try {
-      // Cancel every QUEUED ticket for this vehicle — quantity > 1 issuance
-      // creates multiple tickets that all belong to the same pending trip.
-      const activeTickets = tickets.filter(
-        (t) => t.vehicle?.id === cancelTarget.id && t.status === "QUEUED",
-      );
-      await Promise.all(
-        activeTickets.map((t) =>
-          apiService.patch(`/tickets/${t.id}/`, {
-            status: "CANCELLED",
-            reason: cancelReason.trim(),
-          }),
-        ),
-      );
-      await apiService.patch(`/vehicles/${cancelTarget.id}/`, {
-        status: "AVAILABLE",
-      });
-      await fetchData();
-      closeCancelModal();
-    } catch (err) {
-      setCancelError(
-        err.message || "Failed to cancel ticket. Please try again.",
-      );
-    } finally {
-      setCancelling(false);
     }
   };
 
@@ -409,93 +420,67 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
         </div>
       )}
 
-      <div className="dispatch-settings-panel">
-       
-        <div className="dispatch-settings-body">
-          <div className="dispatch-modal-field">
-            <label className="dispatch-modal-label">
-              Ticket Denomination <span className="dispatch-modal-required">*</span>
-            </label>
-            <div className="dispatch-series-row">
-              <select
-                className="dispatch-modal-select"
-                value={selectedSeriesId}
-                onChange={(e) => {
-                  setSelectedSeriesId(e.target.value);
-                  if (dispatchError) setDispatchError("");
-                }}
-              >
-                {availableSeries.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.ticket_form_label || "Unspecified"}
-                  </option>
-                ))}
-              </select>
-              {selectedSeriesId && (
-                <button
-                  type="button"
-                  className="dispatch-series-toggle"
-                  onClick={() => {
-                    if (pickSeries) setSeriesOverrideId("");
-                    setPickSeries(!pickSeries);
-                  }}
-                >
-                  {pickSeries ? "Use default" : "Pick series"}
-                </button>
-              )}
-            </div>
-            {pickSeries && selectedSeriesId && (
-              <select
-                className="dispatch-modal-select"
-                value={selectedSeriesId}
-                onChange={(e) => setSeriesOverrideId(e.target.value)}
-              >
-                {allSeries
-                  .filter((s) => (s.ticket_form_label || "Unspecified") === (selected?.ticket_form_label || "Unspecified"))
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      Series {s.series_no} ({s.pcs} pcs remaining)
-                    </option>
-                  ))}
-              </select>
-            )}
-            {availableSeries.length === 0 && (
-              <span className="dispatch-modal-field-error">
-                No ticket series with stock available.
-              </span>
-            )}
-          </div>
-
-          <div className="dispatch-modal-field dispatch-settings-qty">
-            <label className="dispatch-modal-label">Quantity</label>
-            <input
-              type="number"
-              className="dispatch-modal-select"
-              min={1}
-              value={ticketQuantity}
-              onChange={(e) => {
-                const val = parseInt(e.target.value);
-                setTicketQuantity(Number.isNaN(val) ? "" : Math.max(1, val));
-                if (dispatchError) setDispatchError("");
-              }}
-              onBlur={() => !ticketQuantity && setTicketQuantity(1)}
-            />
-          </div>
-        </div>
-        {dispatchError && (
-          <span className="dispatch-modal-field-error dispatch-settings-error">
-            {dispatchError}
-          </span>
-        )}
-      </div>
-
       <div className="dispatch-panel">
         <div className="dispatch-panel-header">
-          <div className="dispatch-panel-header-left">
-            <span className="dispatch-panel-indicator" />
-            <span className="dispatch-panel-title">Queued Vehicles</span>
+          <div>
+            <h2 className="dispatch-panel-title">Queued vehicles</h2>
+            <span className="dispatch-panel-sub">
+              {queue.length} vehicle{queue.length !== 1 ? "s" : ""} in line
+            </span>
           </div>
-          <span className="dispatch-panel-count">{queue.length}</span>
+          <label className="dispatch-search">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Find a plate"
+              value={plateSearch}
+              onChange={(e) => setPlateSearch(e.target.value)}
+            />
+          </label>
+        </div>
+
+        {dispatchError && (
+          <span className="dispatch-modal-field-error dispatch-settings-error">{dispatchError}</span>
+        )}
+
+        <div className="dispatch-chips">
+          <div className="dispatch-chips-list">
+            {!loading && queue.length > 0 && (
+              <>
+            <button
+              type="button"
+              className={`dispatch-chip${routeFilter === null ? " dispatch-chip--active" : ""}`}
+              onClick={() => setRouteFilter(null)}
+            >
+              All routes <span className="dispatch-chip-count">{queue.length}</span>
+            </button>
+            {sortedRoutes.map((routeName) => (
+              <button
+                key={routeName}
+                type="button"
+                className={`dispatch-chip${routeFilter === routeName ? " dispatch-chip--active" : ""}`}
+                onClick={() => setRouteFilter(routeFilter === routeName ? null : routeName)}
+              >
+                {routeName}
+                <span className="dispatch-chip-count">{groupedByRoute[routeName].vehicles.length}</span>
+                {isRouteOverdue(groupedByRoute[routeName].vehicles) && <span className="dispatch-chip-dot" />}
+              </button>
+            ))}
+              </>
+            )}
+          </div>
+          <SeriesPicker
+            availableSeries={availableSeries}
+            allSeries={allSeries}
+            selectedSeriesId={selectedSeriesId}
+            setSelectedSeriesId={setSelectedSeriesId}
+            setSeriesOverrideId={setSeriesOverrideId}
+            onChange={() => dispatchError && setDispatchError("")}
+            pickExact
+          />
         </div>
 
         <div className="dispatch-panel-body">
@@ -509,15 +494,7 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
             </div>
           ) : queue.length === 0 ? (
             <div className="dispatch-state-wrap dispatch-state-wrap--empty">
-              <svg
-                width="36"
-                height="36"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                opacity="0.3"
-              >
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.3">
                 <rect x="1" y="3" width="15" height="13" rx="1" />
                 <path d="M16 8h4l3 3v5h-7V8z" />
                 <circle cx="5.5" cy="18.5" r="2.5" />
@@ -525,387 +502,184 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
               </svg>
               <span>No vehicles in queue</span>
             </div>
+          ) : visibleRoutes.length === 0 ? (
+            <div className="dispatch-state-wrap dispatch-state-wrap--empty">
+              <span>No plates match “{plateSearch}”</span>
+            </div>
           ) : (
-            <div className="dispatch-routes-list">
-              {sortedRoutes.map((routeName) => {
+            <div className="dispatch-board">
+              {visibleRoutes.map((routeName) => {
                 const { routeId, vehicles: routeVehicles } = groupedByRoute[routeName];
-                const isReordering = reorderingRouteId === routeId;
+                const [head, ...upNext] = routeVehicles;
+                const term = plateSearch.trim().toLowerCase();
+                const shownNext = upNext.filter((v) => !term || v.plate_number.toLowerCase().includes(term));
+                const win = getLoadingWindow(head);
+                const overdue = win != null && win.deadline < now;
+                const ticket = openTicketByVehicleId.get(head.id);
+                const photo = driverPhotoById.get(ticket?.driver?.id);
+                const progress = win ? Math.min(1, Math.max(0, (win.deadline - now) / win.totalMs)) : 1;
+                const canReorder = routeId != null;
                 return (
-                <div
-                  key={routeName}
-                  className="dispatch-route-group"
-                >
-                  <div className="dispatch-route-label">
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                    >
-                      <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" />
-                      <circle cx="12" cy="10" r="3" />
-                    </svg>
-                    <span>{routeName}</span>
-                    <span className="dispatch-route-label-count">
-                      {routeVehicles.length} vehicle
-                      {routeVehicles.length !== 1 ? "s" : ""}
-                    </span>
-                    {isReordering && (
-                      <span className="dispatch-route-label-saving">Saving order…</span>
-                    )}
-                  </div>
+                  <section
+                    key={routeName}
+                    className={`dispatch-route-card${overdue ? " dispatch-route-card--overdue" : ""}`}
+                  >
+                    <header className="dispatch-route-card-head">
+                      <h3>{routeName}</h3>
+                      {reorderingRouteId === routeId && (
+                        <span className="dispatch-route-label-saving">Saving order…</span>
+                      )}
+                    </header>
 
-                  <div className="dispatch-table-wrap">
-                    <table className="dispatch-table">
-                      <thead>
-                        <tr>
-                          <th className="dispatch-th-order">Order</th>
-                          <th>Plate No.</th>
-                          <th>Status</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {routeVehicles.map(
-                          (vehicle, vehicleIdx) => {
-                            const canDispatch = vehicleIdx === 0;
-                            const canReorder = routeId != null;
-                            const deadline = canDispatch ? getLoadingDeadline(vehicle) : null;
-                            const ticket = openTicketByVehicleId.get(vehicle.id);
-                            const isOverdue = deadline != null && deadline - now < 0;
-                            return (
-                              <tr
-                                key={vehicle.id}
-                                className={`dispatch-table-row${dragOverVehicleId === vehicle.id ? " dispatch-table-row--drag-over" : ""}${dragVehicleId === vehicle.id ? " dispatch-table-row--dragging" : ""}`}
-                                draggable={canReorder}
-                                onDragStart={() => canReorder && setDragVehicleId(vehicle.id)}
-                                onDragOver={(e) => {
-                                  if (!canReorder) return;
-                                  e.preventDefault();
-                                  if (dragOverVehicleId !== vehicle.id) setDragOverVehicleId(vehicle.id);
-                                }}
-                                onDragEnd={() => {
-                                  setDragVehicleId(null);
-                                  setDragOverVehicleId(null);
-                                }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  handleReorderDrop(routeName, routeId, vehicle.id);
-                                }}
+                    <div className="dispatch-route-card-body">
+                      <span className="dispatch-eyebrow">Now loading</span>
+                      <div
+                        className={`dispatch-now${routeId != null ? " dispatch-now--draggable" : ""}${dragOverVehicleId === head.id ? " dispatch-upnext-row--drag-over" : ""}${dragVehicleId === head.id ? " dispatch-upnext-row--dragging" : ""}`}
+                        {...dragProps(head, routeName, routeId)}
+                      >
+                        <div className={`dispatch-ring${overdue ? " dispatch-ring--overdue" : ""}`}>
+                          <svg viewBox="0 0 64 64" width="64" height="64">
+                            <circle className="dispatch-ring-track" cx="32" cy="32" r="28" />
+                            <circle
+                              className="dispatch-ring-bar"
+                              cx="32"
+                              cy="32"
+                              r="28"
+                              pathLength="1"
+                              strokeDasharray="1"
+                              strokeDashoffset={1 - progress}
+                              transform="rotate(-90 32 32)"
+                            />
+                          </svg>
+                          <div className="dispatch-ring-text">
+                            {win ? (
+                              <>
+                                <strong>{formatCountdown(win.deadline)}</strong>
+                                <span>{overdue ? "OVER" : "LEFT"}</span>
+                              </>
+                            ) : (
+                              <strong>—</strong>
+                            )}
+                          </div>
+                        </div>
+                        <div className="dispatch-now-info">
+                          <span className="dispatch-plate">{head.plate_number}</span>
+                          <span className="dispatch-now-driver">{getDriverName(head)}</span>
+                          <span className="dispatch-now-meta">Queued {formatQueuedAt(head)}</span>
+                        </div>
+                        <div className="dispatch-photo">
+                          {photo ? (
+                            <img src={photo} alt={getDriverName(head)} />
+                          ) : (
+                            <>
+                              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                                <circle cx="12" cy="8" r="4" />
+                                <path d="M4 21a8 8 0 0 1 16 0" />
+                              </svg>
+                              <span>2×2 photo</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {overdue && (
+                        <div className="dispatch-alert">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="8" x2="12" y2="12" />
+                            <line x1="12" y1="16" x2="12.01" y2="16" />
+                          </svg>
+                          Loading time is up — ready to dispatch
+                        </div>
+                      )}
+
+                      {win && (
+                        <div className="dispatch-add-time">
+                          <span>Add time</span>
+                          {EXTEND_OPTIONS_MINUTES.map((minutes) => (
+                            <button
+                              key={minutes}
+                              type="button"
+                              className="dispatch-extend-btn"
+                              onClick={() => handleExtendLoading(head, minutes)}
+                              disabled={extendingTicketId === ticket?.id}
+                              title={`Extend by ${minutes} minutes`}
+                            >
+                              +{minutes}{minutes === EXTEND_OPTIONS_MINUTES[0] ? " min" : ""}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="dispatch-action-group">
+                        <button
+                          type="button"
+                          className="dispatch-btn dispatch-btn--dispatch"
+                          onClick={() => handleDispatch(head)}
+                          disabled={dispatchingVehicleId === head.id}
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                            <path d="M5 12h14M12 5l7 7-7 7" />
+                          </svg>
+                          {dispatchingVehicleId === head.id ? "Dispatching…" : "Dispatch"}
+                        </button>
+                        <button type="button" className="dispatch-btn dispatch-btn--swap" onClick={() => openSwapModal(head)}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                            <path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4M21 17H3" />
+                          </svg>
+                          Swap driver
+                        </button>
+                      </div>
+                    </div>
+
+                    {shownNext.length > 0 && (
+                      <div className="dispatch-upnext">
+                        <span className="dispatch-eyebrow">Up next · {upNext.length}</span>
+                        {shownNext.map((vehicle) => (
+                          <div
+                            key={vehicle.id}
+                            className={`dispatch-upnext-row${dragOverVehicleId === vehicle.id ? " dispatch-upnext-row--drag-over" : ""}${dragVehicleId === vehicle.id ? " dispatch-upnext-row--dragging" : ""}`}
+                            {...dragProps(vehicle, routeName, routeId)}
+                          >
+                            {canReorder && (
+                              <span className="dispatch-drag-handle" title="Drag to reorder this route's queue">
+                                <svg width="10" height="14" viewBox="0 0 12 16" fill="currentColor">
+                                  <circle cx="3" cy="2.5" r="1.4" />
+                                  <circle cx="9" cy="2.5" r="1.4" />
+                                  <circle cx="3" cy="8" r="1.4" />
+                                  <circle cx="9" cy="8" r="1.4" />
+                                  <circle cx="3" cy="13.5" r="1.4" />
+                                  <circle cx="9" cy="13.5" r="1.4" />
+                                </svg>
+                              </span>
+                            )}
+                            <span className="dispatch-order-index">#{routeVehicles.indexOf(vehicle) + 1}</span>
+                            <span className="dispatch-plate dispatch-plate--sm">{vehicle.plate_number}</span>
+                            <span className="dispatch-upnext-actions">
+                              <button
+                                type="button"
+                                className="dispatch-btn dispatch-btn--roam dispatch-btn--sm"
+                                onClick={() => handleRoam(vehicle)}
+                                disabled={roamingVehicleId === vehicle.id}
+                                title="Pay the terminal fee now and leave without waiting in line"
                               >
-                                <td className="dispatch-td-order">
-                                  {canReorder ? (
-                                    <span
-                                      className="dispatch-drag-handle"
-                                      title="Drag to reorder this route's queue"
-                                    >
-                                      <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
-                                        <circle cx="3" cy="2.5" r="1.4" />
-                                        <circle cx="9" cy="2.5" r="1.4" />
-                                        <circle cx="3" cy="8" r="1.4" />
-                                        <circle cx="9" cy="8" r="1.4" />
-                                        <circle cx="3" cy="13.5" r="1.4" />
-                                        <circle cx="9" cy="13.5" r="1.4" />
-                                      </svg>
-                                    </span>
-                                  ) : null}
-                                  <span className="dispatch-order-index">#{vehicleIdx + 1}</span>
-                                </td>
-                                <td>
-                                  <span className="dispatch-plate">
-                                    {vehicle.plate_number}
-                                  </span>
-                                </td>
-                                <td>
-                                  <span
-                                    className={`dispatch-status-badge${canDispatch ? " dispatch-status-badge--queued" : " dispatch-status-badge--other"}`}
-                                  >
-                                    <span
-                                      className={`dispatch-status-dot${canDispatch ? " dispatch-status-dot--active" : " dispatch-status-dot--inactive"}`}
-                                    />
-                                    {canDispatch
-                                      ? "Ready"
-                                      : `#${vehicleIdx + 1} in line`}
-                                  </span>
-                                  {deadline != null && (
-                                    <span className={`dispatch-loading-timer${isOverdue ? " dispatch-loading-timer--overdue" : ""}`}>
-                                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                                        <circle cx="12" cy="12" r="9" />
-                                        <path d="M12 7v5l3 3" />
-                                      </svg>
-                                      {formatCountdown(deadline)}
-                                      {EXTEND_OPTIONS_MINUTES.map((minutes) => (
-                                        <button
-                                          key={minutes}
-                                          type="button"
-                                          className="dispatch-extend-btn"
-                                          onClick={() => handleExtendLoading(vehicle, minutes)}
-                                          disabled={extendingTicketId === ticket?.id}
-                                          title={`Extend by ${minutes} minutes`}
-                                        >
-                                          +{minutes}m
-                                        </button>
-                                      ))}
-                                    </span>
-                                  )}
-                                </td>
-                                <td>
-                                  <div className="dispatch-action-group">
-                                    <button
-                                      className={`dispatch-btn dispatch-btn--dispatch${!canDispatch ? " dispatch-btn--dispatch-disabled" : ""}`}
-                                      onClick={() =>
-                                        canDispatch && handleDispatch(vehicle)
-                                      }
-                                      disabled={
-                                        !canDispatch ||
-                                        dispatchingVehicleId === vehicle.id
-                                      }
-                                      title={
-                                        !canDispatch
-                                          ? `Waiting — #${vehicleIdx + 1} in line for this route`
-                                          : "Dispatch vehicle"
-                                      }
-                                    >
-                                      <svg
-                                        width="13"
-                                        height="13"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2.2"
-                                      >
-                                        <path d="M5 12h14M12 5l7 7-7 7" />
-                                      </svg>
-                                      {dispatchingVehicleId === vehicle.id
-                                        ? "Dispatching…"
-                                        : "Dispatch"}
-                                    </button>
-                                    <button
-                                      className="dispatch-btn dispatch-btn--roam"
-                                      onClick={() => handleRoam(vehicle)}
-                                      disabled={roamingVehicleId === vehicle.id}
-                                      title="Pay the terminal fee now and leave without waiting in line"
-                                    >
-                                      <svg
-                                        width="13"
-                                        height="13"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2.2"
-                                      >
-                                        <path d="M3 12h13M11 6l6 6-6 6M21 5v14" />
-                                      </svg>
-                                      {roamingVehicleId === vehicle.id ? "Roaming…" : "Roam"}
-                                    </button>
-                                    <button
-                                      className="dispatch-btn dispatch-btn--swap"
-                                      onClick={() => openSwapModal(vehicle)}
-                                    >
-                                      <svg
-                                        width="13"
-                                        height="13"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2.2"
-                                      >
-                                        <path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4M21 17H3" />
-                                      </svg>
-                                      Swap Driver
-                                    </button>
-                                    <button
-                                      className="dispatch-btn dispatch-btn--cancel"
-                                      onClick={() => openCancelModal(vehicle)}
-                                    >
-                                      <svg
-                                        width="13"
-                                        height="13"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2.2"
-                                      >
-                                        <path d="M18 6 6 18M6 6l12 12" />
-                                      </svg>
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          },
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                  <path d="M3 12h13M11 6l6 6-6 6M21 5v14" />
+                                </svg>
+                                {roamingVehicleId === vehicle.id ? "Roaming…" : "Roam"}
+                              </button>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 );
               })}
             </div>
           )}
         </div>
       </div>
-
-      {cancelTarget && (
-        <div className="dispatch-overlay" onClick={closeCancelModal}>
-          <div className="dispatch-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="dispatch-modal-header">
-              <div className="dispatch-modal-header-left">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#c9a84c"
-                  strokeWidth="2.2"
-                >
-                  <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-                <h2 className="dispatch-modal-title">Cancel Ticket</h2>
-              </div>
-              <button
-                className="dispatch-modal-close"
-                onClick={closeCancelModal}
-                disabled={cancelling}
-                aria-label="Close"
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                >
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="dispatch-modal-body">
-              <div className="dispatch-cancel-vehicle">
-                <div className="dispatch-cancel-vehicle__row">
-                  <span className="dispatch-plate">
-                    {cancelTarget.plate_number}
-                  </span>
-                  <span className="dispatch-cancel-vehicle__route">
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" />
-                      <circle cx="12" cy="10" r="3" />
-                    </svg>
-                    {cancelTarget.route_detail?.full_name || "No route"}
-                  </span>
-                </div>
-                <span className="dispatch-cancel-vehicle__driver">
-                  Driver: {getDriverName(cancelTarget)}
-                </span>
-              </div>
-
-              <div className="dispatch-cancel-warning">
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  style={{ flexShrink: 0, marginTop: 1 }}
-                >
-                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
-                  <path d="M12 9v4M12 17h.01" />
-                </svg>
-                <span>
-                  This will cancel the issued ticket and return the vehicle to{" "}
-                  <strong>Available</strong> status. This action cannot be
-                  undone.
-                </span>
-              </div>
-
-              <div className="dispatch-modal-field">
-                <label className="dispatch-modal-label">
-                  Reason for Cancellation{" "}
-                  <span className="dispatch-modal-required">*</span>
-                </label>
-                <textarea
-                  className="dispatch-modal-textarea"
-                  rows={3}
-                  placeholder="Enter the reason for cancelling this ticket…"
-                  value={cancelReason}
-                  onChange={(e) => {
-                    setCancelReason(e.target.value);
-                    if (cancelError) setCancelError("");
-                  }}
-                  disabled={cancelling}
-                />
-                {cancelError && (
-                  <span className="dispatch-modal-field-error">
-                    {cancelError}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="dispatch-modal-footer">
-              <button
-                type="button"
-                className="dispatch-modal-btn dispatch-modal-btn--secondary"
-                onClick={closeCancelModal}
-                disabled={cancelling}
-              >
-                Go Back
-              </button>
-              <button
-                type="button"
-                className="dispatch-modal-btn dispatch-modal-btn--danger"
-                onClick={handleConfirmCancel}
-                disabled={cancelling || !cancelReason.trim()}
-              >
-                {cancelling ? (
-                  <>
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      className="dispatch-modal-spin"
-                    >
-                      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                    </svg>
-                    Cancelling…
-                  </>
-                ) : (
-                  <>
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                    >
-                      <path d="M18 6 6 18M6 6l12 12" />
-                    </svg>
-                    Confirm Cancel
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {swapTarget && (
         <div className="dispatch-overlay" onClick={closeSwapModal}>

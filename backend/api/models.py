@@ -87,6 +87,7 @@ class User(AbstractUser):
     ROLE_CHOICES = [('PERSONNEL', 'Personnel'), ('SUPERVISOR', 'Supervisor'), ('MANAGER', 'Manager'), ('SUPERADMIN', 'Admin')]
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='PERSONNEL')
     middle_name = models.CharField(max_length=100, blank=True, default='')
+    contact = models.CharField(max_length=20, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)

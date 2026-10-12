@@ -23,6 +23,52 @@ export const getExpiryStatus = (exp) => {
 
 export const getIwpStatus = (driver) => getExpiryStatus(driver?.iwp_expiration_date);
 
+// Driver photos come back as a backend-relative path (or a full URL); null when none.
+export const getDriverPhotoUrl = (photo) => {
+  if (!photo) return null;
+  if (photo.startsWith("http")) return photo;
+  const host = window.location.hostname;
+  return `http://${host === "127.0.0.1" ? "localhost" : host}:8000${photo}`;
+};
+
+const REQUIRED_FIELD_MESSAGES = {
+  first_name: "Enter the first name.",
+  last_name: "Enter the last name.",
+  iwp_number: "Enter the IWP number.",
+  iwp_expiration_date: "Pick the IWP expiration date.",
+  gender: "Select a gender.",
+  birthdate: "Pick the birthdate.",
+  province: "Select a province.",
+  city: "Select a municipality or city.",
+  barangay: "Select a barangay.",
+  contact: "Enter the contact number.",
+};
+
+// Sidebar checklist in the registration modal; every required field belongs to one section.
+export const DRIVER_SECTIONS = [
+  { title: "Personal information", fields: ["first_name", "last_name", "iwp_number", "iwp_expiration_date", "gender", "birthdate"] },
+  { title: "Address", fields: ["province", "city", "barangay"] },
+  { title: "Contact", fields: ["contact"] },
+];
+
+export const REQUIRED_FIELD_COUNT = Object.keys(REQUIRED_FIELD_MESSAGES).length;
+
+export const validateDriverForm = (form) => {
+  const errors = {};
+  for (const [key, message] of Object.entries(REQUIRED_FIELD_MESSAGES)) {
+    if (!form[key]?.toString().trim()) errors[key] = message;
+  }
+  if (!errors.iwp_number && !/^\d{12}$/.test(form.iwp_number.toString().trim())) {
+    errors.iwp_number = "IWP number must be exactly 12 digits.";
+  }
+  if (!errors.contact && !/^\d{11}$/.test(form.contact.toString().trim())) {
+    errors.contact = "Contact number must be 11 digits.";
+  }
+  return errors;
+};
+
+export const formatIwp = (value) => (value || "").replace(/\D/g, "").replace(/(\d{4})(?=\d)/g, "$1-");
+
 export const normalizeDriverForm = (driver = {}) => ({
   id: driver.id ?? null,
   first_name: driver.first_name || "",

@@ -32,6 +32,32 @@ export const getToday = () => {
 // — older years are only pulled in when the user explicitly picks a wider range.
 export const getYearStart = () => `${new Date().getFullYear()}-01-01`;
 
+const toDateStr = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// Period chips on the report filter bar. "custom" has no range of its own —
+// it keeps whatever dates are already set and reveals the date inputs.
+export const PERIODS = [
+  { key: "month", label: "This month" },
+  { key: "30d", label: "Last 30 days" },
+  { key: "year", label: "This year" },
+  { key: "custom", label: "Custom" },
+];
+
+export const getPeriodRange = (key) => {
+  const now = new Date();
+  if (key === "month") return { startDate: toDateStr(new Date(now.getFullYear(), now.getMonth(), 1)), endDate: getToday() };
+  if (key === "30d") return { startDate: toDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29)), endDate: getToday() };
+  if (key === "year") return { startDate: getYearStart(), endDate: getToday() };
+  return null;
+};
+
+export const formatRangeLabel = (startDate, endDate) => {
+  const fmt = (s) =>
+    s ? new Date(`${s}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "…";
+  return `${fmt(startDate)} – ${fmt(endDate)}`;
+};
+
 export const formatTime = (dateString) => {
   try {
     return new Date(dateString).toLocaleTimeString("en-US", {

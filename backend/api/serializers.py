@@ -9,6 +9,18 @@ from .models import User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, 
 from .sms import send_sms_async, queue_position_message
 
 
+class SelfProfileSerializer(serializers.ModelSerializer):
+    """What a signed-in user may change about themselves: never email, password or role."""
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    contact = serializers.RegexField(r'^\d{11}$', required=False, allow_blank=True,
+                                     error_messages={'invalid': 'Contact number must be 11 digits.'})
+
+    class Meta:
+        model = User
+        fields = ['first_name', 'middle_name', 'last_name', 'contact']
+
+
 class UserSerializer(serializers.ModelSerializer):
     username = serializers.EmailField(
         error_messages={'invalid': 'Enter a valid email address.'},
@@ -18,7 +30,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'first_name', 'middle_name', 'last_name',
+            'id', 'username', 'first_name', 'middle_name', 'last_name', 'contact',
             'role', 'is_active', 'must_reset_password', 'email_verified',
         ]
         extra_kwargs = {
