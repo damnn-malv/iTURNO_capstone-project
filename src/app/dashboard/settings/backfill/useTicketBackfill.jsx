@@ -70,24 +70,18 @@ export function useTicketBackfill() {
     }
   };
 
-  // One backend call per (time, vehicle) row. A failed row is reported, not thrown,
-  // so one bad plate doesn't stop the rest of the batch.
+  // The whole batch goes in one call and is saved all-or-nothing. Returns one result
+  // per row, in order, so the caller can show which row (if any) blocked the save.
   const submitRows = async (rows, commit) => {
     setSubmitBusy(true);
     try {
-      const results = [];
-      for (const [i, row] of rows.entries()) {
-        try {
-          // Preview only: tells the backend how many earlier rows draw numbers first,
-          // so each row shows its own ticket number instead of all showing the same one.
-          const body = commit ? row : { ...row, preview_offset: i };
-          results.push({ row, ...(await apiService.submitManualBackfill(body, commit)) });
-        } catch (err) {
-          results.push({ row, outcome: "error", reason: err.message || "Request failed" });
-        }
-      }
-      if (commit) await (IS_REMOTE ? fetchRemoteRequests() : fetchHistory());
+      const data = await apiService.submitBackfillBatch(rows, commit);
+      // Remote only queues, so it has no per-row results.
+      const results = rows.map((row, i) => ({ row, ...(data.results?.[i] || { outcome: data.outcome }) }));
+      if (commit && data.outcome === "ok") await (IS_REMOTE ? fetchRemoteRequests() : fetchHistory());
       return results;
+    } catch (err) {
+      return rows.map((row) => ({ row, outcome: "error", reason: err.message || "Request failed" }));
     } finally {
       setSubmitBusy(false);
     }

@@ -865,3 +865,11 @@
   font-weight: 700;
   color: var(--text-primary);
 }
+.tbf-history-row {
+  cursor: pointer;
+}
+
+.tbf-history-detail {
+  background: var(--bg-page);
+  padding: 8px 16px 16px;
+}

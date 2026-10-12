@@ -604,7 +604,7 @@ class BackfillRecordSerializer(serializers.ModelSerializer):
         model = BackfillRecord
         fields = [
             'id', 'source', 'source_display', 'created_by', 'created_by_name',
-            'ticket_count', 'reason', 'issued_at', 'csv_filename', 'has_csv', 'created_at',
+            'ticket_count', 'reason', 'issued_at', 'csv_filename', 'has_csv', 'entries', 'created_at',
         ]
 
     def get_has_csv(self, obj):

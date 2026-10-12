@@ -5,6 +5,8 @@ import { useTicketBackfill } from "./useTicketBackfill";
 import BackfillBuilder from "./BackfillBuilder";
 import { F_PLATE, F_TICKET_TYPE, F_QUANTITY } from "./fields";
 
+const peso = (n) => `₱${Number(n || 0).toFixed(2)}`;
+
 const MODES = [
   { value: "Queue", label: "Queue" },
   { value: "Roaming", label: "Roaming" },
@@ -21,6 +23,7 @@ export default function TicketBackfillTab() {
   } = useTicketBackfill();
 
   const [mode, setMode] = useState("Queue");
+  const [openRecordId, setOpenRecordId] = useState(null);
 
   const handleToggleWip = async () => {
     const turningOn = !wipMode?.is_active;
@@ -139,9 +142,9 @@ export default function TicketBackfillTab() {
               <tbody>
                 {remoteRequests.map((r) => (
                   <tr key={r.id} className="set-row">
-                    <td className="set-cell-label">{r.payload?.[F_PLATE]}</td>
-                    <td>{r.payload?.[F_TICKET_TYPE]}</td>
-                    <td>{r.payload?.[F_QUANTITY] || 1}</td>
+                    <td className="set-cell-label">{r.payload?.rows ? `${r.payload.rows.length} entries` : r.payload?.[F_PLATE]}</td>
+                    <td>{(r.payload?.rows?.[0] || r.payload)?.[F_TICKET_TYPE]}</td>
+                    <td>{r.payload?.rows ? r.payload.rows.length : r.payload?.[F_QUANTITY] || 1}</td>
                     <td>{r.status}</td>
                     <td className="set-cell-meta">{r.requested_by_name}</td>
                     <td className="set-cell-meta">{new Date(r.created_at).toLocaleString()}</td>
@@ -174,22 +177,54 @@ export default function TicketBackfillTab() {
                 </tr>
               </thead>
               <tbody>
-                {history.map((r) => (
-                  <tr key={r.id} className="set-row">
-                    <td className="set-cell-meta">{new Date(r.created_at).toLocaleString()}</td>
-                    <td className="set-cell-label">{r.created_by_name || "System"}</td>
-                    <td>{r.source_display}</td>
-                    <td>{r.ticket_count}</td>
-                    <td className="set-cell-meta">{r.reason}</td>
-                    <td>
-                      {r.has_csv && (
-                        <button className="set-add-btn" onClick={() => handleDownloadHistoryCsv(r)}>
-                          Download CSV
-                        </button>
+                {history.map((r) => {
+                  const canOpen = r.entries?.length > 0;
+                  const isOpen = openRecordId === r.id;
+                  return (
+                    <React.Fragment key={r.id}>
+                      <tr
+                        className={`set-row ${canOpen ? "tbf-history-row" : ""}`}
+                        onClick={() => canOpen && setOpenRecordId(isOpen ? null : r.id)}
+                      >
+                        <td className="set-cell-meta">{canOpen ? (isOpen ? "▾ " : "▸ ") : ""}{new Date(r.created_at).toLocaleString()}</td>
+                        <td className="set-cell-label">{r.created_by_name || "System"}</td>
+                        <td>{r.source_display}</td>
+                        <td>{r.ticket_count}</td>
+                        <td className="set-cell-meta">{r.reason}</td>
+                        <td>
+                          {r.has_csv && (
+                            <button className="set-add-btn" onClick={(e) => { e.stopPropagation(); handleDownloadHistoryCsv(r); }}>
+                              Download CSV
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr>
+                          <td colSpan={6} className="tbf-history-detail">
+                            <table className="set-table">
+                              <thead>
+                                <tr><th>#</th><th>Ticket #</th><th>Time</th><th>Vehicle</th><th>Driver / Route</th><th>Amount</th></tr>
+                              </thead>
+                              <tbody>
+                                {r.entries.map((e, i) => (
+                                  <tr key={e.ticket_id}>
+                                    <td>{i + 1}</td>
+                                    <td>#{e.ticket_id}</td>
+                                    <td>{e.time?.slice(11)}</td>
+                                    <td className="set-cell-label">{e.vehicle}</td>
+                                    <td>{e.driver}{e.route ? ` — ${e.route}` : ""}</td>
+                                    <td>{peso(e.amount)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                  </tr>
-                ))}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           )}

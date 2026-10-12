@@ -14,12 +14,32 @@ const HOURS = Array.from({ length: 24 }, (_, h) => ({
 let slotSeq = 0;
 const newSlot = (hour) => ({ id: ++slotSeq, hour, plates: [] });
 
-function VehiclePicker({ vehicles, onAdd, invalid }) {
+// Each entry is one trip, collected like a live dispatch: enough tickets of the picked
+// series to add up to the vehicle type's terminal price (UV P40 = 4 x P10 tickets).
+// Mirrors backfill.py's _resolve_batch; null = the series can't make that price.
+function ticketsPerTrip(vehicle, series) {
+  const terminal = Math.round(Number(vehicle.terminal_price) * 100);
+  const price = Math.round(Number(series?.ticket_form_price) * 100);
+  if (!terminal || !price || terminal % price) return null;
+  return terminal / price;
+}
+
+function VehiclePicker({ vehicles, series, onAdd, invalid }) {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const results = vehicles
     .filter((v) => v.plate_number?.toLowerCase().includes(search.trim().toLowerCase()))
     .slice(0, 30);
+
+  // Why a vehicle can't be added (shown in place of its driver), or "" if it can.
+  const note = (v) => {
+    if (!v.owner_driver_name) return "no registered owner";
+    if (!Number(v.terminal_price)) return "no vehicle type / terminal price";
+    if (series && ticketsPerTrip(v, series) === null) {
+      return `${v.transportation_name} ₱${Number(v.terminal_price).toFixed(0)} doesn't fit this series`;
+    }
+    return "";
+  };
 
   return (
     <div className="tbf-searchable">
@@ -38,12 +58,12 @@ function VehiclePicker({ vehicles, onAdd, invalid }) {
           ) : results.map((v) => (
             <div
               key={v.id}
-              className={`tbf-dropdown-item ${v.owner_driver_name ? "" : "tbf-dropdown-item--disabled"}`}
+              className={`tbf-dropdown-item ${note(v) ? "tbf-dropdown-item--disabled" : ""}`}
               // Keeps the input focused so the list stays open for picking several in a row.
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => v.owner_driver_name && onAdd(v.plate_number)}
+              onClick={() => !note(v) && onAdd(v.plate_number)}
             >
-              {v.plate_number} {v.owner_driver_name ? `— ${v.owner_driver_name}` : "— no registered owner"}
+              {v.plate_number} — {note(v) || `${v.owner_driver_name}${series ? ` · ${ticketsPerTrip(v, series)} ticket(s)` : ""}`}
             </div>
           ))}
         </div>
@@ -85,13 +105,15 @@ export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, su
       [F_PLATE]: plate,
       [F_TICKET_TYPE]: series?.ticket_form_label || "",
       [F_SERIES]: seriesId,
-      [F_QUANTITY]: "1",
+      [F_QUANTITY]: "", // blank = the backend fills the trip to the terminal price
       [F_ISSUED_AT]: `${date} ${s.hour}:00`,
       [F_MODE]: mode,
       [F_NOTES]: notes.trim(),
     }))
   );
-  const totalTickets = rows.length;
+  const vehicleByPlate = new Map(vehicles.map((v) => [v.plate_number, v]));
+  const ticketsFor = (plate) => (series && vehicleByPlate.get(plate) ? ticketsPerTrip(vehicleByPlate.get(plate), series) : null) ?? 1;
+  const totalTickets = rows.reduce((sum, r) => sum + ticketsFor(r[F_PLATE]), 0);
   // Buttons stay clickable so a click on an incomplete form says what's missing
   // (and the fields turn red) instead of doing nothing.
   const missing = [
@@ -117,22 +139,14 @@ export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, su
 
   const commit = async () => {
     const results = await submitRows(rows, true);
-    const failed = results.filter((r) => r.outcome !== "ok");
-    if (failed.length === 0) {
+    if (results.every((r) => r.outcome === "ok")) {
       showToast(IS_REMOTE ? "Backfill queued" : `${totalTickets} ticket(s) added`, "success");
       reset();
       return;
     }
-    // The rows that went through are already saved — keep only the failed ones
-    // in the form so a retry can't double-add the rest.
-    showToast(`${results.length - failed.length} saved, ${failed.length} failed`, "info");
-    const byHour = new Map();
-    failed.forEach((r) => {
-      const hour = r.row[F_ISSUED_AT].slice(11, 13);
-      byHour.set(hour, [...(byHour.get(hour) || []), r.row[F_PLATE]]);
-    });
-    setSlots([...byHour].map(([hour, plates]) => ({ ...newSlot(hour), plates })));
-    setReview(failed);
+    // Saved all-or-nothing, so nothing was added and the form is left as it was.
+    showToast("Nothing was saved — fix the entries marked in red", "info");
+    setReview(results);
   };
 
   const handleConfirm = async () => {
@@ -203,6 +217,7 @@ export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, su
           </div>
 
           <VehiclePicker
+            series={series}
             invalid={showErrors && slot.plates.length === 0}
             vehicles={vehicles}
             onAdd={(plate) => editSlot(slot.id, (s) => ({ ...s, plates: [...s.plates, plate] }))}
@@ -212,7 +227,7 @@ export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, su
             {slot.plates.map((plate, idx) => (
               <span className="tbf-chip" key={idx}>
                 <span className="tbf-chip-no">{idx + 1}</span>
-                {plate}
+                {plate}{series ? <span className="tbf-meta"> · {ticketsFor(plate)} ticket(s)</span> : null}
                 <button
                   type="button"
                   title="Remove"
@@ -246,7 +261,7 @@ export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, su
         <div className="usr-overlay" onClick={() => !busy && setReview(null)}>
           <div className="usr-modal" onClick={(e) => e.stopPropagation()}>
             <div className="usr-modal-header">
-              <h2 className="usr-modal-title">{reviewOk ? `Add ${review.length} ticket(s)?` : "Some entries need fixing"}</h2>
+              <h2 className="usr-modal-title">{reviewOk ? `Add ${review.reduce((n, r) => n + (r.ticket_ids?.length || 0), 0)} ticket(s)?` : "Some entries need fixing"}</h2>
             </div>
             <div className="usr-modal-body">
               <p className="set-rewards-note">

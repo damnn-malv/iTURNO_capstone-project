@@ -3,7 +3,7 @@ import logging
 from django.utils import timezone
 
 from api.models import RemoteBackfillRequest, BackfillRecord
-from api.views.backfill import _resolve_batch, _reserve_and_create
+from api.views.backfill import _resolve_batch, _reserve_and_create, run_batch, record_batch_history
 from api.views.helpers import record_audit_log
 
 logger = logging.getLogger('sync')
@@ -27,6 +27,30 @@ def apply_pending():
             pk=req.pk, status='PENDING',
         ).update(status='PROCESSING')
         if not claimed:
+            continue
+
+        if 'rows' in req.payload:
+            # A whole screen's batch (one request) - saved all-or-nothing, one history entry.
+            try:
+                results, ok = run_batch(req.payload['rows'], True)
+            except Exception as exc:
+                results, ok = [{'outcome': 'error', 'reason': f"Save failed: {exc}"}], False
+            if ok:
+                record_audit_log(
+                    user=None, action='CREATE', model_name='Ticket',
+                    object_id=','.join(i for r in results for i in r['ticket_ids']),
+                    object_repr=f"Remote backfill: {sum(len(r['ticket_ids']) for r in results)} ticket(s)",
+                    changes={'source': 'remote_backfill', 'requested_by': req.requested_by_name},
+                )
+                record_batch_history('REMOTE', req.payload['rows'], results, None, req.requested_by_name)
+                req.status, req.result_reason = 'APPLIED', ''
+                applied += 1
+            else:
+                bad = next(r for r in results if r['outcome'] != 'ok')
+                req.status, req.result_reason = 'FAILED', (bad.get('reason') or 'error')[:500]
+                failed += 1
+            req.applied_at = timezone.now()
+            req.save(using='supabase')
             continue
 
         resolved, outcome, reason = _resolve_batch(req.payload)

@@ -148,12 +148,29 @@ def _resolve_batch(row):
         units = [(series, exact_ticket_id)]
     else:
         qty_raw = get(F_QUANTITY)
-        try:
-            quantity = int(qty_raw)
-        except ValueError:
-            return None, 'error', f"Invalid {F_QUANTITY}: '{qty_raw}'"
-        if quantity < 1:
-            return None, 'error', f'{F_QUANTITY} must be at least 1'
+        if qty_raw:
+            try:
+                quantity = int(qty_raw)
+            except ValueError:
+                return None, 'error', f"Invalid {F_QUANTITY}: '{qty_raw}'"
+            if quantity < 1:
+                return None, 'error', f'{F_QUANTITY} must be at least 1'
+        else:
+            # No amount given (the backfill screen): one entry = one trip, which is
+            # collected exactly like a live dispatch - enough tickets to add up to the
+            # vehicle type's terminal price (see _check_terminal_price in viewsets.py).
+            puv_type = vehicle.transportation_id
+            if not puv_type or not puv_type.terminal_price:
+                return None, 'error', (
+                    f"Vehicle '{vehicle.plate_number}' has no vehicle type with a terminal price — "
+                    "set one in the Vehicle Registry first."
+                )
+            if form.price <= 0 or puv_type.terminal_price % form.price:
+                return None, 'error', (
+                    f"{form.name} (₱{form.price:.2f}) doesn't add up to the {puv_type.name} "
+                    f"terminal price of ₱{puv_type.terminal_price:.2f} — pick a different ticket series."
+                )
+            quantity = int(puv_type.terminal_price // form.price)
 
     mode_input = (get(F_MODE) or 'QUEUE').upper()
     mode = MODE_ALIASES.get(mode_input)
@@ -226,64 +243,110 @@ def _reserve_and_create(resolved):
     return tickets
 
 
-def _record_history(source, ticket_count, reason, issued_at, user):
+def _error_detail(exc):
+    detail = exc.detail.get('quantity') if isinstance(exc.detail, dict) else exc.detail
+    return str(detail[0] if isinstance(detail, list) else detail)
+
+
+def run_batch(rows, commit):
+    """Validate and (if commit) save a whole batch of entries as ONE unit: every row is
+    resolved first, then ticket numbers are reserved for all of them under one lock, and
+    nothing is written unless every row passes - so a batch is either fully in or fully out.
+
+    Numbers are handed out in row order, per stock (ticket type + series), which is what
+    keeps the order the entries were picked in. With commit=False the same reservation
+    runs and is rolled back, so the preview shows the exact numbers a save would use.
+
+    Returns (results, ok): one result dict per row, in order."""
+    results, resolved_rows = [], []
+    for row in rows:
+        resolved, outcome, reason = _resolve_batch(row)
+        resolved_rows.append(resolved)
+        results.append({'outcome': outcome, 'reason': reason})
+    if any(r['outcome'] != 'ok' for r in results):
+        return results, False
+
+    with transaction.atomic():
+        groups = {}
+        for i, resolved in enumerate(resolved_rows):
+            if resolved['units'] is None:
+                groups.setdefault((resolved['form'].id, resolved['series_id']), []).append(i)
+        for (form_id, series_id), idxs in groups.items():
+            try:
+                units = _consume_series_fifo(form_id, sum(resolved_rows[i]['quantity'] for i in idxs), series_id)
+            except ValidationError as exc:
+                for i in idxs:
+                    results[i] = {'outcome': 'error', 'reason': _error_detail(exc)}
+                continue
+            pos = 0
+            for i in idxs:
+                q = resolved_rows[i]['quantity']
+                resolved_rows[i]['units'] = units[pos:pos + q]
+                pos += q
+        if any(r['outcome'] != 'ok' for r in results):
+            return results, False
+
+        for i, resolved in enumerate(resolved_rows):
+            ticket_ids = [tid for _, tid in resolved['units']]
+            if commit:
+                _reserve_and_create(resolved)
+            results[i] = {
+                'outcome': 'ok', 'ticket_ids': ticket_ids,
+                'vehicle': resolved['vehicle'].plate_number, 'driver': str(resolved['driver']),
+                'route': resolved['route'].full_name if resolved['route'] else None,
+                'ticket_type': resolved['form'].name, 'quantity': len(ticket_ids),
+                'total_amount': float(resolved['form'].price) * len(ticket_ids),
+            }
+        if not commit:
+            transaction.set_rollback(True)
+    return results, True
+
+
+def record_batch_history(source, rows, results, user, name=''):
+    """One history entry for the whole batch (not one per ticket); `entries` keeps every
+    ticket so the history row can be opened to see exactly what was added."""
+    times = {r.get(F_ISSUED_AT) for r in rows}
+    series = TicketSeries.objects.filter(id=rows[0].get(F_SERIES) or 0).first()
+    where = f"{rows[0].get(F_MODE) or 'Queue'}" + (f", series {series.series_no}" if series else '')
+    entries = [
+        {
+            'ticket_id': tid, 'time': row[F_ISSUED_AT], 'vehicle': res['vehicle'], 'driver': res['driver'],
+            'route': res['route'], 'amount': res['total_amount'] / max(res['quantity'], 1),
+        }
+        for row, res in zip(rows, results) for tid in res['ticket_ids']
+    ]
+    authed = user and getattr(user, 'is_authenticated', False)
     BackfillRecord.objects.create(
         source=source,
-        created_by=user if user and getattr(user, 'is_authenticated', False) else None,
-        created_by_name=str(user) if user and getattr(user, 'is_authenticated', False) else '',
-        ticket_count=ticket_count,
-        reason=reason,
-        issued_at=issued_at,
+        created_by=user if authed else None,
+        created_by_name=str(user) if authed else name,
+        ticket_count=len(entries),
+        reason=f"{rows[0].get(F_NOTES)} ({where})",
+        issued_at=None if len(times) > 1 else _parse_ph_datetime(rows[0][F_ISSUED_AT]),
+        entries=entries,
     )
 
 
 @api_view(['POST'])
 @permission_classes([IsSupervisorOrAdminForWrite])
-def backfill_manual(request):
-    """Single-row entry. commit=false (default) previews without writing or reserving
-    any ticket numbers."""
+def backfill_batch(request):
+    """A batch of entries (one per vehicle per time) from the backfill screen.
+    commit=false (default) previews without writing or holding any ticket numbers."""
     commit = bool(request.data.get('commit'))
-    resolved, outcome, reason = _resolve_batch(request.data)
-    if outcome != 'ok':
-        return Response({'outcome': outcome, 'reason': reason}, status=200)
-
-    total_amount = float(resolved['form'].price) * resolved['quantity']
-    ticket_ids = None
-    if not commit and resolved['units'] is None:
-        # Which numbers this entry would get. A batch previews its rows one call at a
-        # time, so `preview_offset` = how many earlier rows would draw from the same
-        # stock first. Nothing is written; the numbers aren't held, so a live dispatch
-        # in between can still take them (hence the WIP-mode advice).
-        try:
-            offset = int(request.data.get('preview_offset') or 0)
-            with transaction.atomic():
-                units = _consume_series_fifo(resolved['form'].id, offset + resolved['quantity'], resolved['series_id'])
-        except ValidationError as exc:
-            detail = exc.detail.get('quantity') if isinstance(exc.detail, dict) else exc.detail
-            return Response({'outcome': 'error', 'reason': str(detail[0] if isinstance(detail, list) else detail)}, status=200)
-        ticket_ids = [ticket_id for _, ticket_id in units[offset:]]
-    if commit:
-        try:
-            tickets = _reserve_and_create(resolved)
-        except ValidationError as exc:
-            detail = exc.detail.get('quantity') if isinstance(exc.detail, dict) else exc.detail
-            return Response({'outcome': 'error', 'reason': str(detail[0] if isinstance(detail, list) else detail)}, status=200)
-        ticket_ids = [t.pk for t in tickets]
+    rows = request.data.get('rows') or []
+    if not rows:
+        return Response({'outcome': 'error', 'reason': 'No entries to backfill'}, status=200)
+    results, ok = run_batch(rows, commit)
+    if ok and commit:
+        count = sum(len(r['ticket_ids']) for r in results)
         record_audit_log(
             user=request.user, action='CREATE', model_name='Ticket',
-            object_id=','.join(ticket_ids), object_repr=f"Manual backfill: {len(tickets)} ticket(s) for {resolved['vehicle']}",
+            object_id=','.join(i for r in results for i in r['ticket_ids']),
+            object_repr=f"Manual backfill: {count} ticket(s) in {len(rows)} entries",
             changes={'source': 'manual_backfill'},
         )
-        _record_history('MANUAL', len(tickets), resolved['reason'], resolved['historical_dt'], request.user)
-
-    return Response({
-        'outcome': 'ok', 'committed': commit, 'ticket_ids': ticket_ids,
-        'vehicle': resolved['vehicle'].plate_number, 'driver': str(resolved['driver']),
-        'route': resolved['route'].origin if resolved['route'] else None,
-        'ticket_type': resolved['form'].name, 'quantity': resolved['quantity'],
-        'unit_price': float(resolved['form'].price), 'total_amount': total_amount,
-        'available': None if resolved['units'] else _available_quantity(resolved['form'].id, resolved['series_id']),
-    })
+        record_batch_history('MANUAL', rows, results, request.user)
+    return Response({'outcome': 'ok' if ok else 'error', 'committed': commit and ok, 'results': results})
 
 
 def _read_csv_rows(file_obj):

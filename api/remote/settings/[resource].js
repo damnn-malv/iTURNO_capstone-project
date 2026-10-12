@@ -291,12 +291,23 @@ async function backfillResource(req, res, supabase, payload) {
       return;
     }
 
-    const row = req.body || {};
+    // The backfill screen sends a whole batch ({ rows: [...] }) as ONE request, which the
+    // LAN applies all-or-nothing as a single history entry. A bare row (older clients)
+    // is still accepted as a batch of one.
+    const body = req.body || {};
+    const batchRows = Array.isArray(body.rows) ? body.rows : null;
+    const row = batchRows ? {} : body;
     const ticketId = String(row["Ticket Number"] || "").trim();
-    const missing = BACKFILL_REQUIRED.filter((f) => !String(row[f] || "").trim());
-    // Ticket Amount is only required for the normal auto-consume path — the advanced
-    // exact-ticket-number fallback (Ticket Number present) doesn't use it.
-    if (!ticketId && !String(row["Ticket Amount"] || "").trim()) missing.push("Ticket Amount");
+    const missing = [];
+    for (const r of batchRows || [row]) {
+      const rowTicketId = String(r["Ticket Number"] || "").trim();
+      for (const f of BACKFILL_REQUIRED) if (!String(r[f] || "").trim() && !missing.includes(f)) missing.push(f);
+      // Ticket Amount is only required for the normal auto-consume path — the advanced
+      // exact-ticket-number fallback (Ticket Number present) doesn't use it. A batch leaves it
+      // blank: the LAN fills each trip to the vehicle type's terminal price.
+      if (!batchRows && !rowTicketId && !String(r["Ticket Amount"] || "").trim() && !missing.includes("Ticket Amount")) missing.push("Ticket Amount");
+    }
+    if (batchRows && batchRows.length === 0) missing.push("rows");
     if (missing.length) {
       res.status(400).json({ detail: `Missing required field(s): ${missing.join(", ")}` });
       return;
@@ -331,7 +342,7 @@ async function backfillResource(req, res, supabase, payload) {
     const { data, error } = await supabase
       .from("api_remotebackfillrequest")
       .insert({
-        payload: row,
+        payload: batchRows ? { rows: batchRows } : row,
         ticket_id: ticketId,
         requested_by_name: payload.username || "",
         status: "PENDING",
