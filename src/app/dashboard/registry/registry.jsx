@@ -40,7 +40,6 @@ function Registry() {
       {/* Header */}
       <div className="reg-header">
         <div className="reg-header-left">
-          <div className="reg-header-accent" />
           <div>
             <h1 className="reg-title">Fleet &amp; Driver Registry</h1>
             

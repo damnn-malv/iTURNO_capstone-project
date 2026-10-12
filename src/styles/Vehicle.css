@@ -299,14 +299,12 @@
 .veh-btn--edit:hover, .veh-btn--history:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 .veh-btn--delete {
-  background: rgba(239,68,68,0.1);
-  color: #b91c1c;
-  border: 1px solid rgba(239,68,68,0.2);
+  background: var(--bg-page);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
 }
 
-.veh-btn--delete:hover {
-  background: rgba(239,68,68,0.18);
-}
+.veh-btn--delete:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 /* ── Loading dots ── */
 .veh-loading-dots {

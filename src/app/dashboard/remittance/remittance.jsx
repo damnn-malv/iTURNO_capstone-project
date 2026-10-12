@@ -1,14 +1,16 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import CreateBatchForm from "./createRemittance";
 import { apiService } from "../../../lib/api-service";
 import { getPhDateString } from "../../../lib/phDate";
 import IssuedStatus from "./IssuedStatus";
+import { useFeedback } from "../../../components/ui/kit";
 import "../../../styles/Remittance.css";
 import "../../../styles/Report.css";
 
 export default function Remittance() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { notify } = useFeedback();
 
   // ?date=YYYY-MM-DD is the missed day when filing a late remittance; anything
   // malformed or not strictly in the past falls back to a normal (today) batch.
@@ -27,19 +29,26 @@ export default function Remittance() {
   const [status, setStatus] = useState(null);
   const [statusLoading, setStatusLoading] = useState(false);
 
+  const fetchRef = useRef(null);
   const fetchStatus = useCallback(async () => {
     setStatusLoading(true);
     try {
       const data = await apiService.get(`/report/eod-reconciliation/?date=${statusDate}`);
       setStatus(data);
-    } catch {
-      console.error("Failed to load remittance status");
+    } catch (err) {
+      console.error("Failed to load remittance status", err);
+      notify.error({
+        title: "Couldn't load the remittance status",
+        message: err?.message?.replace(/^Error:\s*/, "") || "Nothing was changed. Check your connection and try again.",
+        onRetry: () => fetchRef.current(),
+      });
     } finally {
       setStatusLoading(false);
     }
-  }, [statusDate]);
+  }, [statusDate, notify]);
 
   useEffect(() => {
+    fetchRef.current = fetchStatus;
     fetchStatus();
   }, [fetchStatus]);
 
@@ -52,7 +61,6 @@ export default function Remittance() {
     <div className="rem-page">
       <div className="rem-header">
         <div className="rem-header-left">
-          <div className="rem-header-accent" />
           <div>
             <h1 className="rem-title">{targetDate ? "Late Remittance" : "Remittance"}</h1>
           </div>

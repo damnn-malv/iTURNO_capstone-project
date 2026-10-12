@@ -19,7 +19,9 @@ import {
   VehicleIcon,
 } from "../../components/ui/NavIcon";
 import { apiService } from "../../lib/api-service";
-import { useToast, useConfirm } from "../../components/ui/ToastConfirmContext";
+import { useConfirm } from "../../components/ui/ToastConfirmContext";
+import { BusyOverlay, FeedbackProvider } from "../../components/ui/kit";
+import WelcomeCard from "../../components/ui/WelcomeCard";
 import ForcePasswordChange from "../../components/auth/ForcePasswordChange";
 import GlobalNotices from "../../components/notices/GlobalNotices";
 import "./../../styles/mainIndex.css";
@@ -90,7 +92,12 @@ function mainIndex() {
     () => localStorage.getItem("theme") === "dark",
   );
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const showToast = useToast();
+  const [signingOut, setSigningOut] = useState(false);
+  // Set by the login flow; shown once, then cleared so a refresh does not show it again.
+  const [welcome, setWelcome] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("welcomeCard")); } catch { return null; }
+  });
+  useEffect(() => { sessionStorage.removeItem("welcomeCard"); }, []);
   const showConfirm = useConfirm();
   const location = useLocation();
 
@@ -138,14 +145,6 @@ function mainIndex() {
   const userRole = currentUser.role || "Unknown Role";
   const userRoleLabel = ROLE_LABELS[userRole] || userRole;
   const canViewRemittance = ROLE_NAV[userRole]?.includes("/dashboard/Remittance");
-  const userInitials =
-    userName
-      .split(" ")
-      .filter(Boolean)
-      .map((part) => part[0])
-      .slice(0, 2)
-      .join("")
-      .toUpperCase() || "US";
 
   if (!userLoaded) {
     return null;
@@ -162,7 +161,10 @@ function mainIndex() {
   }
 
   return (
+    <FeedbackProvider>
     <div className="shell">
+      {welcome && <WelcomeCard {...welcome} onClose={() => setWelcome(null)} />}
+      <BusyOverlay open={signingOut} title="Signing out..." />
       <header className="mobile-header">
         <button
           type="button"
@@ -203,7 +205,6 @@ function mainIndex() {
         </div>
         {/* User footer */}
         <div className="header-user">
-          <div className="header-avatar">{userInitials}</div>
           <div className="header-user-info">
             <div className="header-user-name">{userName}</div>
             <div className="header-user-role">{userRoleLabel}</div>
@@ -251,12 +252,12 @@ function mainIndex() {
 
           {/* Logout */}
           <button
-            className="header-icon-btn"
+            className="header-icon-btn header-logout-btn"
             onClick={async () => {
               const ok = await showConfirm("Are you sure you want to logout?");
               if (!ok) return;
-              showToast("Logging out...", "info");
-              setTimeout(() => apiService.logout(), 1200);
+              setSigningOut(true);
+              setTimeout(() => apiService.logout(), 800);
             }}
             title="Logout"
           >
@@ -275,6 +276,7 @@ function mainIndex() {
               <polyline points="16 17 21 12 16 7" />
               <line x1="21" x2="9" y1="12" y2="12" />
             </svg>
+            <span className="header-logout-label">Logout</span>
           </button>
         </div>
       </header>
@@ -332,10 +334,11 @@ function mainIndex() {
             element={<StaffRegistry userRole={userRole} />}
           />
           <Route path="Reports" element={<Reports />} />
-          <Route path="Settings" element={<Settings />} />
+          <Route path="Settings/*" element={<Settings />} />
         </Routes>
       </main>
     </div>
+    </FeedbackProvider>
   );
 }
 

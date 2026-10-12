@@ -145,7 +145,6 @@ function Queue({ userRole }) {
       {/* ── Page Header ── */}
       <div className="queue-header">
         <div className="queue-header-left">
-          <div className="queue-header-accent" />
           <div>
             <h1 className="queue-title">Queue Management</h1>
           </div>

@@ -1,64 +1,18 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import { apiService } from "../../../lib/api-service";
-import { useToast, useConfirm } from "../../../components/ui/ToastConfirmContext";
+import { useFeedback } from "../../../components/ui/kit";
 import SettingsModal from "../../../components/ui/settingsModal";
 import TicketBackfillTab from "./backfill/TicketBackfillTab";
 import ArchiveTab from "./archive/ArchiveTab";
+import SettingsNav from "./SettingsNav";
+import TicketFormsSection from "./TicketFormsSection";
+import PuvTypesSection from "./PuvTypesSection";
+import RoutesSection from "./RoutesSection";
+import SystemSection from "./SystemSection";
+import { SETTINGS_SECTIONS, SETTINGS_BASE, canViewSection } from "./settingsSections";
 import "../../../styles/Settings.css";
-
-const TABS = [
-  {
-    key: "general",
-    label: "General",
-    description: "PUV types, routes, ticket forms, and terminal price",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
-        <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
-        <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
-        <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
-      </svg>
-    ),
-  },
-  {
-    key: "backfill",
-    label: "Ticket Backfill",
-    description: "Manually enter or CSV-import missed tickets, and pause live issuance during import",
-    allowedRoles: ["SUPERADMIN", "SUPERVISOR"],
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 21V9" />
-        <path d="M7 14l5-5 5 5" />
-        <path d="M4 3h16" />
-      </svg>
-    ),
-  },
-  {
-    key: "archive",
-    label: "Archive",
-    description: "Restore archived vehicles, drivers, requisitions, remittance batches, routes, and PUV types",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="4" width="18" height="4" rx="1" />
-        <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
-        <path d="M10 12h4" />
-      </svg>
-    ),
-  },
-  {
-    key: "system",
-    label: "System",
-    description: "Backup, restore, and roll back the entire system",
-    allowedRoles: ["SUPERADMIN"],
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <ellipse cx="12" cy="5" rx="9" ry="3" />
-        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-      </svg>
-    ),
-  },
-];
+import "../../../styles/SettingsUi.css";
 
 const DeleteIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -130,15 +84,64 @@ const TicketIcon = () => (
   </svg>
 );
 
-const formatBytes = (bytes) => {
-  if (!bytes) return "0 KB";
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  return `${(kb / 1024).toFixed(2)} MB`;
-};
+const fmtPeso = (n) => `₱${Number(n || 0).toFixed(2)}`;
+const routeLabel = (r) => `${r.origin} → San Fernando`;
+const FALLBACK_ERROR = "Nothing was changed. Check your connection and try again.";
+const errorMessage = (err) => err?.message?.replace(/^Error:\s*/, "") || FALLBACK_ERROR;
 
-function Settings() {
-  const [activeTab, setActiveTab] = useState("general");
+// Adds/clears one row's working state ({ kind: "busy" | "danger", label }) while `fn` runs.
+async function withRow(setRows, id, state, fn) {
+  setRows((prev) => ({ ...prev, [id]: state }));
+  try {
+    return await fn();
+  } finally {
+    setRows((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+}
+
+const fetchPuvTypes = () => apiService.getPUVTypes();
+const fetchRoutes = () => apiService.getRoutes();
+// Must match the names the remittance export looks up (e.g. "Cash Tickets@3").
+const TICKET_FORM_PREFIX = "Cash Tickets@";
+const fetchTicketForms =() => apiService.getTicketForms();
+
+// Loads a list once (skeleton rows while `loading`), and can be re-run quietly with `reload`.
+// A failed load shows the centered error with "Try again".
+function useListLoader(fetcher, errorTitle, notify) {
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const loadRef = useRef(null);
+
+  const load = useCallback(() => {
+    fetcher()
+      .then(setList)
+      .catch((err) => {
+        console.error(errorTitle, err);
+        notify.error({
+          title: errorTitle,
+          message: errorMessage(err),
+          onRetry: () => { setLoading(true); loadRef.current(); },
+        });
+      })
+      .finally(() => setLoading(false));
+  }, [fetcher, errorTitle, notify]);
+
+  useEffect(() => {
+    loadRef.current = load;
+    load();
+  }, [load]);
+
+  return { list, setList, loading, reload: load };
+}
+
+function SettingsPage() {
+  // The active section comes from the URL: /dashboard/settings/<section>
+  const { pathname } = useLocation();
+  const activeTab = pathname.split("/").filter(Boolean)[2]?.toLowerCase() || "";
   const [userRole, setUserRole] = useState("");
 
   useEffect(() => {
@@ -149,29 +152,28 @@ function Settings() {
 
   const isAdmin = userRole === "SUPERADMIN";
   const canManageBackfill = ["SUPERADMIN", "SUPERVISOR"].includes(userRole);
-  const visibleTabs = TABS.filter(tab => !tab.allowedRoles || tab.allowedRoles.includes(userRole));
 
-  const [puvTypes, setPuvTypes] = useState([]);
+  const { notify, report, confirmAction } = useFeedback();
+
+  const { list: puvTypes, setList: setPuvTypes, loading: loadingPuv, reload: loadPuvTypes } = useListLoader(fetchPuvTypes, "Couldn't load PUV types", notify);
   const [newType, setNewType] = useState("");
   const [newTypePrice, setNewTypePrice] = useState("");
   const [puvPriceInputs, setPuvPriceInputs] = useState({});
-  const [savingPuvPriceId, setSavingPuvPriceId] = useState(null);
+  const [puvRows, setPuvRows] = useState({});
+  const [addingPuv, setAddingPuv] = useState(false);
 
-  const [routes, setRoutes] = useState([]);
+  const { list: routes, setList: setRoutes, loading: loadingRoutes, reload: loadRoutes } = useListLoader(fetchRoutes, "Couldn't load routes", notify);
   const [newOrigin, setNewOrigin] = useState("");
   const [routeEstimateInputs, setRouteEstimateInputs] = useState({});
-  const [savingRouteEstimateId, setSavingRouteEstimateId] = useState(null);
+  const [routeRows, setRouteRows] = useState({});
+  const [addingRoute, setAddingRoute] = useState(false);
 
-  const [ticketForms, setTicketForms] = useState([]);
+  const { list: ticketForms, setList: setTicketForms, loading: loadingForms } = useListLoader(fetchTicketForms, "Couldn't load ticket forms", notify);
   const [newTicketForm, setNewTicketForm] = useState("");
-  const [newTicketFormPrice, setNewTicketFormPrice] = useState("");
+  const [formRows, setFormRows] = useState({});
+  const [addingForm, setAddingForm] = useState(false);
 
-  const showToast = useToast();
-  const showConfirm = useConfirm();
-
-  // General is now four stacked sections rather than tabs a click apart, so
-  // each needs its own independent search/add-modal state instead of one
-  // shared pair keyed off whichever tab used to be active.
+  // Each section needs its own independent search/add-modal state.
   const [puvSearch, setPuvSearch] = useState("");
   const [puvModalOpen, setPuvModalOpen] = useState(false);
   const [routesSearch, setRoutesSearch] = useState("");
@@ -179,48 +181,55 @@ function Settings() {
   const [ticketFormsSearch, setTicketFormsSearch] = useState("");
   const [ticketFormModalOpen, setTicketFormModalOpen] = useState(false);
 
-  useEffect(() => {
-    apiService.getPUVTypes()
-      .then(setPuvTypes)
-      .catch(err => console.error("Failed to load PUV Types:", err));
-  }, []);
-
-  const handleAddPUVType = async () => {
+  // ── PUV types ──
+  const addPuvType = async () => {
     if (!newType.trim()) {
-      showToast?.("Name is required", "info");
+      notify.error({ title: "Name is required", message: "Enter a name for the PUV type." });
       return;
     }
+    setAddingPuv(true);
     try {
       const created = await apiService.createPUVType({ name: newType, terminal_price: parseFloat(newTypePrice) || 0 });
-      setPuvTypes([...puvTypes, created]);
+      setPuvTypes((prev) => [...prev, created]);
       setNewType("");
       setNewTypePrice("");
       setPuvModalOpen(false);
-      showToast?.("PUV type added", "success");
+      notify.success({ title: "PUV type added", message: `${created.name} is ready to use.` });
     } catch (err) {
       console.error("Failed to create:", err);
-      showToast?.(err.message || "Failed to create PUV type", "info");
+      notify.error({ title: "Couldn't add PUV type", message: errorMessage(err), onRetry: addPuvType });
+    } finally {
+      setAddingPuv(false);
     }
   };
 
-  const handleSavePuvPrice = async (pt) => {
-    const price = parseFloat(puvPriceInputs[pt.id]);
-    if (isNaN(price) || price < 0) {
-      showToast?.("Terminal price must be 0 or more", "info");
-      return;
-    }
-    setSavingPuvPriceId(pt.id);
+  const savePuvPrice = (pt, price) => withRow(setPuvRows, pt.id, { kind: "busy", label: "Saving..." }, async () => {
     try {
       const updated = await apiService.updatePUVType(pt.id, { name: pt.name, terminal_price: price });
-      setPuvTypes(puvTypes.map(p => (p.id === pt.id ? updated : p)));
+      setPuvTypes((prev) => prev.map((p) => (p.id === pt.id ? updated : p)));
       setPuvPriceInputs(({ ...rest }) => (delete rest[pt.id], rest));
-      showToast?.("Terminal price saved", "success");
+      return { success: { title: "Changes saved", message: `Terminal fee for ${pt.name} updated to ${fmtPeso(price)}.` } };
     } catch (err) {
       console.error("Failed to save terminal price:", err);
-      showToast?.(err.message || "Failed to save terminal price", "info");
-    } finally {
-      setSavingPuvPriceId(null);
+      return { error: { title: "Couldn't save changes", message: errorMessage(err), onRetry: () => savePuvPrice(pt, price).then(report) } };
     }
+  });
+
+  // Kept from the earlier request: changing a terminal fee asks first.
+  const handleSavePuvPrice = (pt) => {
+    const price = parseFloat(puvPriceInputs[pt.id]);
+    if (isNaN(price) || price < 0) {
+      notify.error({ title: "Check the fee", message: "Terminal fee must be 0 or more." });
+      return;
+    }
+    confirmAction({
+      title: "Change terminal fee?",
+      message: `Change the terminal fee for "${pt.name}" from ${fmtPeso(pt.terminal_price)} to ${fmtPeso(price)}?`,
+      confirmLabel: "Save",
+      busyLabel: "Saving...",
+      tone: "primary",
+      run: () => savePuvPrice(pt, price),
+    });
   };
 
   // PUV types and routes are archived rather than deleted so the vehicles and
@@ -232,518 +241,343 @@ function Settings() {
       : "Nothing uses it yet. It will be hidden from selection.";
   };
 
-  const handleArchivePUVType = async (pt) => {
-    const note = impactNote([[pt.vehicle_count, "vehicle(s)"]]);
-    if (!(await showConfirm?.(`Archive PUV type "${pt.name}"? ${note} You can restore it from the Archive tab.`))) return;
+  const undoArchivePuvType = async (pt) => {
+    try {
+      const restored = await apiService.updatePUVType(pt.id, { name: pt.name, terminal_price: pt.terminal_price, is_archived: false });
+      setPuvTypes((prev) => [...prev, restored]);
+      notify.success({ title: "PUV type restored", message: `${pt.name} is back in PUV types.` });
+    } catch (err) {
+      console.error("Failed to undo archive:", err);
+      notify.error({ title: "Couldn't undo", message: errorMessage(err), onRetry: () => undoArchivePuvType(pt) });
+    }
+  };
+
+  const archivePuvType = (pt) => withRow(setPuvRows, pt.id, { kind: "danger", label: "Archiving..." }, async () => {
     try {
       await apiService.updatePUVType(pt.id, { name: pt.name, terminal_price: pt.terminal_price, is_archived: true });
-      setPuvTypes(puvTypes.filter(p => p.id !== pt.id));
-      showToast?.("PUV type archived", "success");
+      setPuvTypes((prev) => prev.filter((p) => p.id !== pt.id));
+      return {
+        success: {
+          title: "PUV type archived",
+          message: `${pt.name} was moved to Archive.`,
+          undo: { label: "Undo", onUndo: () => undoArchivePuvType(pt) },
+        },
+      };
     } catch (err) {
       console.error("Failed to archive PUV type:", err);
-      showToast?.(err.message || "Failed to archive PUV type", "info");
+      return { error: { title: "Couldn't archive PUV type", message: errorMessage(err), onRetry: () => archivePuvType(pt).then(report) } };
     }
-  };
+  });
 
-  useEffect(() => {
-    apiService.getRoutes()
-      .then(setRoutes)
-      .catch(err => console.error("Failed to load routes:", err));
-  }, []);
+  const handleArchivePUVType = (pt) => confirmAction({
+    title: "Archive this PUV type?",
+    message: `"${pt.name}": ${impactNote([[pt.vehicle_count, "vehicle(s)"]])} You can restore it from the Archive tab.`,
+    confirmLabel: "Archive",
+    busyLabel: "Archiving...",
+    run: () => archivePuvType(pt),
+  });
 
-  const handleAddRoute = async () => {
+  // ── Routes ──
+  const addRoute = async () => {
     if (!newOrigin.trim()) {
-      showToast?.("Route origin is required", "info");
+      notify.error({ title: "Route origin is required", message: "Enter where the route starts." });
       return;
     }
+    setAddingRoute(true);
     try {
       const created = await apiService.createRoute({ origin: newOrigin });
-      setRoutes([...routes, created]);
+      setRoutes((prev) => [...prev, created]);
       setNewOrigin("");
       setRouteModalOpen(false);
-      showToast?.("Route added", "success");
+      notify.success({ title: "Route added", message: `${routeLabel(created)} is ready to use.` });
     } catch (err) {
       console.error("Failed to create route:", err);
-      showToast?.(err.message || "Failed to create route", "info");
+      notify.error({ title: "Couldn't add route", message: errorMessage(err), onRetry: addRoute });
+    } finally {
+      setAddingRoute(false);
     }
   };
 
-  const handleArchiveRoute = async (route) => {
-    const note = impactNote([[route.vehicle_count, "vehicle(s)"], [route.ticket_count, "ticket(s)"]]);
-    if (!(await showConfirm?.(`Archive route "${route.origin}"? ${note} You can restore it from the Archive tab.`))) return;
+  const undoArchiveRoute = async (route) => {
+    try {
+      const restored = await apiService.updateRoute(route.id, { origin: route.origin, is_archived: false });
+      setRoutes((prev) => [...prev, restored]);
+      notify.success({ title: "Route restored", message: `${routeLabel(route)} is back in Routes.` });
+    } catch (err) {
+      console.error("Failed to undo archive:", err);
+      notify.error({ title: "Couldn't undo", message: errorMessage(err), onRetry: () => undoArchiveRoute(route) });
+    }
+  };
+
+  const archiveRoute = (route) => withRow(setRouteRows, route.id, { kind: "danger", label: "Archiving..." }, async () => {
     try {
       await apiService.updateRoute(route.id, { origin: route.origin, is_archived: true });
-      setRoutes(routes.filter(r => r.id !== route.id));
-      showToast?.("Route archived", "success");
+      setRoutes((prev) => prev.filter((r) => r.id !== route.id));
+      return {
+        success: {
+          title: "Route archived",
+          message: `${routeLabel(route)} was moved to Archive.`,
+          undo: { label: "Undo", onUndo: () => undoArchiveRoute(route) },
+        },
+      };
     } catch (err) {
       console.error("Failed to archive route:", err);
-      showToast?.(err.message || "Failed to archive route", "info");
+      return { error: { title: "Couldn't archive route", message: errorMessage(err), onRetry: () => archiveRoute(route).then(report) } };
     }
-  };
+  });
 
-  const handleSaveRouteEstimate = async (route) => {
-    const raw = routeEstimateInputs[route.id];
-    const minutes = raw === "" || raw == null ? null : parseInt(raw, 10);
-    if (raw !== "" && raw != null && (isNaN(minutes) || minutes < 0)) {
-      showToast?.("Estimated loading time must be a whole number of minutes", "info");
-      return;
-    }
-    setSavingRouteEstimateId(route.id);
+  const handleArchiveRoute = (route) => confirmAction({
+    title: "Archive this route?",
+    message: `"${routeLabel(route)}": ${impactNote([[route.vehicle_count, "vehicle(s)"], [route.ticket_count, "ticket(s)"]])} You can restore it from the Archive tab.`,
+    confirmLabel: "Archive",
+    busyLabel: "Archiving...",
+    run: () => archiveRoute(route),
+  });
+
+  const saveRouteEstimate = (route, minutes) => withRow(setRouteRows, route.id, { kind: "busy", label: "Saving..." }, async () => {
     try {
       const updated = await apiService.updateRoute(route.id, {
         origin: route.origin,
         estimated_loading_minutes: minutes,
       });
-      setRoutes(routes.map(r => (r.id === route.id ? updated : r)));
-      showToast?.("Estimated loading time saved", "success");
+      setRoutes((prev) => prev.map((r) => (r.id === route.id ? updated : r)));
+      setRouteEstimateInputs(({ ...rest }) => (delete rest[route.id], rest));
+      return { success: { title: "Changes saved", message: `${routeLabel(route)} updated.` } };
     } catch (err) {
       console.error("Failed to save estimated loading time:", err);
-      showToast?.(err.message || "Failed to save estimated loading time", "info");
-    } finally {
-      setSavingRouteEstimateId(null);
+      return { error: { title: "Couldn't save changes", message: errorMessage(err), onRetry: () => saveRouteEstimate(route, minutes).then(report) } };
     }
+  });
+
+  const handleSaveRouteEstimate = (route) => {
+    const raw = routeEstimateInputs[route.id];
+    const minutes = raw === "" || raw == null ? null : parseInt(raw, 10);
+    if (raw !== "" && raw != null && (isNaN(minutes) || minutes < 0)) {
+      notify.error({ title: "Check the loading time", message: "Enter a whole number of minutes." });
+      return;
+    }
+    saveRouteEstimate(route, minutes).then(report);
   };
 
-  useEffect(() => {
-    apiService.getTicketForms()
-      .then(setTicketForms)
-      .catch(err => console.error("Failed to load ticket forms:", err));
-  }, []);
-
-  const handleAddTicketForm = async () => {
-    if (!newTicketForm.trim()) {
-      showToast?.("Name is required", "info");
+  // ── Ticket forms ──
+  const addTicketForm = async () => {
+    const ticketAmount = newTicketForm.trim();
+    if (!/^[1-9]\d*$/.test(ticketAmount)) {
+      notify.error({ title: "Cash ticket number is required", message: "Enter a whole number, e.g. 3." });
       return;
     }
-    if (!newTicketFormPrice.trim() || isNaN(parseFloat(newTicketFormPrice))) {
-      showToast?.("Price is required", "info");
+    const ticketFormName = `${TICKET_FORM_PREFIX}${ticketAmount}`;
+    if (ticketForms.some((t) => t.name?.toLowerCase() === ticketFormName.toLowerCase())) {
+      notify.error({ title: "Already exists", message: `${ticketFormName} is already configured.` });
       return;
     }
+    setAddingForm(true);
     try {
-      const created = await apiService.createTicketForm({ name: newTicketForm, price: parseFloat(newTicketFormPrice) });
-      setTicketForms([...ticketForms, created]);
+      const created = await apiService.createTicketForm({ name: ticketFormName, price: parseInt(ticketAmount, 10) });
+      setTicketForms((prev) => [...prev, created]);
       setNewTicketForm("");
-      setNewTicketFormPrice("");
       setTicketFormModalOpen(false);
-      showToast?.("Ticket form added", "success");
+      notify.success({ title: "Ticket form added", message: `${created.name} is ready to use.` });
     } catch (err) {
       console.error("Failed to create ticket form:", err);
-      showToast?.(err.message || "Failed to create ticket form", "info");
+      notify.error({ title: "Couldn't add ticket form", message: errorMessage(err), onRetry: addTicketForm });
+    } finally {
+      setAddingForm(false);
     }
   };
 
-  const handleDeleteTicketForm = async (id) => {
-    const name = ticketForms.find(t => t.id === id)?.name;
-    if (!(await showConfirm?.(`Delete ticket form "${name}"? This cannot be undone.`))) return;
+  const deleteTicketForm = (form) => withRow(setFormRows, form.id, { kind: "danger", label: "Deleting..." }, async () => {
     try {
-      await apiService.deleteTicketForm(id);
-      setTicketForms(ticketForms.filter(t => t.id !== id));
-      showToast?.("Ticket form deleted", "success");
+      await apiService.deleteTicketForm(form.id);
+      setTicketForms((prev) => prev.filter((t) => t.id !== form.id));
+      return { success: { title: "Ticket form deleted", message: `${form.name} was deleted. This can't be undone.` } };
     } catch (err) {
       console.error("Failed to delete ticket form:", err);
-      showToast?.(err.message || "Failed to delete ticket form", "info");
+      return { error: { title: "Couldn't delete ticket form", message: errorMessage(err), onRetry: () => deleteTicketForm(form).then(report) } };
     }
+  });
+
+  const handleDeleteTicketForm = (id) => {
+    const form = ticketForms.find((t) => t.id === id);
+    if (!form) return;
+    confirmAction({
+      title: "Delete this ticket form?",
+      message: `"${form.name}" will be permanently deleted. This can't be undone.`,
+      confirmLabel: "Delete",
+      busyLabel: "Deleting...",
+      run: () => deleteTicketForm(form),
+    });
   };
 
+  // ── Backups & restore ──
   const [systemBackups, setSystemBackups] = useState([]);
-  const [backupsLoading, setBackupsLoading] = useState(false);
-  const [creatingBackup, setCreatingBackup] = useState(false);
+  const [backupsLoading, setBackupsLoading] = useState(true);
   const [newBackupLabel, setNewBackupLabel] = useState("");
-  const [busyBackupId, setBusyBackupId] = useState(null);
-  const [uploadingRestore, setUploadingRestore] = useState(false);
-  const restoreUploadRef = React.useRef(null);
+  const [backupRows, setBackupRows] = useState({});
 
-  const fetchSystemBackups = async () => {
-    setBackupsLoading(true);
-    try {
-      const res = await apiService.getSystemBackups();
-      setSystemBackups(res.backups || []);
-    } catch (err) {
-      console.error("Failed to load backups:", err);
-      showToast?.("Failed to load backups", "info");
-    } finally {
-      setBackupsLoading(false);
-    }
-  };
+  const refreshBackups = useCallback(async () => {
+    const res = await apiService.getSystemBackups();
+    setSystemBackups(res.backups || []);
+  }, []);
 
   useEffect(() => {
     if (activeTab !== "system" || !isAdmin) return;
-    setBackupsLoading(true);
     apiService.getSystemBackups()
-      .then(res => setSystemBackups(res.backups || []))
-      .catch(err => {
+      .then((res) => setSystemBackups(res.backups || []))
+      .catch((err) => {
         console.error("Failed to load backups:", err);
-        showToast?.("Failed to load backups", "info");
+        notify.error({ title: "Couldn't load backups", message: errorMessage(err), onRetry: () => refreshBackups().catch(() => {}) });
       })
       .finally(() => setBackupsLoading(false));
-  }, [activeTab, isAdmin]);
+  }, [activeTab, isAdmin, refreshBackups, notify]);
 
-  const handleCreateBackup = async () => {
-    setCreatingBackup(true);
+  // Long operations (create, roll back, restore from file) are driven by SystemSection, which shows
+  // the step dialog. `onStage` is called once the server call has finished and only the refresh is left.
+  const createBackupOutcome = async (onStage) => {
     try {
       await apiService.createSystemBackup(newBackupLabel.trim());
+      onStage?.();
       setNewBackupLabel("");
-      showToast?.("System backup created", "success");
-      await fetchSystemBackups();
+      await refreshBackups();
+      return { success: { title: "Backup created", message: "Ready to download." } };
     } catch (err) {
       console.error("Failed to create backup:", err);
-      showToast?.("Failed to create backup", "info");
-    } finally {
-      setCreatingBackup(false);
+      return { error: { title: "Couldn't create backup", message: errorMessage(err) } };
     }
   };
 
-  const handleDeleteBackup = async (backup) => {
-    const ok = await showConfirm?.(`Delete backup "${backup.label || backup.filename}"? This cannot be undone.`);
-    if (!ok) return;
-    setBusyBackupId(backup.id);
+  const rollbackOutcome = async (backup, onStage) => {
     try {
-      await apiService.deleteSystemBackup(backup.id);
-      showToast?.("Backup deleted", "success");
-      await fetchSystemBackups();
+      await apiService.restoreSystemBackup(backup.id);
+      onStage?.();
+      await refreshBackups();
+      return { success: { title: "System restored", message: "A safety snapshot was saved." } };
     } catch (err) {
-      console.error("Failed to delete backup:", err);
-      showToast?.("Failed to delete backup", "info");
-    } finally {
-      setBusyBackupId(null);
+      console.error("Failed to roll back:", err);
+      return { error: { title: "Couldn't roll back", message: errorMessage(err) } };
     }
   };
+
+  const restoreFileOutcome = async (file, onStage) => {
+    try {
+      await apiService.restoreSystemBackupUpload(file);
+      onStage?.();
+      await refreshBackups();
+      return { success: { title: "System restored", message: "A safety snapshot was saved." } };
+    } catch (err) {
+      console.error("Failed to restore from file:", err);
+      return { error: { title: "Couldn't restore backup", message: errorMessage(err) } };
+    }
+  };
+
+  const deleteBackup = (backup) => withRow(setBackupRows, backup.id, { kind: "danger", label: "Deleting..." }, async () => {
+    try {
+      await apiService.deleteSystemBackup(backup.id);
+      await refreshBackups();
+      return { success: { title: "Backup deleted", message: "This can't be undone." } };
+    } catch (err) {
+      console.error("Failed to delete backup:", err);
+      return { error: { title: "Couldn't delete backup", message: errorMessage(err), onRetry: () => deleteBackup(backup).then(report) } };
+    }
+  });
+
+  const handleDeleteBackup = (backup) => confirmAction({
+    title: "Delete this backup?",
+    message: `"${backup.label || backup.filename}" will be permanently deleted. This can't be undone.`,
+    confirmLabel: "Delete",
+    busyLabel: "Deleting...",
+    run: () => deleteBackup(backup),
+  });
 
   const handleDownloadBackup = async (backup) => {
     try {
       await apiService.downloadSystemBackup(backup.id, backup.filename);
     } catch (err) {
       console.error("Failed to download backup:", err);
-      showToast?.("Failed to download backup", "info");
+      notify.error({ title: "Couldn't download backup", message: errorMessage(err), onRetry: () => handleDownloadBackup(backup) });
     }
   };
 
-  const handleRollbackToBackup = async (backup) => {
-    const ok = await showConfirm?.(
-      `Roll back the ENTIRE system to "${backup.label || backup.filename}"? All data created or changed after this backup will be permanently lost. A safety snapshot of the current state will be taken first.`
-    );
-    if (!ok) return;
-    setBusyBackupId(backup.id);
-    try {
-      await apiService.restoreSystemBackup(backup.id);
-      showToast?.("System rolled back successfully", "success");
-      await fetchSystemBackups();
-    } catch (err) {
-      console.error("Failed to roll back:", err);
-      showToast?.("Rollback failed. See console for details.", "info");
-    } finally {
-      setBusyBackupId(null);
-    }
-  };
+  // Wait for the role before guarding, otherwise every deep link would bounce.
+  if (!userRole) return <div className="set-page" />;
 
-  const handleRestoreUploadClick = () => {
-    restoreUploadRef.current?.click();
-  };
+  // Unknown or role-restricted sections fall back to the first visible one.
+  const currentSection = SETTINGS_SECTIONS.find(s => s.key === activeTab);
+  if (!currentSection || !canViewSection(currentSection, userRole)) {
+    const first = SETTINGS_SECTIONS.find(s => canViewSection(s, userRole));
+    return <Navigate to={`${SETTINGS_BASE}/${first.key}`} replace />;
+  }
 
-  const handleRestoreUploadFile = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-
-    const ok = await showConfirm?.(
-      `Restore the ENTIRE system from "${file.name}"? All current data will be replaced. A safety snapshot of the current state will be taken first.`
-    );
-    if (!ok) return;
-
-    setUploadingRestore(true);
-    try {
-      await apiService.restoreSystemBackupUpload(file);
-      showToast?.("System restored from uploaded file", "success");
-      await fetchSystemBackups();
-    } catch (err) {
-      console.error("Failed to restore from file:", err);
-      showToast?.("Restore failed. Check the file and try again.", "info");
-    } finally {
-      setUploadingRestore(false);
-    }
-  };
-
-  const switchTab = (key) => setActiveTab(key);
-
-  const filteredPuvTypes = puvTypes.filter(pt => {
-    const q = puvSearch.trim().toLowerCase();
-    return !q || pt.name?.toLowerCase().includes(q);
-  });
-  const filteredRoutes = routes.filter(r => {
-    const q = routesSearch.trim().toLowerCase();
-    return !q || r.full_name?.toLowerCase().includes(q);
-  });
-  const filteredTicketForms = ticketForms.filter(tf => {
-    const q = ticketFormsSearch.trim().toLowerCase();
-    return !q || tf.name?.toLowerCase().includes(q);
-  });
+  const isKitSection = ["ticket-forms", "puv-types", "routes", "archive", "system"].includes(activeTab);
 
   return (
     <div className="set-page">
       {/* Header */}
       <div className="set-header">
         <div className="set-header-left">
-          <div className="set-header-accent" />
           <div>
-            <h1 className="set-title">Settings</h1>
-          </div>
+            <h1 className="set-title">Settings</h1>          </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="set-tabs">
-        {visibleTabs.map(tab => (
-          <button
-            key={tab.key}
-            className={`set-tab ${activeTab === tab.key ? "set-tab-active" : ""}`}
-            onClick={() => switchTab(tab.key)}
-          >
-            <span className="set-tab-icon">{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </div>
+      <div className="set-layout">
+        <SettingsNav
+          role={userRole}
+          counts={{
+            "ticket-forms": ticketForms.length,
+            "puv-types": puvTypes.length,
+            routes: routes.length,
+          }}
+        />
 
-      {/* Panel */}
-      <div className={activeTab === "general" ? "set-general-grid" : "set-panel"}>
-        {/* General: PUV Types, Routes, Ticket Forms, and Terminal Price as a
-            2-column grid of cards — no clicks needed to move between them. */}
-        {activeTab === "general" && (
-          <>
-            {/* Ticket Forms */}
-            <div className="set-section">
-              <div className="set-panel-toolbar">
-                <div className="set-panel-heading">
-                  
-                  <div>
-                    <h2 className="set-panel-title">Ticket Forms</h2>
-                   
-                  </div>
-                </div>
-                <div className="set-toolbar-actions">
-                  <button className="set-add-btn" onClick={() => setTicketFormModalOpen(true)}>
-                    <PlusIcon />
-                    Add
-                  </button>
-                  <div className="set-search">
-                    <SearchIcon />
-                    <input
-                      type="text"
-                      value={ticketFormsSearch}
-                      onChange={(e) => setTicketFormsSearch(e.target.value)}
-                      placeholder="Search ticket forms..."
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="set-table-wrap">
-                <table className="set-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Price</th>
-                      <th className="set-th-actions">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTicketForms.length === 0 ? (
-                      <tr>
-                        <td colSpan="3" className="set-table-state">
-                          {ticketForms.length === 0 ? "No ticket forms configured" : "No matches found"}
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredTicketForms.map(tf => (
-                        <tr key={tf.id} className="set-row">
-                          <td className="set-cell-label">{tf.name}</td>
-                          <td className="set-cell-meta">₱{Number(tf.price || 0).toFixed(2)}</td>
-                          <td className="set-cell-actions">
-                            <button className="set-delete-btn" onClick={() => handleDeleteTicketForm(tf.id)}>
-                              <DeleteIcon />
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+        {/* Panel */}
+        <div className={isKitSection ? "set-pane" : "set-panel"}>
+        {activeTab === "ticket-forms" && (
+          <TicketFormsSection
+            ticketForms={ticketForms}
+            loading={loadingForms}
+            rowStates={formRows}
+            search={ticketFormsSearch}
+            onSearch={setTicketFormsSearch}
+            onAdd={() => setTicketFormModalOpen(true)}
+            onDelete={handleDeleteTicketForm}
+          />
+        )}
 
-            {/* PUV Types */}
-            <div className="set-section">
-              <div className="set-panel-toolbar">
-                <div className="set-panel-heading">
-                  <div>
-                    <h2 className="set-panel-title">PUV Types</h2>
-                  </div>
-                </div>
-                <div className="set-toolbar-actions">
-                  <button className="set-add-btn" onClick={() => setPuvModalOpen(true)}>
-                    <PlusIcon />
-                    Add
-                  </button>
-                  <div className="set-search">
-                    <SearchIcon />
-                    <input
-                      type="text"
-                      value={puvSearch}
-                      onChange={(e) => setPuvSearch(e.target.value)}
-                      placeholder="Search PUV types..."
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="set-table-wrap">
-                <table className="set-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Terminal Price (₱)</th>
-                      <th className="set-th-actions">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPuvTypes.length === 0 ? (
-                      <tr>
-                        <td colSpan="3" className="set-table-state">
-                          {puvTypes.length === 0 ? "No PUV types configured" : "No matches found"}
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredPuvTypes.map(pt => (
-                        <tr key={pt.id} className="set-row">
-                          <td className="set-cell-label">{pt.name}</td>
-                          <td className="set-cell-meta">
-                            <div className="set-add-row" style={{ gap: 8 }}>
-                              <input
-                                type="number"
-                                className="set-input"
-                                style={{ width: 100 }}
-                                min={0}
-                                step="0.01"
-                                placeholder="0 = no limit"
-                                value={puvPriceInputs[pt.id] ?? pt.terminal_price ?? ""}
-                                onChange={(e) => setPuvPriceInputs({ ...puvPriceInputs, [pt.id]: e.target.value })}
-                              />
-                              <button
-                                className="set-add-btn"
-                                onClick={() => handleSavePuvPrice(pt)}
-                                disabled={savingPuvPriceId === pt.id || puvPriceInputs[pt.id] === undefined}
-                              >
-                                {savingPuvPriceId === pt.id ? "Saving..." : "Save"}
-                              </button>
-                            </div>
-                          </td>
-                          <td className="set-cell-actions">
-                            <button className="set-delete-btn" onClick={() => handleArchivePUVType(pt)}>
-                              <ArchiveIcon />
-                              Archive
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+        {activeTab === "puv-types" && (
+          <PuvTypesSection
+            puvTypes={puvTypes}
+            loading={loadingPuv}
+            rowStates={puvRows}
+            search={puvSearch}
+            onSearch={setPuvSearch}
+            onAdd={() => setPuvModalOpen(true)}
+            priceInputs={puvPriceInputs}
+            onPriceChange={(id, value) => setPuvPriceInputs({ ...puvPriceInputs, [id]: value })}
+            onSavePrice={handleSavePuvPrice}
+            onRevertPrice={(id) => setPuvPriceInputs(({ ...rest }) => (delete rest[id], rest))}
+            onArchive={handleArchivePUVType}
+          />
+        )}
 
-            {/* Routes */}
-            <div className="set-section">
-              <div className="set-panel-toolbar">
-                <div className="set-panel-heading">
-                  <div>
-                    <h2 className="set-panel-title">Routes</h2>
-                  </div>
-                </div>
-                <div className="set-toolbar-actions">
-                  <button className="set-add-btn" onClick={() => setRouteModalOpen(true)}>
-                    <PlusIcon />
-                    Add
-                  </button>
-                  <div className="set-search">
-                    <SearchIcon />
-                    <input
-                      type="text"
-                      value={routesSearch}
-                      onChange={(e) => setRoutesSearch(e.target.value)}
-                      placeholder="Search routes..."
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="set-table-wrap">
-                <table className="set-table">
-                  <thead>
-                    <tr>
-                      <th>Route</th>
-                      <th>Est. Loading Time (min)</th>
-                      <th className="set-th-actions">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRoutes.length === 0 ? (
-                      <tr>
-                        <td colSpan="3" className="set-table-state">
-                          {routes.length === 0 ? "No routes configured" : "No matches found"}
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredRoutes.map(route => {
-                        const draft = routeEstimateInputs[route.id];
-                        const inputValue = draft !== undefined ? draft : (route.estimated_loading_minutes ?? "");
-                        return (
-                          <tr key={route.id} className="set-row">
-                            <td className="set-cell-label">{route.full_name}</td>
-                            <td className="set-cell-meta">
-                              <div className="set-add-row" style={{ gap: 8 }}>
-                                <input
-                                  type="number"
-                                  className="set-input"
-                                  style={{ width: 90 }}
-                                  min={0}
-                                  step={1}
-                                  placeholder={`Default ${5}`}
-                                  value={inputValue}
-                                  onChange={(e) =>
-                                    setRouteEstimateInputs({ ...routeEstimateInputs, [route.id]: e.target.value })
-                                  }
-                                />
-                                <button
-                                  className="set-add-btn"
-                                  onClick={() => handleSaveRouteEstimate(route)}
-                                  disabled={savingRouteEstimateId === route.id}
-                                >
-                                  {savingRouteEstimateId === route.id ? "Saving..." : "Save"}
-                                </button>
-                                {route.avg_loading_minutes != null && (
-                                  <span className="set-rewards-note" style={{ margin: 0 }}>
-                                    Recent avg: {route.avg_loading_minutes} min
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="set-cell-actions">
-                              <button className="set-delete-btn" onClick={() => handleArchiveRoute(route)}>
-                                <ArchiveIcon />
-                                Archive
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
+        {activeTab === "routes" && (
+          <RoutesSection
+            routes={routes}
+            loading={loadingRoutes}
+            rowStates={routeRows}
+            search={routesSearch}
+            onSearch={setRoutesSearch}
+            onAdd={() => setRouteModalOpen(true)}
+            estimateInputs={routeEstimateInputs}
+            onEstimateChange={(id, value) => setRouteEstimateInputs({ ...routeEstimateInputs, [id]: value })}
+            onSaveEstimate={handleSaveRouteEstimate}
+            onRevertEstimate={(id) => setRouteEstimateInputs(({ ...rest }) => (delete rest[id], rest))}
+            onArchive={handleArchiveRoute}
+          />
         )}
 
         {/* Ticket Backfill (manual entry + CSV) + WIP mode */}
-        {activeTab === "backfill" && canManageBackfill && (
+        {activeTab === "ticket-backfill" && canManageBackfill && (
           <div className="set-section">
             <div className="set-panel-toolbar">
               <div className="set-panel-heading">
@@ -756,121 +590,25 @@ function Settings() {
 
         {/* Archive: restore archived vehicles, drivers, requisitions, remittance */}
         {activeTab === "archive" && (
-          <div className="set-section">
-            <div className="set-panel-toolbar">
-              <div className="set-panel-heading">
-                <h2 className="set-panel-title">Archive</h2>
-              </div>
-            </div>
-            <ArchiveTab />
-          </div>
+          <ArchiveTab onRestored={(key) => { if (key === "routes") loadRoutes(); if (key === "puvtypes") loadPuvTypes(); }} />
         )}
 
         {/* System Backup / Restore / Rollback */}
         {activeTab === "system" && isAdmin && (
-          <div className="set-section">
-            <div className="set-panel-toolbar">
-              <div className="set-panel-heading">
-                <h2 className="set-panel-title">System</h2>
-              </div>
-            </div>
-            <div className="set-rewards-form">
-            <p className="set-rewards-note">
-              A backup captures the entire system — drivers, vehicles, tickets, routes,
-              remittances, users, and every other record. Restoring or rolling back
-              replaces ALL current data with the chosen backup. A safety snapshot of the
-              current state is always taken automatically right before a restore or rollback,
-              so that action itself can be undone.
-            </p>
-
-            <div className="set-add-row">
-              <input
-                type="text"
-                className="set-input"
-                value={newBackupLabel}
-                onChange={(e) => setNewBackupLabel(e.target.value)}
-                placeholder="Optional label, e.g. Before July payroll run"
-              />
-              <button className="set-add-btn" onClick={handleCreateBackup} disabled={creatingBackup}>
-                <PlusIcon />
-                {creatingBackup ? "Backing up..." : "Create Backup"}
-              </button>
-              <input
-                ref={restoreUploadRef}
-                type="file"
-                accept="application/json"
-                style={{ display: "none" }}
-                onChange={handleRestoreUploadFile}
-              />
-              <button className="set-add-btn" onClick={handleRestoreUploadClick} disabled={uploadingRestore}>
-                <UploadIcon />
-                {uploadingRestore ? "Restoring..." : "Restore From File"}
-              </button>
-            </div>
-
-            <div className="set-table-wrap">
-              <table className="set-table">
-                <thead>
-                  <tr>
-                    <th>Backup</th>
-                    <th>Source</th>
-                    <th>Size</th>
-                    <th>Created</th>
-                    <th className="set-th-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {backupsLoading ? (
-                    <tr>
-                      <td colSpan="5" className="set-table-state">Loading backups...</td>
-                    </tr>
-                  ) : systemBackups.length === 0 ? (
-                    <tr>
-                      <td colSpan="5" className="set-table-state">No backups yet</td>
-                    </tr>
-                  ) : (
-                    systemBackups.map(b => (
-                      <tr key={b.id} className="set-row">
-                        <td className="set-cell-label">{b.label || b.filename}</td>
-                        <td className="set-cell-meta">{b.source === "AUTO" ? "Auto (pre-restore)" : "Manual"}</td>
-                        <td className="set-cell-meta">{formatBytes(b.size_bytes)}</td>
-                        <td className="set-cell-meta">{new Date(b.created_at).toLocaleString()}</td>
-                        <td className="set-cell-actions">
-                          <button
-                            className="set-add-btn"
-                            onClick={() => handleDownloadBackup(b)}
-                            style={{ marginRight: 6 }}
-                          >
-                            <DownloadIcon />
-                            Download
-                          </button>
-                          <button
-                            className="set-add-btn"
-                            onClick={() => handleRollbackToBackup(b)}
-                            disabled={busyBackupId === b.id}
-                            style={{ marginRight: 6 }}
-                          >
-                            <RollbackIcon />
-                            {busyBackupId === b.id ? "Working..." : "Roll Back To This"}
-                          </button>
-                          <button
-                            className="set-delete-btn"
-                            onClick={() => handleDeleteBackup(b)}
-                            disabled={busyBackupId === b.id}
-                          >
-                            <DeleteIcon />
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            </div>
-          </div>
+          <SystemSection
+            backups={systemBackups}
+            loading={backupsLoading}
+            rowStates={backupRows}
+            label={newBackupLabel}
+            onLabelChange={setNewBackupLabel}
+            onCreate={createBackupOutcome}
+            onRestoreFile={restoreFileOutcome}
+            onDownload={handleDownloadBackup}
+            onRollback={rollbackOutcome}
+            onDelete={handleDeleteBackup}
+          />
         )}
+        </div>
       </div>
 
       <SettingsModal
@@ -883,8 +621,10 @@ function Settings() {
         values={{ name: newType, terminal_price: newTypePrice }}
         onChange={(field, value) => (field === "name" ? setNewType(value) : setNewTypePrice(value))}
         onClose={() => setPuvModalOpen(false)}
-        onSubmit={handleAddPUVType}
+        onSubmit={addPuvType}
+        saving={addingPuv}
         submitLabel="Add"
+        savingLabel="Adding..."
       />
 
       <SettingsModal
@@ -894,27 +634,29 @@ function Settings() {
         values={{ origin: newOrigin }}
         onChange={(_, value) => setNewOrigin(value)}
         onClose={() => setRouteModalOpen(false)}
-        onSubmit={handleAddRoute}
+        onSubmit={addRoute}
+        saving={addingRoute}
         submitLabel="Add Route"
+        savingLabel="Adding..."
       />
 
       <SettingsModal
         open={ticketFormModalOpen}
         title="Add Ticket Form"
         fields={[
-          { name: "name", label: "Name", placeholder: "e.g. Cash Ticket @2" },
-          { name: "price", label: "Price", type: "number", placeholder: "Price", min: "0", step: "0.01" },
+          { name: "name", label: "Cash Ticket Number", type: "number", prefix: TICKET_FORM_PREFIX, placeholder: "e.g. 3", min: "1", step: "1" },
+          { name: "price", label: "Price", readOnly: true, display: /^[1-9]\d*$/.test(newTicketForm.trim()) ? `₱${newTicketForm.trim()}.00` : "Matches the ticket number" },
         ]}
-        values={{ name: newTicketForm, price: newTicketFormPrice }}
-        onChange={(field, value) =>
-          field === "name" ? setNewTicketForm(value) : setNewTicketFormPrice(value)
-        }
+        values={{ name: newTicketForm }}
+        onChange={(_, value) => setNewTicketForm(value)}
         onClose={() => setTicketFormModalOpen(false)}
-        onSubmit={handleAddTicketForm}
+        onSubmit={addTicketForm}
+        saving={addingForm}
         submitLabel="Add Ticket Form"
+        savingLabel="Adding..."
       />
     </div>
   );
 }
 
-export default Settings;
+export default SettingsPage;

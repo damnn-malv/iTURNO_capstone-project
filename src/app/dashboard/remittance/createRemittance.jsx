@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { apiService } from "../../../lib/api-service";
-import { useToast } from "../../../components/ui/ToastConfirmContext";
+import { ButtonLabel, useFeedback } from "../../../components/ui/kit";
 
 function formatCurrency(val) {
   return "₱" + Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -14,7 +14,8 @@ const Field = ({ label, children }) => (
 );
 
 const CreateBatchForm = ({ targetDate, onSaved }) => {
-  const showToast = useToast();
+  const { notify } = useFeedback();
+  const [saving, setSaving] = useState(false);
 
   // Duplicate-batch and batch-ID-collision checks need the complete batch
   // history (both tabs), not just a page of it.
@@ -190,7 +191,7 @@ const CreateBatchForm = ({ targetDate, onSaved }) => {
   const saveBlocked = amountsMismatch || nothingToRemit || !certified;
 
   const handleSave = async () => {
-    if (saveBlocked) return;
+    if (saveBlocked || saving) return;
     const payload = {
       id: batchId,
       issued_by: accountableOfficer,
@@ -201,16 +202,18 @@ const CreateBatchForm = ({ targetDate, onSaved }) => {
       deposits,
       ticket_ids: todayTickets.map((t) => t.id),
     };
+    setSaving(true);
     try {
       await apiService.post("/report/remittance/", payload);
     } catch (err) {
       console.error("Failed to save batch", err);
-      showToast("Error saving batch", "info");
+      notify.error({ title: "Couldn't save batch", message: err?.message?.replace(/^Error:\s*/, "") || "Nothing was changed. Check your connection and try again.", onRetry: handleSave });
+      setSaving(false);
       return;
     }
     window.dispatchEvent(new Event("remittance-batch-saved"));
-    showToast("Remittance batch saved", "success");
     onSaved();
+    notify.success({ title: "Remittance batch saved", message: `${batchId} was recorded.` });
   };
 
   return (
@@ -336,6 +339,7 @@ const CreateBatchForm = ({ targetDate, onSaved }) => {
                       type="number"
                       className="rem-input"
                       value={d.quantity}
+                      disabled={saving}
                       onChange={(e) => updateDeposit(i, "quantity", e.target.value)}
                     />
                   </td>
@@ -375,7 +379,7 @@ const CreateBatchForm = ({ targetDate, onSaved }) => {
           {/* Certification */}
           <div className="rem-cert">
             <label className="rem-cert-check">
-              <input type="checkbox" checked={certified} onChange={(e) => setCertified(e.target.checked)} />
+              <input type="checkbox" checked={certified} disabled={saving} onChange={(e) => setCertified(e.target.checked)} />
               <span>I certify that the above collections and deposits are accurate.</span>
             </label>
             <div className="rem-info-grid" style={{ gridTemplateColumns: "1fr" }}>
@@ -405,10 +409,11 @@ const CreateBatchForm = ({ targetDate, onSaved }) => {
               type="button"
               className="rem-modal-btn rem-modal-btn--submit"
               onClick={handleSave}
-              disabled={saveBlocked}
+              disabled={saveBlocked || saving}
+              aria-busy={saving || undefined}
               style={saveBlocked ?{ opacity: 0.5, cursor: "not-allowed" } : {}}
             >
-              Save Batch
+              <ButtonLabel busy={saving} busyLabel="Saving...">Save Batch</ButtonLabel>
             </button>
           </div>
         </div>

@@ -203,6 +203,16 @@
   flex-shrink: 0;
 }
 
+.header-logout-btn {
+  gap: 7px;
+  padding: 7px 12px;
+}
+
+.header-logout-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .header-icon-btn:hover {
   background: rgba(201, 168, 76, 0.2);
   color: var(--gold);

@@ -32,6 +32,8 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
     newOrigin,
     setNewOrigin,
     routeError,
+    franchiseError,
+    setFranchiseError,
     selectedRoute,
     activeDrivers,
     transportationTypes,
@@ -163,7 +165,6 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
       {/* Header */}
       <div className="veh-header">
         <div className="veh-header-left">
-          <div className="veh-header-accent" />
           <div>
             <h1 className="veh-title">Vehicle Registry</h1>
             <p className="veh-subtitle">
@@ -243,7 +244,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                   "Franchise #",
                   
                   "Owner Driver",
-                  "Status",
+                  "Franchise Status",
                   "Actions",
                 ].map((h) => (
                   <th key={h}>{h}</th>
@@ -368,10 +369,9 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                             stroke="currentColor"
                             strokeWidth="2.2"
                           >
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                            <path d="M10 11v6M14 11v6" />
-                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            <rect x="3" y="4" width="18" height="4" rx="1" />
+                            <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+                            <path d="M10 12h4" />
                           </svg>
                           Archive
                         </button>
@@ -479,15 +479,59 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                     </select>
                   </Field>
                   <Field label="Franchise Number">
-                    <input
-                      type="text"
-                      className="veh-input"
-                      placeholder="e.g. FR-001"
-                      value={form.franchise_number}
-                      onChange={(e) =>
-                        setForm({ ...form, franchise_number: e.target.value })
-                      }
-                    />
+                    {(() => {
+                      const [yy = "", nnnnn = ""] = (form.franchise_number || "").split("-");
+                      const update = (nextYY, nextN) => {
+                        setFranchiseError("");
+                        setForm({
+                          ...form,
+                          franchise_number: nextN ? `${nextYY}-${nextN}` : nextYY,
+                        });
+                      };
+                      return (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input
+                            id="franchise-yy"
+                            type="text"
+                            inputMode="numeric"
+                            className="veh-input"
+                            placeholder="YY"
+                            maxLength={2}
+                            style={{ width: "5rem", textAlign: "center" }}
+                            value={yy}
+                            onChange={(e) => {
+                              const v = e.target.value.replace(/\D/g, "").slice(0, 2);
+                              update(v, nnnnn);
+                              if (v.length === 2) {
+                                document.getElementById("franchise-n")?.focus();
+                              }
+                            }}
+                          />
+                          <span>-</span>
+                          <input
+                            id="franchise-n"
+                            type="text"
+                            inputMode="numeric"
+                            className="veh-input"
+                            placeholder="NNNNN"
+                            maxLength={5}
+                            style={{ flex: 1 }}
+                            value={nnnnn}
+                            onChange={(e) =>
+                              update(yy, e.target.value.replace(/\D/g, "").slice(0, 5))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Backspace" && !nnnnn) {
+                                document.getElementById("franchise-yy")?.focus();
+                              }
+                            }}
+                          />
+                        </div>
+                      );
+                    })()}
+                    {franchiseError && (
+                      <p className="veh-field-error">{franchiseError}</p>
+                    )}
                   </Field>
                   <Field label="Franchise Expiration Date">
                     <input

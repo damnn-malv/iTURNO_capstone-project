@@ -41,7 +41,6 @@ function Collection() {
       {/* Header */}
       <div className="col-header">
         <div className="col-header-left">
-          <div className="col-header-accent" />
           <div>
             <h1 className="col-title">Tally &amp; Collections</h1>
           </div>

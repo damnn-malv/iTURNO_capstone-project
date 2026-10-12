@@ -4,6 +4,7 @@ import RequisitionFormModal from "./RequisitionFormModal";
 import PaperRangeModal from "./PaperRangeModal";
 import { IS_REMOTE } from "../../../lib/api-service";
 import "../../../styles/requisition.css";
+import "../../../components/ui/kit";
 
 function formatCurrency(val) {
   return "₱" + Number(val || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -19,7 +20,6 @@ function Requisition() {
   const {
     ticketForms,
     loading,
-    error,
     saving,
     showForm,
     setShowForm,
@@ -49,7 +49,6 @@ function Requisition() {
       {/* Header */}
       <div className="req-header">
         <div className="req-header-left">
-          <div className="req-header-accent" />
           <div>
             <h1 className="req-title">Requisition & Issue Voucher</h1>
             
@@ -63,9 +62,6 @@ function Requisition() {
           + New Requisition
         </button>
       </div>
-
-      {/* Error */}
-      {error && !showForm && <div className="req-error">{error}</div>}
 
       {/* Modal */}
       <RequisitionFormModal
@@ -81,16 +77,37 @@ function Requisition() {
         computeTotal={computeTotal}
         handleSave={handleSave}
         saving={saving}
-        error={error}
       />
 
       {paperSeries && (
         <PaperRangeModal series={paperSeries} onClose={() => setPaperSeries(null)} onSaved={refresh} />
       )}
 
-      {/* Loading */}
+      {/* First load: skeleton rows instead of a blank table */}
       {loading ? (
-        <div className="req-loading">Loading requisitions…</div>
+        <div className="req-table-wrap" aria-busy="true">
+          <div className="req-report-section-header">
+            <h3 className="req-report-section-label">COLLECTIONS & DEPOSITS</h3>
+          </div>
+          <table className="req-table">
+            <thead>
+              <tr>
+                <th>Den.</th>
+                <th className="text-right">Quantity</th>
+                <th className="text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody aria-hidden="true">
+              {[0, 1, 2, 3].map((r) => (
+                <tr key={r}>
+                  <td><span className="ui-skel" style={{ width: ["46%", "34%", "52%", "40%"][r] }} /></td>
+                  <td className="text-right"><span className="ui-skel" style={{ width: "40%", marginLeft: "auto" }} /></td>
+                  <td className="text-right"><span className="ui-skel" style={{ width: "50%", marginLeft: "auto" }} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <>
           {/* Collections & Deposits by Denomination */}

@@ -367,7 +367,6 @@ export default function Report() {
       {/* Header */}
       <div className="rpt-header">
         <div className="rpt-header-left">
-          <div className="rpt-header-accent" />
           <div>
             <h1 className="rpt-title">Report Logs</h1>
             
@@ -453,6 +452,20 @@ export default function Report() {
         </div>
       </div>
 
+      <RequisitionRemittance
+        requisitionData={requisitionData}
+        requisitionMeta={requisitionMeta}
+        onRequisitionFetchPage={fetchRequisitionRaw}
+        onRequisitionFetchAll={fetchRequisitionExportRows}
+        onExportRequisitionsPDF={handleExportRequisitionsPDF}
+        remittanceData={remittanceData}
+        remittanceMeta={remittanceMeta}
+        onRemittanceFetchPage={fetchRemittanceRaw}
+        onRemittanceFetchAll={fetchRemittanceExportRows}
+        onExportRemittancePDF={handleExportRemittancePDF}
+        pageSize={PAGE_SIZE}
+      />
+
       <QueueLog
         queueData={queueData}
         queueMeta={queueMeta}
@@ -465,20 +478,6 @@ export default function Report() {
         onQueueFetchAll={fetchQueueExportRows}
         onRoamingFetchAll={fetchRoamingExportRows}
         STATUS_COLORS={STATUS_COLORS}
-        pageSize={PAGE_SIZE}
-      />
-
-      <RequisitionRemittance
-        requisitionData={requisitionData}
-        requisitionMeta={requisitionMeta}
-        onRequisitionFetchPage={fetchRequisitionRaw}
-        onRequisitionFetchAll={fetchRequisitionExportRows}
-        onExportRequisitionsPDF={handleExportRequisitionsPDF}
-        remittanceData={remittanceData}
-        remittanceMeta={remittanceMeta}
-        onRemittanceFetchPage={fetchRemittanceRaw}
-        onRemittanceFetchAll={fetchRemittanceExportRows}
-        onExportRemittancePDF={handleExportRemittancePDF}
         pageSize={PAGE_SIZE}
       />
 

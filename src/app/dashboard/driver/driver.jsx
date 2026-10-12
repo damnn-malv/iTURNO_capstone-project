@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useDriver } from "./useDriver";
@@ -8,6 +8,65 @@ import { useToast } from "../../../components/ui/ToastConfirmContext";
 import { exportDriversPDF } from "../registry/registryExport";
 import "../../../styles/Driver.css";
 import "../../../styles/FormModal.css";
+
+// 12-digit IWP number entered as three 4-digit boxes (xxxx-xxxx-xxxx).
+// The form value stays a plain 12-digit string.
+const IwpInput = ({ value, onChange, hasError }) => {
+  const refs = [useRef(null), useRef(null), useRef(null)];
+  const digits = (value || "").replace(/\D/g, "");
+  const parts = [0, 1, 2].map((i) => digits.slice(i * 4, i * 4 + 4));
+
+  const update = (index, text) => {
+    const next = [...parts];
+    next[index] = text;
+    onChange(next.join("").slice(0, 12));
+  };
+
+  const handleChange = (index, e) => {
+    const text = e.target.value.replace(/\D/g, "").slice(0, 4);
+    update(index, text);
+    if (text.length === 4 && index < 2) refs[index + 1].current?.focus();
+  };
+
+  const handleKeyDown = (index, e) => {
+    if (e.key === "Backspace" && !parts[index] && index > 0) {
+      e.preventDefault();
+      refs[index - 1].current?.focus();
+    }
+  };
+
+  const handlePaste = (e) => {
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 12);
+    if (!pasted) return;
+    e.preventDefault();
+    onChange(pasted);
+    refs[Math.min(Math.floor(pasted.length / 4), 2)].current?.focus();
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      {parts.map((part, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <span style={{ opacity: 0.5, fontWeight: 600 }}>-</span>}
+          <input
+            ref={refs[i]}
+            type="text"
+            inputMode="numeric"
+            maxLength={4}
+            placeholder="0000"
+            aria-label={`IWP number part ${i + 1} of 3`}
+            className={`drv-input${hasError ? " drv-input--error" : ""}`}
+            style={{ minWidth: 0, textAlign: "center", letterSpacing: "0.1em" }}
+            value={part}
+            onChange={(e) => handleChange(i, e)}
+            onKeyDown={(e) => handleKeyDown(i, e)}
+            onPaste={handlePaste}
+          />
+        </React.Fragment>
+      ))}
+    </div>
+  );
+};
 
 function capitalizeWords(value) {
   return value.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
@@ -171,7 +230,6 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
       {/* Header */}
       <div className="drv-header">
         <div className="drv-header-left">
-          <div className="drv-header-accent" />
           <div>
             <h1 className="drv-title">Driver Registry</h1>
             <p className="drv-subtitle">
@@ -246,7 +304,7 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
           <table className="drv-table">
             <thead>
               <tr>
-                {["IWP", "Full Name", "Contact No.", "Address", "Status", "Actions"].map(
+                {["Full Name", "Contact No.", "Address", "IWP", "IWP Status", "Actions"].map(
                   (h) => (
                     <th key={h}>{h}</th>
                   ),
@@ -289,15 +347,17 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
               ) : (
                 paginatedDrivers.map((driver) => (
                   <tr key={driver.id} className="drv-row">
-                    <td>
-                      <span className="drv-code">{getDriverCode(driver)}</span>
-                    </td>
                     <td className="drv-td-name">{getDriverDisplayName(driver)}</td>
                     <td className="drv-td-contact">{driver.contact || "—"}</td>
                     <td className="drv-td-contact">
                       {[driver.barangay, driver.city, driver.province]
                         .filter(Boolean)
                         .join(", ") || "—"}
+                    </td>
+                    <td>
+                      <span className="drv-code">{/^\d{12}$/.test(driver.iwp_number || "")
+                          ? driver.iwp_number.replace(/(\d{4})(?=\d)/g, "$1-")
+                          : getDriverCode(driver)}</span>
                     </td>
                     <td>
                       <div className="drv-status-group">
@@ -348,10 +408,9 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                             stroke="currentColor"
                             strokeWidth="2.2"
                           >
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                            <path d="M10 11v6M14 11v6" />
-                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            <rect x="3" y="4" width="18" height="4" rx="1" />
+                            <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+                            <path d="M10 12h4" />
                           </svg>
                           Archive
                         </button>
@@ -458,12 +517,11 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                       .join(" ") || "New Driver"}
                   </span>
                   <div className="drv-profile-hero-tags">
-                    {editing && (
-                      <span className="drv-profile-code">{form.code}</span>
+                    {form.iwp_number && (
+                      <span className="drv-profile-code">
+                        {form.iwp_number.replace(/\D/g, "").replace(/(\d{4})(?=\d)/g, "$1-")}
+                      </span>
                     )}
-                    <span className={`drv-status ${form.status === "ACTIVE" ? "drv-status--active" : "drv-status--inactive"}`}>
-                      {form.status === "ACTIVE" ? "Active" : "Inactive"}
-                    </span>
                   </div>
                 </div>
               </div>
@@ -523,14 +581,10 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                   </div>
                   <div className="drv-field">
                     <label className="drv-label">IWP Number</label>
-                    <input
-                      type="text"
-                      className={`drv-input${fieldErrors.iwp_number ? " drv-input--error" : ""}`}
-                      placeholder="e.g. IWP-001"
+                    <IwpInput
                       value={form.iwp_number}
-                      onChange={(e) =>
-                        setForm({ ...form, iwp_number: e.target.value })
-                      }
+                      hasError={!!fieldErrors.iwp_number}
+                      onChange={(iwp_number) => setForm({ ...form, iwp_number })}
                     />
                     {fieldErrors.iwp_number && (
                       <p className="drv-field-error">{fieldErrors.iwp_number}</p>

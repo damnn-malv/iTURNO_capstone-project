@@ -288,7 +288,6 @@ export default function Dashboard() {
       {/* Header */}
       <div className="col-header">
         <div className="col-header-left">
-          <div className="col-header-accent" />
           <div>
             <h1 className="col-title">Dashboard</h1>
           

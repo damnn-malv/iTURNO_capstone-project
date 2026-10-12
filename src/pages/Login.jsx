@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import "../styles/login.css";
 import { handleLogin, apiService } from '../lib/api-service';
 import { useToast } from '../components/ui/ToastConfirmContext';
+import { ButtonLabel } from '../components/ui/kit';
 
 // ── Import images
 import sfcLogo from '../pictures/sfc-nobg-logo.png';
@@ -12,6 +13,7 @@ function Login() {
   const [username,      setUsername]      = useState("");
   const [password,      setPassword]      = useState("");
   const [error,         setError]         = useState("");
+  const [signingIn,     setSigningIn]     = useState(false);
 
   // ── Forgot password ──
   const [modalView,     setModalView]     = useState("login"); // 'login' | 'forgot'
@@ -25,7 +27,13 @@ function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await handleLogin(username, password, setError, navigate, showToast);
+    if (signingIn) return;
+    setSigningIn(true);
+    try {
+      await handleLogin(username, password, setError, navigate, showToast);
+    } finally {
+      setSigningIn(false);
+    }
   };
 
   const handleForgotSubmit = async (e) => {
@@ -86,6 +94,7 @@ function Login() {
                   <input
                     id="username" type="email" placeholder="Enter your email"
                     value={username} onChange={(e) => setUsername(e.target.value)} autoFocus
+                    disabled={signingIn}
                   />
                 </div>
                 <div className="lp-field">
@@ -93,10 +102,13 @@ function Login() {
                   <input
                     id="password" type="password" placeholder="Enter your password"
                     value={password} onChange={(e) => setPassword(e.target.value)}
+                    disabled={signingIn}
                   />
                 </div>
                 {error && <div className="lp-error">{error}</div>}
-                <button type="submit" className="lp-btn lp-btn--navy lp-btn--full">Sign In</button>
+                <button type="submit" className="lp-btn lp-btn--navy lp-btn--full" disabled={signingIn} aria-busy={signingIn || undefined}>
+                  <ButtonLabel busy={signingIn} busyLabel="Signing in...">Sign In</ButtonLabel>
+                </button>
                 <button
                   type="button"
                   className="lp-link-btn"
@@ -144,11 +156,12 @@ function Login() {
                     <input
                       id="forgot-email" type="email" placeholder="Enter your email"
                       value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} autoFocus
+                      disabled={forgotSending}
                     />
                   </div>
                   {forgotError && <div className="lp-error">{forgotError}</div>}
-                  <button type="submit" className="lp-btn lp-btn--navy lp-btn--full" disabled={forgotSending}>
-                    {forgotSending ? "Sending…" : "Send Reset Link"}
+                  <button type="submit" className="lp-btn lp-btn--navy lp-btn--full" disabled={forgotSending} aria-busy={forgotSending || undefined}>
+                    <ButtonLabel busy={forgotSending} busyLabel="Sending...">Send Reset Link</ButtonLabel>
                   </button>
                   <button
                     type="button"

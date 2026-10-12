@@ -1,4 +1,5 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
+import { ButtonLabel, useFeedback } from "../../../components/ui/kit";
 import { printRemittanceReport } from "./exportRemittancePDF";
 import { apiService } from "../../../lib/api-service";
 
@@ -53,8 +54,26 @@ function BlankRows({ count, cols }) {
 
 export default function ViewRemittance({ batch, onClose }) {
   const reportRef = useRef(null);
+  const { notify } = useFeedback();
+  const [exporting, setExporting] = useState(false);
 
   if (!batch) return null;
+
+  const exportXlsx = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await apiService.downloadRemittanceXlsx(batch.id, `Remittance_${batch.batch_code || batch.id}.xlsx`);
+    } catch (err) {
+      notify.error({
+        title: "Couldn't export the official form",
+        message: err?.message?.replace(/^Error:\s*/, "") || "Nothing was changed. Check your connection and try again.",
+        onRetry: exportXlsx,
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const collections = (batch.collections || []).map(getCollectionFields);
   const deposits = (batch.deposits || []).map(getDepositFields);
@@ -77,19 +96,19 @@ export default function ViewRemittance({ batch, onClose }) {
             <h2 className="rem-modal-title">Report of Collections and Deposits</h2>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button
-              className="rem-btn rem-btn--export"
-              onClick={() =>
-                apiService
-                  .downloadRemittanceXlsx(batch.id, `Remittance_${batch.batch_code || batch.id}.xlsx`)
-                  .catch(() => alert("Failed to export the official form. Please try again."))
-              }
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-              Export Excel (.xlsx)
+            <button className="rem-btn rem-btn--export" onClick={exportXlsx} disabled={exporting} aria-busy={exporting || undefined}>
+              <ButtonLabel
+                busy={exporting}
+                busyLabel="Exporting..."
+                icon={
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                }
+              >
+                Export Excel (.xlsx)
+              </ButtonLabel>
             </button>
             <button className="rem-btn rem-btn--export" onClick={() => printRemittanceReport(reportRef.current, batch)}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">

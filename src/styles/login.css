@@ -224,6 +224,10 @@ body {
 
 .lp-btn--full { width: 100%; justify-content: center; }
 
+/* Working state (Sign In, Send Reset Link): locked, with the spinner label */
+.lp-btn[aria-busy="true"] { cursor: progress; transform: none; opacity: 0.85; }
+.lp-field input:disabled { opacity: 0.6; cursor: not-allowed; }
+
 /* ============================================================
    LOGIN MODAL OVERLAY
    ============================================================ */

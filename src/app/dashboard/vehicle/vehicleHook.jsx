@@ -163,6 +163,7 @@ export function useVehicle() {
   const [newOrigin, setNewOrigin] = useState("");
   const [routeError, setRouteError] = useState("");
 
+  const [franchiseError, setFranchiseError] = useState("");
   const showConfirm = useConfirm();
   const showToast = useToast();
 
@@ -256,6 +257,11 @@ export function useVehicle() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setRouteError("");
+    if (form.franchise_number && !/^\d{2}-\d{5}$/.test(form.franchise_number)) {
+      setFranchiseError("Use the format YY-NNNNN (7 digits).");
+      return;
+    }
+    setFranchiseError("");
     const { routeId, err } = await resolveRouteId();
     if (err) {
       setRouteError(err);
@@ -365,6 +371,8 @@ export function useVehicle() {
     newOrigin,
     setNewOrigin,
     routeError,
+    franchiseError,
+    setFranchiseError,
     selectedRoute,
     transportationTypes,
     handleSubmit,

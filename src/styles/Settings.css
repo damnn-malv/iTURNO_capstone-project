@@ -123,6 +123,97 @@
   color: var(--text-secondary);
 }
 
+/* ── Side menu layout: settings nav on the left, active section on the right ── */
+.set-layout {
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.set-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 4px 0;
+}
+
+.set-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Divider line between groups, like the main sidebar */
+.set-nav-group + .set-nav-group {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.set-nav-group-label {
+  padding: 0 14px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.set-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.set-nav-item:hover {
+  background: var(--bg-hover);
+}
+
+.set-nav-item-active,
+.set-nav-item-active:hover {
+  background: var(--navy);
+  color: #fff;
+  font-weight: 600;
+}
+
+.dark .set-nav-item-active,
+.dark .set-nav-item-active:hover {
+  background: var(--gold);
+  color: var(--navy);
+}
+
+.set-nav-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--bg-active);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.set-nav-item-active .set-nav-count {
+  background: rgba(255, 255, 255, 0.2);
+  color: inherit;
+}
+
+.set-general-grid--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* ── General tab: PUV Types, Routes, Ticket Forms, and Terminal Price as a
    2-column grid of bordered cards instead of one full-width stacked panel ── */
 .set-general-grid {
@@ -471,39 +562,37 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 20px;
-  background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .setm-title {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
-  color: #fff;
+  color: var(--text-primary);
   margin: 0;
-  letter-spacing: -0.01em;
 }
 
 .setm-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  padding: 4px;
   border: none;
-  border-radius: 7px;
-  background: rgba(255,255,255,0.12);
-  color: #fff;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .setm-close:hover {
-  background: rgba(255,255,255,0.22);
+  background: var(--bg-hover);
 }
 
 .setm-body {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 14px;
   padding: 20px;
 }
@@ -512,6 +601,16 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+}
+
+.setm-field > span:not(.setm-field-label):not(.setm-prefixed) {
+  display: block;
+}
+
+.setm-field .setm-input {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .setm-field-label {
@@ -529,6 +628,38 @@
   background: var(--bg-page);
   color: var(--text-primary);
   transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.setm-readonly {
+  padding: 9px 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.setm-prefixed {
+  display: flex;
+  align-items: stretch;
+}
+
+.setm-prefix {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-primary);
+  background: var(--border-soft);
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+}
+
+.setm-prefixed .setm-input {
+  flex: 1;
+  min-width: 0;
+  border-radius: 0 8px 8px 0;
 }
 
 .setm-input:focus {
@@ -596,6 +727,44 @@
 
   .set-general-grid {
     grid-template-columns: 1fr;
+  }
+
+  .set-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  /* Menu becomes a horizontally scrolling strip above the content */
+  .set-nav {
+    flex-direction: row;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
+
+  .set-nav-group {
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .set-nav-group + .set-nav-group {
+    margin-top: 0;
+    padding-top: 0;
+    padding-left: 10px;
+    margin-left: 4px;
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
+
+  .set-nav-group-label {
+    display: none;
+  }
+
+  .set-nav-item {
+    white-space: nowrap;
+    padding: 9px 12px;
+    font-size: 14px;
   }
 
   .set-header {
@@ -869,3 +1038,5 @@
   font-weight: 700;
   color: var(--text-primary);
 }
+/* Section pane for kit-based sections (no outer card; the DataTable is the card) */
+.set-pane { min-width: 0; }

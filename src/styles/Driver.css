@@ -311,12 +311,12 @@
 .drv-btn--edit:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 .drv-btn--delete {
-  background: rgba(239,68,68,0.1);
-  color: #b91c1c;
-  border: 1px solid rgba(239,68,68,0.2);
+  background: var(--bg-page);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
 }
 
-.drv-btn--delete:hover { background: rgba(239,68,68,0.18); }
+.drv-btn--delete:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 /* ── Loading dots ── */
 .drv-loading-dots {

@@ -15,6 +15,9 @@ const validateDriverForm = (form) => {
   for (const [key, message] of Object.entries(REQUIRED_FIELD_MESSAGES)) {
     if (!form[key]?.toString().trim()) errors[key] = message;
   }
+  if (!errors.iwp_number && !/^\d{12}$/.test(form.iwp_number.toString().trim())) {
+    errors.iwp_number = "IWP number must be exactly 12 digits.";
+  }
   return errors;
 };
 

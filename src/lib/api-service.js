@@ -761,8 +761,19 @@ export const handleLogin = async (
         const user = await userRes.json();
         const displayName = user.first_name ? user.first_name : user.username;
         const label = roleLabel(user.role);
-        if (showToast)
-          showToast(`Welcome, ${label} ${displayName}!`, "success");
+
+        // The dashboard shows a centered welcome card from this. "Last signed in" is the
+        // previous sign-in on this browser (the backend does not record last login).
+        const lastKey = `lastSignIn:${user.email || user.username}`;
+        let lastSignIn = null;
+        try {
+          lastSignIn = localStorage.getItem(lastKey);
+          localStorage.setItem(lastKey, new Date().toISOString());
+          sessionStorage.setItem("welcomeCard", JSON.stringify({ name: displayName, role: label, lastSignIn }));
+        } catch {
+          if (showToast)
+            showToast(`Welcome, ${label} ${displayName}!`, "success");
+        }
       } else {
         if (showToast) showToast("Welcome back!", "success");
       }

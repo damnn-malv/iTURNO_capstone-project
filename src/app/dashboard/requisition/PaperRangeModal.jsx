@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { apiService } from "../../../lib/api-service";
 import { getPhDateString } from "../../../lib/phDate";
-import { useToast, useConfirm } from "../../../components/ui/ToastConfirmContext";
+import { ButtonLabel, Spinner, useFeedback } from "../../../components/ui/kit";
 import "../../../styles/FormModal.css";
 
 const REASONS = [
@@ -17,12 +17,11 @@ const peso = (n) =>
 // (the paper stub may come from an older series, or out of order); the server
 // rejects overlaps with system-issued tickets or earlier paper ranges.
 export default function PaperRangeModal({ series, onClose, onSaved }) {
-  const showToast = useToast();
-  const showConfirm = useConfirm();
+  const { notify, report, confirmAction } = useFeedback();
   const [ranges, setRanges] = useState([]);
   const [form, setForm] = useState({ from_no: "", to_no: "", used_on: getPhDateString(), reason: "SYSTEM_DOWN", note: "" });
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [removingId, setRemovingId] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -46,34 +45,54 @@ export default function PaperRangeModal({ series, onClose, onSaved }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
-    setError(null);
     try {
       await apiService.request("/paper-issuances/", {
         method: "POST",
         body: JSON.stringify({ ...form, series: series.id, from_no: from, to_no: to }),
       });
-      showToast(`${count.toLocaleString()} paper ticket(s) recorded`);
       setForm((f) => ({ ...f, to_no: "", note: "" }));
       await load();
       onSaved();
+      notify.success({ title: "Paper range recorded", message: `${count.toLocaleString()} paper ticket(s) were counted in stock.` });
     } catch (err) {
-      setError(err.message || "Failed to record range");
+      notify.error({
+        title: "Couldn't record range",
+        message: err?.message?.replace(/^Error:\s*/, "") || "Nothing was changed. Check your connection and try again.",
+      });
     } finally {
       setSaving(false);
     }
   };
 
-  const remove = async (r) => {
-    if (!(await showConfirm(`Remove paper range ${r.from_no}–${r.to_no}? Those numbers become available to the system again.`))) return;
+  const removeRange = async (r) => {
+    setRemovingId(r.id);
     try {
       await apiService.request(`/paper-issuances/${r.id}/`, { method: "DELETE" });
       await load();
       onSaved();
+      return { success: { title: "Range removed", message: `Numbers ${r.from_no}\u2013${r.to_no} are available to the system again.` } };
     } catch (err) {
-      setError(err.message || "Failed to remove range");
+      return {
+        error: {
+          title: "Couldn't remove range",
+          message: err?.message?.replace(/^Error:\s*/, "") || "Nothing was changed. Check your connection and try again.",
+          onRetry: () => removeRange(r).then(report),
+        },
+      };
+    } finally {
+      setRemovingId(null);
     }
   };
+
+  const remove = (r) => confirmAction({
+    title: "Remove this paper range?",
+    message: `Paper range ${r.from_no}\u2013${r.to_no} will be removed. Those numbers become available to the system again.`,
+    confirmLabel: "Remove",
+    busyLabel: "Removing...",
+    run: () => removeRange(r),
+  });
 
   return (
     <div className="usr-overlay" onClick={onClose}>
@@ -122,7 +141,6 @@ export default function PaperRangeModal({ series, onClose, onSaved }) {
               {count.toLocaleString()} ticket(s) · {peso(count * price)}
             </div>
           )}
-          {error && <div className="req-modal-error" role="alert">{error}</div>}
 
           {ranges.length > 0 && (
             <table className="req-series-table">
@@ -139,7 +157,9 @@ export default function PaperRangeModal({ series, onClose, onSaved }) {
                     <td className="text-right">
                       {r.remittance_batch
                         ? <span style={{ color: "var(--text-secondary)" }}>Remitted</span>
-                        : <button type="button" className="usr-modal-btn usr-modal-btn--cancel" style={{ padding: "3px 10px" }} onClick={() => remove(r)}>Remove</button>}
+                        : removingId === r.id
+                          ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#b42318" }}><Spinner /> Removing...</span>
+                          : <button type="button" className="usr-modal-btn usr-modal-btn--cancel" style={{ padding: "3px 10px" }} onClick={() => remove(r)}>Remove</button>}
                     </td>
                   </tr>
                 ))}
@@ -149,8 +169,8 @@ export default function PaperRangeModal({ series, onClose, onSaved }) {
 
           <div className="usr-modal-footer">
             <button type="button" className="usr-modal-btn usr-modal-btn--cancel" onClick={onClose}>Close</button>
-            <button type="submit" className="usr-modal-btn usr-modal-btn--submit" disabled={saving || count === 0}>
-              {saving ? "Saving…" : "Record range"}
+            <button type="submit" className="usr-modal-btn usr-modal-btn--submit" disabled={saving || count === 0} aria-busy={saving || undefined}>
+              <ButtonLabel busy={saving} busyLabel="Saving...">Record range</ButtonLabel>
             </button>
           </div>
         </form>

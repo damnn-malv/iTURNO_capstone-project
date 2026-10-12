@@ -1,4 +1,5 @@
 import React from "react";
+import { ButtonLabel } from "../../../components/ui/kit";
 
 function capitalizeWords(str) {
   return str.replace(/(^|\s)\S/g, (c) => c.toUpperCase());
@@ -45,12 +46,14 @@ const RequisitionFormModal = ({
   computeTotal,
   handleSave,
   saving,
-  error,
 }) => {
   if (!showForm) return null;
 
+  // Locked while saving so nobody can double-submit or close mid-request.
+  const close = () => { if (!saving) setShowForm(false); };
+
   return (
-    <div className="req-overlay" onClick={() => setShowForm(false)}>
+    <div className="req-overlay" onClick={close}>
       <div className="req-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="req-modal-header">
@@ -64,7 +67,8 @@ const RequisitionFormModal = ({
           </div>
           <button
             className="req-modal-close"
-            onClick={() => setShowForm(false)}
+            onClick={close}
+            disabled={saving}
             aria-label="Close"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -189,14 +193,13 @@ const RequisitionFormModal = ({
           </div>
         </div>
 
-        {error && <div className="req-modal-error" role="alert">{error}</div>}
-
         {/* Footer */}
         <div className="req-modal-footer">
           <button
             type="button"
             className="req-cancel-btn"
-            onClick={() => setShowForm(false)}
+            onClick={close}
+            disabled={saving}
           >
             Cancel
           </button>
@@ -205,8 +208,9 @@ const RequisitionFormModal = ({
             className="req-save-btn"
             onClick={handleSave}
             disabled={saving}
+            aria-busy={saving || undefined}
           >
-            {saving ? "Saving…" : "Save Requisition"}
+            <ButtonLabel busy={saving} busyLabel="Saving...">Save Requisition</ButtonLabel>
           </button>
         </div>
       </div>

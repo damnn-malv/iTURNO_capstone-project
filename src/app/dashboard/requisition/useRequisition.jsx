@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiService } from "../../../lib/api-service";
-import { useToast, useConfirm } from "../../../components/ui/ToastConfirmContext";
+import { useFeedback } from "../../../components/ui/kit";
 
 const EMPTY_SERIES = {
   ticket_form: "",
@@ -11,31 +11,36 @@ const EMPTY_SERIES = {
   total_value: "",
 };
 
+const FALLBACK_ERROR = "Nothing was changed. Check your connection and try again.";
+const errorMessage = (err) => err?.message?.replace(/^Error:\s*/, "") || FALLBACK_ERROR;
+
 export function useRequisition() {
-  const showToast = useToast();
-  const showConfirm = useConfirm();
+  const { notify, report, confirmAction } = useFeedback();
   const [requisitions, setRequisitions] = useState([]);
   const [ticketForms, setTicketForms] = useState([]);
   const [approvedBy, setApprovedBy] = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [seriesItems, setSeriesItems] = useState([{ ...EMPTY_SERIES }]);
 
+  // The first load shows skeleton rows. Reloads after a save refresh quietly.
+  const fetchRef = useRef(null);
   const fetchRequisitions = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     try {
       const data = await apiService.request("/requisitions/");
       setRequisitions(data);
     } catch (err) {
-      setError(err.message || "Failed to load requisitions");
+      notify.error({
+        title: "Couldn't load requisitions",
+        message: errorMessage(err),
+        onRetry: () => { setLoading(true); fetchRef.current(); },
+      });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [notify]);
 
   const fetchTicketForms = useCallback(async () => {
     try {
@@ -47,6 +52,7 @@ export function useRequisition() {
   }, []);
 
   useEffect(() => {
+    fetchRef.current = fetchRequisitions;
     fetchRequisitions();
     fetchTicketForms();
   }, [fetchRequisitions, fetchTicketForms]);
@@ -138,18 +144,14 @@ export function useRequisition() {
     [seriesItems]
   );
 
-  useEffect(() => {
-    setError(null);
-  }, [showForm]);
-
+  // Add: no confirmation. The Save button shows "Saving..." and the form stays locked until the server answers.
   const handleSave = async () => {
     const filled = seriesItems.filter((item) => item.start_no || item.end_no);
     if (filled.some((item) => !item.ticket_form)) {
-      setError("Select a ticket form for every series item.");
+      notify.error({ title: "Select a ticket form", message: "Choose a ticket form for every series item." });
       return;
     }
     setSaving(true);
-    setError(null);
     try {
       const totalValue = computeTotal();
       const currentUser = await apiService.request("/current-user/");
@@ -183,62 +185,71 @@ export function useRequisition() {
       setApprovedBy("");
       setShowForm(false);
       await fetchRequisitions();
+      notify.success({
+        title: "Requisition saved",
+        message: filled.length === 1 ? "1 ticket series was added to stock." : `${filled.length} ticket series were added to stock.`,
+      });
     } catch (err) {
-      setError(err.message || "Failed to save requisition");
+      notify.error({ title: "Couldn't save requisition", message: errorMessage(err), onRetry: handleSave });
     } finally {
       setSaving(false);
     }
   };
 
-  const handleApprove = async (id) => {
+  const patchStatus = async (id, status, success, failTitle) => {
     try {
       await apiService.request(`/requisitions/${id}/`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "APPROVED" }),
+        body: JSON.stringify({ status }),
       });
       await fetchRequisitions();
+      notify.success(success);
     } catch (err) {
-      setError(err.message || "Failed to approve");
+      notify.error({ title: failTitle, message: errorMessage(err), onRetry: () => patchStatus(id, status, success, failTitle) });
     }
   };
 
-  const handleIssue = async (id) => {
-    try {
-      await apiService.request(`/requisitions/${id}/`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "ISSUED" }),
-      });
-      await fetchRequisitions();
-    } catch (err) {
-      setError(err.message || "Failed to issue");
-    }
-  };
+  const handleApprove = (id) =>
+    patchStatus(id, "APPROVED", { title: "Requisition approved", message: "It is ready to be issued." }, "Couldn't approve requisition");
 
-  const handleArchive = async (id) => {
-    const confirmed = await showConfirm("Archive this requisition? It will move out of the active stock ledger.");
-    if (!confirmed) return;
-    try {
-      await apiService.patch(`/requisitions/${id}/`, { is_archived: true });
-      await fetchRequisitions();
-      showToast("Requisition archived");
-    } catch (err) {
-      const message = err.message || "Failed to archive requisition";
-      setError(message);
-      showToast(message, "info");
-    }
-  };
+  const handleIssue = (id) =>
+    patchStatus(id, "ISSUED", { title: "Requisition issued", message: "The ticket series are now in stock." }, "Couldn't issue requisition");
 
-  const handleRestore = async (id) => {
+  const restoreRequisition = async (id) => {
     try {
       await apiService.patch(`/requisitions/${id}/`, { is_archived: false });
       await fetchRequisitions();
-      showToast("Requisition restored");
+      return { success: { title: "Requisition restored", message: "It is back in the active stock ledger." } };
     } catch (err) {
-      const message = err.message || "Failed to restore requisition";
-      setError(message);
-      showToast(message, "info");
+      return { error: { title: "Couldn't restore requisition", message: errorMessage(err), onRetry: () => restoreRequisition(id).then(report) } };
     }
   };
+
+  const archiveRequisition = async (id) => {
+    try {
+      await apiService.patch(`/requisitions/${id}/`, { is_archived: true });
+      await fetchRequisitions();
+      return {
+        success: {
+          title: "Requisition archived",
+          message: "It was moved out of the active stock ledger.",
+          undo: { label: "Undo", onUndo: () => restoreRequisition(id).then(report) },
+        },
+      };
+    } catch (err) {
+      return { error: { title: "Couldn't archive requisition", message: errorMessage(err), onRetry: () => archiveRequisition(id).then(report) } };
+    }
+  };
+
+  const handleArchive = (id) => confirmAction({
+    title: "Archive this requisition?",
+    message: "It will move out of the active stock ledger.",
+    confirmLabel: "Archive",
+    busyLabel: "Archiving...",
+    run: () => archiveRequisition(id),
+  });
+
+  const handleRestore = async (id) => report(await restoreRequisition(id));
 
   return {
     requisitions,
@@ -246,7 +257,6 @@ export function useRequisition() {
     approvedBy,
     setApprovedBy,
     loading,
-    error,
     saving,
     showForm,
     setShowForm,

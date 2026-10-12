@@ -165,7 +165,6 @@ function User({ userRole }) {
       {/* Header */}
       <div className="usr-header">
         <div className="usr-header-left">
-          <div className="usr-header-accent" />
           <div>
             <h1 className="usr-title">Staff Registry</h1>
             

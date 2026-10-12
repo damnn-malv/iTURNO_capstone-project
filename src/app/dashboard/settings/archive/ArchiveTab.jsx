@@ -1,6 +1,18 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { apiService } from "../../../../lib/api-service";
-import { useToast } from "../../../../components/ui/ToastConfirmContext";
+import {
+  DataTable, Toolbar, SearchInput, IconButton, Pagination, SectionHeader, TabBar, RestoreIcon, useFeedback,
+} from "../../../../components/ui/kit";
+
+const PAGE_SIZE = 10;
+
+// Wording for the restore success message ("Route restored · back in Routes.").
+const RESTORED_AS = {
+  vehicles: { singular: "Vehicle", home: "Vehicles" },
+  drivers: { singular: "Driver", home: "Drivers" },
+  routes: { singular: "Route", home: "Routes" },
+  puvtypes: { singular: "PUV type", home: "PUV types" },
+};
 
 const peso = (n) => `₱${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 const fmtDate = (d) => (d ? new Date(d).toLocaleString() : "—");
@@ -13,6 +25,8 @@ const SECTIONS = [
     path: "/vehicles/",
     columns: ["Plate Number", "Route", "Franchise #"],
     cells: (v) => [v.plate_number, v.route_detail?.full_name || "—", v.franchise_number || "—"],
+    restore: () => ({ is_archived: false }),
+    patch: true,
   },
   {
     key: "drivers",
@@ -24,6 +38,8 @@ const SECTIONS = [
       d.iwp_number || "—",
       d.contact || "—",
     ],
+    restore: () => ({ is_archived: false }),
+    patch: true,
   },
   {
     key: "series",
@@ -60,14 +76,17 @@ const SECTIONS = [
   },
 ];
 
-export default function ArchiveTab() {
-  const showToast = useToast();
-  const [active, setActive] = useState("vehicles");
+export default function ArchiveTab({ onRestored }) {
+  const { notify, report } = useFeedback();
+  const [active, setActive] = useState("all");
   const [rows, setRows] = useState({});
   const [loading, setLoading] = useState(true);
+  const loadRef = useRef(null);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [rowStates, setRowStates] = useState({}); // "<section>-<id>" -> { kind, label }
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const results = await Promise.all(
         SECTIONS.map(async (s) => {
@@ -80,72 +99,124 @@ export default function ArchiveTab() {
       setRows(next);
     } catch (err) {
       console.error("Failed to load archive:", err);
-      showToast?.("Failed to load archive", "info");
+      notify.error({ title: "Couldn't load archive", message: err?.message || "Nothing was changed. Check your connection and try again.", onRetry: () => { setLoading(true); loadRef.current(); } });
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [notify]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    loadRef.current = load;
+    load();
+  }, [load]);
 
-  const section = SECTIONS.find((s) => s.key === active);
-  const list = rows[active] || [];
-  const colSpan = section.columns.length + (section.restore ? 1 : 0);
+  const countOf = (key) => (rows[key] || []).length;
+  // Only record types that actually hold archived records get a tab; "All" is always there.
+  const populated = SECTIONS.filter((s) => countOf(s.key) > 0);
+  const total = SECTIONS.reduce((n, s) => n + countOf(s.key), 0);
+  // If the last record of a type is restored, its tab disappears: fall back to All.
+  const activeKey = active !== "all" && countOf(active) === 0 ? "all" : active;
+  const isAll = activeKey === "all";
+  const section = isAll ? null : SECTIONS.find((s) => s.key === activeKey);
 
-  const handleRestore = async (item) => {
+  const handleRestore = async (sec, item) => {
+    const key = `${sec.key}-${item.id}`;
+    const wording = RESTORED_AS[sec.key] || { singular: sec.label, home: sec.label };
+    const name = sec.cells(item)[0];
+    setRowStates((prev) => ({ ...prev, [key]: { kind: "busy", label: "Restoring..." } }));
     try {
-      await apiService.put(`${section.path}${item.id}/`, section.restore(item));
-      setRows((prev) => ({ ...prev, [active]: prev[active].filter((r) => r.id !== item.id) }));
-      showToast?.(`${section.label} restored`, "success");
+      await apiService[sec.patch ? "patch" : "put"](`${sec.path}${item.id}/`, sec.restore(item));
+      setRows((prev) => ({ ...prev, [sec.key]: prev[sec.key].filter((r) => r.id !== item.id) }));
+      onRestored?.(sec.key);
+      report({ success: { title: `${wording.singular} restored`, message: `${name} is back in ${wording.home}.` } });
     } catch (err) {
       console.error("Failed to restore:", err);
-      showToast?.(err.message || "Failed to restore", "info");
+      report({ error: { title: `Couldn't restore ${wording.singular.toLowerCase()}`, message: err.message || "Nothing was changed. Check your connection and try again.", onRetry: () => handleRestore(sec, item) } });
+    } finally {
+      setRowStates((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
     }
   };
 
+  // One entry per archived record, carrying its record type so the "All" view can mix them.
+  const entries = (isAll ? SECTIONS : [section]).flatMap((sec) =>
+    (rows[sec.key] || []).map((item) => ({ id: `${sec.key}-${item.id}`, sec, item, cells: sec.cells(item) })),
+  );
+  const q = search.trim().toLowerCase();
+  const matches = entries.filter((e) => !q || `${e.sec.label} ${e.cells.join(" ")}`.toLowerCase().includes(q));
+  const pageCount = Math.max(1, Math.ceil(matches.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = matches.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const restoreCell = (e) =>
+    e.sec.restore ? (
+      <div className="ui-cell-actions">
+        <IconButton icon={<RestoreIcon />} text="Restore" label={`Restore ${e.cells[0]}`} onClick={() => handleRestore(e.sec, e.item)} />
+      </div>
+    ) : null;
+
+  const columns = isAll
+    ? [
+      { key: "record", header: "Record", render: (e) => <span className="ui-cell-strong">{e.cells[0]}</span> },
+      { key: "type", header: "Type", render: (e) => e.sec.label },
+      {
+        key: "details",
+        header: "Details",
+        render: (e) => e.cells.slice(1).map((c, i) => `${e.sec.columns[i + 1]}: ${c}`).join("  ·  "),
+      },
+      { key: "actions", header: "Actions", align: "right", render: restoreCell },
+    ]
+    : [
+      ...section.columns.map((header, i) => ({
+        key: String(i),
+        header,
+        render: (e) => (i === 0 ? <span className="ui-cell-strong">{e.cells[i]}</span> : e.cells[i]),
+      })),
+      ...(section.restore ? [{ key: "actions", header: "Actions", align: "right", render: restoreCell }] : []),
+    ];
+
+  const switchSection = (key) => { setActive(key); setSearch(""); setPage(1); };
+  const noun = isAll ? "records" : section.label.toLowerCase();
+
   return (
     <>
-      <div className="set-tabs" style={{ marginBottom: 12 }}>
-        {SECTIONS.map((s) => (
-          <button
-            key={s.key}
-            className={`set-tab ${active === s.key ? "set-tab-active" : ""}`}
-            onClick={() => setActive(s.key)}
-          >
-            <span>{s.label}</span>
-          </button>
-        ))}
-      </div>
-      <div className="set-table-wrap">
-        <table className="set-table">
-          <thead>
-            <tr>
-              {section.columns.map((c) => <th key={c}>{c}</th>)}
-              {section.restore && <th className="set-th-actions">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={colSpan} className="set-table-state">Loading archive...</td></tr>
-            ) : list.length === 0 ? (
-              <tr><td colSpan={colSpan} className="set-table-state">Nothing archived</td></tr>
-            ) : (
-              list.map((item) => (
-                <tr key={item.id} className="set-row">
-                  {section.cells(item).map((cell, i) => (
-                    <td key={i} className={i === 0 ? "set-cell-label" : "set-cell-meta"}>{cell}</td>
-                  ))}
-                  {section.restore && (
-                    <td className="set-cell-actions">
-                      <button className="set-add-btn" onClick={() => handleRestore(item)}>Restore</button>
-                    </td>
-                  )}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <SectionHeader
+        title="Archive"
+      />
+      <TabBar
+        tabs={[
+          { key: "all", label: "All", count: loading ? null : total },
+          ...populated.map((s) => ({ key: s.key, label: s.label, count: countOf(s.key) })),
+        ]}
+        value={activeKey}
+        onChange={switchSection}
+      />
+      <DataTable
+        toolbar={
+          <Toolbar>
+            <SearchInput
+              value={search}
+              onChange={(v) => { setSearch(v); setPage(1); }}
+              placeholder={isAll ? "Search the archive" : `Search archived ${noun}`}
+            />
+          </Toolbar>
+        }
+        columns={columns}
+        rows={pageRows}
+        loading={loading}
+        rowState={(e) => rowStates[e.id]}
+        rowKey={(e) => e.id}
+        emptyMessage={entries.length === 0 ? "Nothing archived" : "No matches found"}
+        footer={
+          <>
+            <span>Showing {loading ? 0 : pageRows.length} of {loading ? 0 : matches.length} archived {noun}</span>
+            {pageCount > 1 && <Pagination page={currentPage} pageCount={pageCount} onPage={setPage} />}
+          </>
+        }
+      />
     </>
   );
 }
