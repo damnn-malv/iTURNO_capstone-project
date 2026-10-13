@@ -11,13 +11,14 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import APIException, ValidationError
+from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated, BasePermission, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import LOCAL_ADMIN_PK_BASE, User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, RemittanceBatch, TicketForm, Requisition, TicketSeries, PaperIssuance, RoamingLog, WipMode
+from ..models import LOCAL_ADMIN_PK_BASE, PendingFleetAccess, User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, RemittanceBatch, TicketForm, Requisition, TicketSeries, PaperIssuance, RoamingLog, WipMode
 from ..serializers import UserSerializer, SelfProfileSerializer, DriverSerializer, VehicleSerializer, RouteSerializer, TicketSerializer, TicketPriceSerializer, PUVTypeSerializer, RemittanceBatchSerializer, TicketFormSerializer, RequisitionSerializer, TicketSeriesSerializer, PaperIssuanceSerializer, RoamingLogSerializer
+from ..sync.fleet_access import flush_fleet_access
 from ..sms import send_sms_async, queue_next_message
 from ..tokens import sign_email_verification_token
 from .helpers import record_audit_log, expire_stale_queue_tickets, expire_stale_unverified_accounts, supabase_reachable, paper_numbers_by_series, parse_date_start, parse_date_end, paginate_request, promote_queue_front
@@ -68,27 +69,52 @@ class AuditLogMixin:
         instance.delete()
 
 
-class IsSuperAdminOrReadOnly(BasePermission):
-    """Any authenticated user may view the staff registry; only Admins may create/update/delete accounts."""
+# Supervisor and Manager are the same position under two titles.
+LEAD_ROLES = ('SUPERVISOR', 'MANAGER')
+
+
+def is_fleet_tick(request, view):
+    return getattr(view, 'action', None) == 'partial_update' and set(request.data) == {'can_manage_fleet'}
+
+
+class IsAdminOrFleetAccessGrant(BasePermission):
+    """Any authenticated user may view the staff registry; only Admins may create/update
+    accounts. Supervisors/Managers may additionally PATCH a Personnel's can_manage_fleet
+    tick (UserViewSet.perform_update enforces the target) and nothing else."""
 
     def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS or user.role == 'SUPERADMIN':
+            return True
+        return user.role in LEAD_ROLES and is_fleet_tick(request, view)
+
+
+class CanManageFleet(BasePermission):
+    """Vehicle/driver registration: Admins and leads always; Personnel only once ticked."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
         if request.method in SAFE_METHODS:
             return True
-        return bool(request.user and request.user.is_authenticated and request.user.role == 'SUPERADMIN')
+        return user.role == 'SUPERADMIN' or user.role in LEAD_ROLES or user.can_manage_fleet
 
 
 class IsSupervisorOrAdminForWrite(BasePermission):
-    """Backfill/WIP-mode: transactional territory, so SUPERVISOR and SUPERADMIN both
-    qualify (unlike the System tab's backup/restore, which stays SUPERADMIN-only).
-    Reads are open to any authenticated user so the WIP-mode banner works for every
-    role — only toggling/importing is restricted."""
+    """Backfill/WIP-mode: transactional territory, so leads (Supervisor/Manager) and
+    SUPERADMIN both qualify (unlike the System tab's backup/restore, which stays
+    SUPERADMIN-only). Reads are open to any authenticated user so the WIP-mode banner
+    works for every role — only toggling/importing is restricted."""
 
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
             return False
         if request.method in SAFE_METHODS:
             return True
-        return request.user.role in ('SUPERVISOR', 'SUPERADMIN')
+        return request.user.role in (*LEAD_ROLES, 'SUPERADMIN')
 
 
 class CurrentUserView(APIView):
@@ -115,17 +141,23 @@ class CurrentUserView(APIView):
 class UserViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [IsAuthenticated, IsSuperAdminOrReadOnly]
+    permission_classes = [IsAuthenticated, IsAdminOrFleetAccessGrant]
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
         # Writes must land on Supabase (see get_queryset), so refuse them
         # cleanly when offline instead of crashing; reads fall back to the
         # local pulled copy.
-        if request.method not in SAFE_METHODS and not supabase_reachable():
+        # The fleet tick is the one write that works offline (see _set_fleet_access).
+        if request.method not in SAFE_METHODS and not is_fleet_tick(request, self) and not supabase_reachable():
             raise ServiceUnavailable('Staff accounts can only be changed while online. Reconnect to the internet and try again.')
 
     def get_queryset(self):
+        qs = self._staff_queryset()
+        # Supervisors/Managers only ever deal with Personnel here.
+        return qs.filter(role='PERSONNEL') if self.request.user.role in LEAD_ROLES else qs
+
+    def _staff_queryset(self):
         if not supabase_reachable():
             return User.objects.using('default').all()
         # Lazy cleanup, same convention as expire_stale_queue_tickets — the
@@ -161,9 +193,24 @@ class UserViewSet(AuditLogMixin, viewsets.ModelViewSet):
             send_verification_email(instance)
         return instance
 
+    def _set_fleet_access(self, target, allowed):
+        """Save locally now, park for Supabase; flush at once if online, else the sync cycle does."""
+        User.objects.using('default').filter(pk=target.pk).update(can_manage_fleet=allowed)
+        PendingFleetAccess.objects.update_or_create(user_id=target.pk, defaults={'can_manage_fleet': allowed})
+        flush_fleet_access()
+        target.can_manage_fleet = allowed
+        self._audit('UPDATE', target, {'can_manage_fleet': allowed})
+
     def perform_update(self, serializer):
         data = serializer.validated_data
         target = serializer.instance
+        if set(data) == {'can_manage_fleet'}:
+            if self.request.user.role != 'SUPERADMIN' and target.role != 'PERSONNEL':
+                raise PermissionDenied('Fleet access only applies to Personnel accounts.')
+            self._set_fleet_access(target, data['can_manage_fleet'])
+            return target
+        if self.request.user.role != 'SUPERADMIN' and target.role != 'PERSONNEL':
+            raise PermissionDenied('Fleet access only applies to Personnel accounts.')
         self._guard_account_change(target, data.get('role', target.role), data.get('is_active', target.is_active))
         return super().perform_update(serializer)
 
@@ -242,6 +289,7 @@ def send_new_account_email(user, raw_password):
 class DriverViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = Driver.objects.all()
     serializer_class = DriverSerializer
+    permission_classes = [CanManageFleet]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -281,7 +329,41 @@ class ArchivableSettingMixin:
         super().perform_destroy(instance)
 
 
-class RouteViewSet(ArchivableSettingMixin, AuditLogMixin, viewsets.ModelViewSet):
+class SupabaseWriteThroughMixin:
+    """Route / ticket price / ticket form / PUV type are Supabase-authoritative
+    (PULL_MODELS), so a LAN-only save would be overwritten by the next pull. Reads
+    stay on the local cache (accurate usage counts, works offline); writes land on
+    Supabase too, and are refused while it's unreachable. Local is written first
+    inside a transaction so a failed Supabase write rolls it back; creates go
+    Supabase-first so the id comes from Postgres's sequence, not SQLite's."""
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if request.method not in SAFE_METHODS and not supabase_reachable():
+            raise ServiceUnavailable('Settings can only be changed while online. Reconnect to the internet and try again.')
+
+    def perform_create(self, serializer):
+        instance = serializer.Meta.model(**serializer.validated_data)
+        instance.save(using='supabase')
+        instance.save(using='default')
+        serializer.instance = instance
+        self._audit('CREATE', instance, self._safe_changes())
+        return instance
+
+    def perform_update(self, serializer):
+        with transaction.atomic(using='default'):
+            instance = super().perform_update(serializer)
+            instance.save(using='supabase')
+        return instance
+
+    def perform_destroy(self, instance):
+        model, pk = type(instance), instance.pk
+        with transaction.atomic(using='default'):
+            super().perform_destroy(instance)
+            model.objects.using('supabase').filter(pk=pk).delete()
+
+
+class RouteViewSet(SupabaseWriteThroughMixin, ArchivableSettingMixin, AuditLogMixin, viewsets.ModelViewSet):
     queryset = Route.objects.all()
     serializer_class = RouteSerializer
     usage = {'vehicle_count': ('vehicles', 'vehicle(s)'), 'ticket_count': ('tickets', 'ticket(s)')}
@@ -290,6 +372,7 @@ class RouteViewSet(ArchivableSettingMixin, AuditLogMixin, viewsets.ModelViewSet)
 class VehicleViewSet(AuditLogMixin, viewsets.ModelViewSet):
     queryset = Vehicle.objects.select_related('route', 'active_driver', 'owner_driver', 'transportation_id').all()
     serializer_class = VehicleSerializer
+    permission_classes = [CanManageFleet]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -820,18 +903,18 @@ class TicketViewSet(viewsets.ModelViewSet):
         return Response(TicketSerializer(ticket, context={'request': request}).data)
 
 
-class TicketPriceViewSet(AuditLogMixin, viewsets.ModelViewSet):
+class TicketPriceViewSet(SupabaseWriteThroughMixin, AuditLogMixin, viewsets.ModelViewSet):
     queryset = TicketPrice.objects.all()
     serializer_class = TicketPriceSerializer
 
 
-class PUVTypeViewSet(ArchivableSettingMixin, AuditLogMixin, viewsets.ModelViewSet):
+class PUVTypeViewSet(SupabaseWriteThroughMixin, ArchivableSettingMixin, AuditLogMixin, viewsets.ModelViewSet):
     queryset = PUVType.objects.all()
     serializer_class = PUVTypeSerializer
     usage = {'vehicle_count': ('vehicles', 'vehicle(s)')}
 
 
-class TicketFormViewSet(AuditLogMixin, viewsets.ModelViewSet):
+class TicketFormViewSet(SupabaseWriteThroughMixin, AuditLogMixin, viewsets.ModelViewSet):
     queryset = TicketForm.objects.all()
     serializer_class = TicketFormSerializer
 

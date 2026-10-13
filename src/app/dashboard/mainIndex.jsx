@@ -51,38 +51,29 @@ const ROLE_LABELS = {
   PERSONNEL: "Personnel",
 };
 
+const ADMIN_NAV = [
+  "/dashboard",
+  "/dashboard/Requisition",
+  "/dashboard/Queue",
+  "/dashboard/Remittance",
+  "/dashboard/Registry",
+  "/dashboard/StaffRegistry",
+  "/dashboard/Reports",
+  "/dashboard/Settings",
+];
+
+// Supervisor and Manager are one position under two titles.
 const ROLE_NAV = {
-  SUPERADMIN: [
-    "/dashboard",
-    "/dashboard/Requisition",
-    "/dashboard/Queue",
-    "/dashboard/Remittance",
-    "/dashboard/Registry",
-    "/dashboard/StaffRegistry",
-    "/dashboard/Reports",
-    "/dashboard/Settings",
-  ],
-  MANAGER: [
-    "/dashboard",
-    "/dashboard/Registry",
-    "/dashboard/StaffRegistry",
-    "/dashboard/Reports",
-    "/dashboard/Settings",
-  ],
-  SUPERVISOR: [
-    "/dashboard",
-    "/dashboard/Requisition",
-    "/dashboard/Queue",
-    "/dashboard/Remittance",
-    "/dashboard/Registry",
-    "/dashboard/Reports",
-    "/dashboard/Settings",
-  ],
-  PERSONNEL: [
-    "/dashboard",
-    "/dashboard/Queue",
-    "/dashboard/Reports",
-  ],
+  SUPERADMIN: ADMIN_NAV,
+  MANAGER: ADMIN_NAV,
+  SUPERVISOR: ADMIN_NAV,
+  PERSONNEL: ["/dashboard", "/dashboard/Queue", "/dashboard/Reports"],
+};
+
+// Personnel see Fleet & Driver only once a Supervisor/Manager has ticked it for them.
+const navFor = (user) => {
+  const nav = ROLE_NAV[user.role] || [];
+  return user.role === "PERSONNEL" && user.can_manage_fleet ? [...nav, "/dashboard/Registry"] : nav;
 };
 
 function mainIndex() {
@@ -140,7 +131,8 @@ function mainIndex() {
 
   const userRole = currentUser.role || "Unknown Role";
   const userRoleLabel = ROLE_LABELS[userRole] || userRole;
-  const canViewRemittance = ROLE_NAV[userRole]?.includes("/dashboard/Remittance");
+  const allowedNav = navFor(currentUser);
+  const canViewRemittance = allowedNav.includes("/dashboard/Remittance");
 
   if (!userLoaded) {
     return null;
@@ -300,7 +292,7 @@ function mainIndex() {
         <nav className="sidebar-nav">
           <div className="sidebar-nav-label">Navigation</div>
           {NAV_GROUPS.map((group) =>
-            group.filter((item) => ROLE_NAV[userRole]?.includes(item.to)),
+            group.filter((item) => allowedNav.includes(item.to)),
           )
             .filter((group) => group.length > 0)
             .map((group, idx) => (

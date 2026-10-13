@@ -4,6 +4,8 @@ import {
   requireRole,
   CAN_EDIT_SETTINGS,
   CAN_BACKFILL,
+  LEAD_ROLES,
+  ROLES,
   hashDjangoPassword,
   generateTempPassword,
 } from "../../_lib/auth.js";
@@ -114,17 +116,35 @@ async function routesResource(req, res, supabase, payload) {
 }
 
 async function usersResource(req, res, supabase, payload) {
-  requireRole(payload, CAN_EDIT_SETTINGS); // whole resource is SUPERADMIN-only, reads included
-  const SELECT = "id, username, first_name, middle_name, last_name, role, is_active, must_reset_password, email_verified";
+  // Admin-only, except Supervisor/Manager may list staff and tick a Personnel's fleet
+  // access (a PATCH carrying only can_manage_fleet) — mirrors UserViewSet.fleet_access.
+  const isAdmin = CAN_EDIT_SETTINGS.includes(payload.role);
+  const SELECT = "id, username, first_name, middle_name, last_name, role, is_active, must_reset_password, email_verified, can_manage_fleet";
+  if (!isAdmin) {
+    const body = req.body || {};
+    const fleetTickOnly = (req.method === "PATCH" || req.method === "PUT")
+      && Object.keys(body).length === 1 && body.can_manage_fleet !== undefined;
+    if (!(req.method === "GET" || fleetTickOnly)) requireRole(payload, CAN_EDIT_SETTINGS);
+    requireRole(payload, LEAD_ROLES);
+    if (fleetTickOnly) {
+      const id = req.query.id;
+      if (!id) return void res.status(400).json({ detail: "id query param is required" });
+      const { data: target, error: tErr } = await supabase.from("api_user").select("role").eq("id", id).single();
+      if (tErr) throw tErr;
+      if (target.role !== ROLES.PERSONNEL) return void res.status(403).json({ detail: "Fleet access only applies to Personnel accounts." });
+    }
+  }
 
   if (req.method === "GET") {
-    const { data, error } = await supabase.from("api_user").select(SELECT).order("username", { ascending: true });
+    let query = supabase.from("api_user").select(SELECT).order("username", { ascending: true });
+    if (!isAdmin) query = query.eq("role", ROLES.PERSONNEL); // leads only see Personnel
+    const { data, error } = await query;
     if (error) throw error;
     res.status(200).json(data);
     return;
   }
   if (req.method === "POST") {
-    const { username, first_name = "", middle_name = "", last_name = "", role = "PERSONNEL", is_active = true } = req.body || {};
+    const { username, first_name = "", middle_name = "", last_name = "", role = "PERSONNEL", is_active = true, can_manage_fleet = false } = req.body || {};
     if (!username || !username.trim()) return void res.status(400).json({ detail: "username (email) is required" });
     const tempPassword = generateTempPassword();
     // created_at/updated_at (auto_now_add/auto_now) and date_joined (AbstractUser's
@@ -134,7 +154,7 @@ async function usersResource(req, res, supabase, payload) {
     const { data, error } = await supabase
       .from("api_user")
       .insert({
-        username: username.trim(), first_name, middle_name, last_name, role, is_active,
+        username: username.trim(), first_name, middle_name, last_name, role, is_active, can_manage_fleet,
         password: hashDjangoPassword(tempPassword), must_reset_password: true, is_staff: false, is_superuser: false,
         created_at: now, updated_at: now, date_joined: now,
       })
@@ -148,7 +168,7 @@ async function usersResource(req, res, supabase, payload) {
     if (!id) return void res.status(400).json({ detail: "id query param is required" });
     // Allowlisted, not spread from req.body — a client sending an extra `password`
     // or `is_superuser` field must never reach the update untouched.
-    const EDITABLE_USER_FIELDS = ["username", "first_name", "middle_name", "last_name", "role", "is_active"];
+    const EDITABLE_USER_FIELDS = ["username", "first_name", "middle_name", "last_name", "role", "is_active", "can_manage_fleet"];
     const body = req.body || {};
     const updates = {};
     for (const f of EDITABLE_USER_FIELDS) {

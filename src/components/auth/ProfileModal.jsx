@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { apiService } from "../../lib/api-service";
-import { useToast } from "../ui/ToastConfirmContext";
+import { useFeedback } from "../ui/kit";
 import "../../styles/FormModal.css";
 
 const capitalizeWords = (value) => value.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
@@ -20,7 +20,7 @@ const Field = ({ label, required, optional, error, hint, children }) => (
 // Self-service profile editor: name and contact number only. Email, password and
 // role are intentionally not editable here (the server enforces the same limit).
 function ProfileModal({ user, onSaved, onClose }) {
-  const showToast = useToast();
+  const { notify } = useFeedback();
   const [form, setForm] = useState({
     first_name: user.first_name || "",
     middle_name: user.middle_name || "",
@@ -50,7 +50,7 @@ function ProfileModal({ user, onSaved, onClose }) {
       const updated = await apiService.updateCurrentUser(form);
       onSaved(updated);
       window.dispatchEvent(new Event("profile-updated"));
-      showToast("Profile updated");
+      notify.success({ title: "Profile updated" });
       onClose();
     } catch (err) {
       setErrors({ form: err.message || "Could not update your profile." });

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useToast, useConfirm } from "../../../../components/ui/ToastConfirmContext";
+import { useFeedback } from "../../../../components/ui/kit";
 import { IS_REMOTE } from "../../../../lib/api-service";
 import "../../../../styles/FormModal.css";
 import {
@@ -73,8 +73,7 @@ function VehiclePicker({ vehicles, series, onAdd, invalid }) {
 }
 
 export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, submitRows }) {
-  const showToast = useToast();
-  const showConfirm = useConfirm();
+  const { notify, report, confirmAction } = useFeedback();
 
   const [date, setDate] = useState(() => new Date().toLocaleDateString("en-CA"));
   const [seriesId, setSeriesId] = useState("");
@@ -126,7 +125,7 @@ export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, su
   const incomplete = () => {
     if (missing.length === 0) return false;
     setShowErrors(true);
-    showToast(`Still needed: ${missing.join(", ")}`, "info");
+    notify.error({ title: "Still needed", message: missing.join(", ") });
     return true;
   };
 
@@ -140,19 +139,27 @@ export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, su
   const commit = async () => {
     const results = await submitRows(rows, true);
     if (results.every((r) => r.outcome === "ok")) {
-      showToast(IS_REMOTE ? "Backfill queued" : `${totalTickets} ticket(s) added`, "success");
       reset();
-      return;
+      return IS_REMOTE
+        ? { success: { title: "Backfill queued", message: `${totalTickets} ticket(s) will be created on the LAN terminal's next sync.` } }
+        : { success: { title: "Tickets added", message: `${totalTickets} ticket(s) were added.` } };
     }
     // Saved all-or-nothing, so nothing was added and the form is left as it was.
-    showToast("Nothing was saved — fix the entries marked in red", "info");
     setReview(results);
+    return { error: { title: "Nothing was saved", message: "Fix the entries marked in red." } };
   };
 
   const handleConfirm = async () => {
     if (incomplete()) return;
     if (IS_REMOTE) {
-      if (await showConfirm(`Queue ${totalTickets} ticket(s)? The LAN terminal creates them on its next sync.`)) await commit();
+      confirmAction({
+        title: `Queue ${totalTickets} ticket(s)?`,
+        message: "The LAN terminal creates them on its next sync.",
+        confirmLabel: "Queue",
+        busyLabel: "Queuing…",
+        tone: "primary",
+        run: commit,
+      });
       return;
     }
     setReview(await submitRows(rows, false));
@@ -299,7 +306,7 @@ export default function BackfillBuilder({ mode, vehicles, ticketSeries, busy, su
                   <button
                     className="usr-modal-btn usr-modal-btn--submit"
                     disabled={busy}
-                    onClick={async () => { setReview(null); await commit(); }}
+                    onClick={async () => { setReview(null); report(await commit()); }}
                   >
                     Confirm & Add
                   </button>

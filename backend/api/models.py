@@ -88,6 +88,9 @@ class User(AbstractUser):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='PERSONNEL')
     middle_name = models.CharField(max_length=100, blank=True, default='')
     contact = models.CharField(max_length=20, blank=True, default='')
+    # Ticked by a Supervisor/Manager (or Admin) to let a PERSONNEL account register
+    # vehicles and drivers. Ignored for the other roles, who always can.
+    can_manage_fleet = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -571,6 +574,20 @@ class BackfillRecord(models.Model):
 
     def __str__(self):
         return f"{self.get_source_display()} backfill ({self.ticket_count} ticket(s)) by {self.created_by_name or 'System'}"
+
+
+class PendingFleetAccess(models.Model):
+    """A fleet-access tick made on the LAN that Supabase hasn't received yet.
+
+    User is Supabase-authoritative (pulled, never pushed), so a plain local edit
+    would be overwritten by the next pull. Supervisors tick this on site, often
+    offline: the tick is saved locally at once, parked here, and pushed as a
+    single-field update (api/sync/fleet_access.py) — never a whole-row push, which
+    could clobber the remote password. pull_all() re-applies it over the pulled copy
+    until it lands."""
+    user_id = models.IntegerField(unique=True)
+    can_manage_fleet = models.BooleanField()
+    queued_at = models.DateTimeField(auto_now=True)
 
 
 class SyncQueue(models.Model):

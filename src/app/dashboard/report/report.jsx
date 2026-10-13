@@ -15,6 +15,7 @@ import {
   formatAuditDetails,
 } from "./reportHook";
 import { exportTablePDF } from "./exportPDF";
+import { useFeedback } from "../../../components/ui/kit";
 
 import QueueLog from "./tables/QueueLog";
 import AuditTrail from "./tables/AuditTrail";
@@ -43,6 +44,7 @@ const mapTicketToLogRow = (t) => ({
 });
 
 export default function Report() {
+  const { notify } = useFeedback();
   const [period, setPeriod] = useState("month");
   const [filters, setFilters] = useState(() => getPeriodRange("month"));
   const [queueData, setQueueData] = useState([]);
@@ -294,9 +296,13 @@ export default function Report() {
     Status: r.status,
   });
 
+  const exportTable = (data, title) => {
+    if (!exportTablePDF(data, title)) notify.error({ title: "Nothing to export", message: "No records match the current filters." });
+  };
+
   const handleExportRequisitionsPDF = async (search = "") => {
     const rows = await fetchRequisitionExportRows();
-    exportTablePDF(rows.filter((r) => matchesRequisitionRow(r, search)).map(buildRequisitionExportRow), "Requisition");
+    exportTable(rows.filter((r) => matchesRequisitionRow(r, search)).map(buildRequisitionExportRow), "Requisition");
   };
 
   const buildRemittanceExportRow = (b) => ({
@@ -309,7 +315,7 @@ export default function Report() {
 
   const handleExportRemittancePDF = async (search = "") => {
     const rows = await fetchRemittanceExportRows();
-    exportTablePDF(rows.filter((b) => matchesRemittanceRow(b, search)).map(buildRemittanceExportRow), "Remittance");
+    exportTable(rows.filter((b) => matchesRemittanceRow(b, search)).map(buildRemittanceExportRow), "Remittance");
   };
 
   const buildLogExportRow = (l) => ({
@@ -325,7 +331,7 @@ export default function Report() {
 
   const handleExportQueuePDF = async (search = "") => {
     const rows = await fetchQueueExportRows(search);
-    exportTablePDF(rows.filter((l) => matchesQueueRow(l, search)).map(buildLogExportRow), "Terminal Queue Log");
+    exportTable(rows.filter((l) => matchesQueueRow(l, search)).map(buildLogExportRow), "Terminal Queue Log");
   };
 
   const buildRoamingExportRow = (t) => ({
@@ -339,7 +345,7 @@ export default function Report() {
 
   const handleExportRoamingPDF = async (search = "") => {
     const rows = await fetchRoamingExportRows(search);
-    exportTablePDF(rows.filter((t) => matchesRoamingRow(t, search)).map(buildRoamingExportRow), "Roaming Logs");
+    exportTable(rows.filter((t) => matchesRoamingRow(t, search)).map(buildRoamingExportRow), "Roaming Logs");
   };
 
   const buildAuditExportRow = (l) => ({
@@ -352,7 +358,7 @@ export default function Report() {
 
   const handleExportAuditPDF = async (search = "") => {
     const rows = await fetchAuditExportRows();
-    exportTablePDF(rows.filter((l) => matchesAuditRow(l, search)).map(buildAuditExportRow), "Audit Trail");
+    exportTable(rows.filter((l) => matchesAuditRow(l, search)).map(buildAuditExportRow), "Audit Trail");
   };
 
   return (

@@ -419,3 +419,8 @@
   .usr-search-wrap { width: 100%; }
   .usr-add-btn { width: 100%; justify-content: center; }
 }
+/* Fleet & Driver access tick (Personnel rows) */
+.usr-fleet-tick { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.usr-fleet-tick input { width: 16px; height: 16px; accent-color: #2563eb; cursor: pointer; }
+.usr-fleet-tick input:disabled { cursor: not-allowed; }
+.usr-fleet-always { font-size: 13px; opacity: 0.6; }

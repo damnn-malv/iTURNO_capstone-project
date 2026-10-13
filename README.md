@@ -84,9 +84,9 @@ Accounts are stored in a single `User` model (`backend/api/models.py`) with a
 
 | Role         | Typical Use                                                             |
 | ------------ | ------------------------------------------------------------------------ |
-| PERSONNEL    | Front-line terminal staff (default role)                                 |
-| SUPERVISOR   | Oversees terminal staff, verifies collections                            |
-| MANAGER      | Manages driver/vehicle registry, reports                                 |
+| PERSONNEL    | Front-line terminal staff (default role); Fleet & Driver only when ticked |
+| SUPERVISOR   | Same position as Manager: all modules, ticks Personnel fleet access       |
+| MANAGER      | Same position as Supervisor (different title)                            |
 | SUPERADMIN   | Full system access, including settings and remote (Vercel) admin edits   |
 
 ## Dashboard Modules

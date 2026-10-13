@@ -17,6 +17,7 @@ function formatDate(val) {
 }
 
 const fmt = (n) => Number(n || 0).toLocaleString();
+const serial = (n) => String(n ?? "");
 const count = (n, word) => `${fmt(n)} ${word}${n === 1 ? "" : "s"}`;
 
 // Does this series contain the ticket number being searched for?
@@ -170,11 +171,11 @@ function Requisition() {
                       return (
                         <div key={ts.id} className="rq-cols rq-cols--series rq-series-row">
                           <span>
-                            <span className="rq-mono">{fmt(ts.start_no)} - {fmt(ts.end_no)}</span>
+                            <span className="rq-mono">{serial(ts.start_no)} - {serial(ts.end_no)}</span>
                             <small>{count(ts.pcs, "ticket")}</small>
                           </span>
                           <span>{formatDate(ts.created_at)}</span>
-                          <span className="rq-mono">{ts.last_used_no != null ? fmt(ts.last_used_no) : "None yet"}</span>
+                          <span className="rq-mono">{ts.last_used_no != null ? serial(ts.last_used_no) : "None yet"}</span>
                           <span>
                             <span className="rq-remaining"><strong>{fmt(ts.remaining)}</strong> of {fmt(total)}</span>
                             <span className="rq-bar"><span style={{ width: `${pct}%` }} /></span>

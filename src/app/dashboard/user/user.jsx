@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { apiService } from "../../../lib/api-service";
-import { useConfirm, useToast } from "../../../components/ui/ToastConfirmContext";
+import { useFeedback } from "../../../components/ui/kit";
 import "../../../styles/User.css";
 import "../../../styles/FormModal.css";
 
@@ -23,7 +23,7 @@ function isValidEmail(value) {
   return EMAIL_PATTERN.test(value);
 }
 
-const Field = ({ label, required, optional, children }) => (
+const Field = ({ label, required, optional, error, children }) => (
   <div className="usr-field">
     <label className="usr-label">
       {label}
@@ -31,13 +31,25 @@ const Field = ({ label, required, optional, children }) => (
       {optional && <span className="usr-optional"> (optional)</span>}
     </label>
     {children}
+    {error && <p className="usr-field-error">{error}</p>}
   </div>
 );
 
 const inputCls = "usr-input";
+const inputClsFor = (error) => (error ? `${inputCls} usr-input--error` : inputCls);
+
+const validateStaffForm = (form) => {
+  const errors = {};
+  if (!form.first_name.trim()) errors.first_name = "First name is required.";
+  if (!form.last_name.trim()) errors.last_name = "Last name is required.";
+  if (!form.username.trim()) errors.username = "Email address is required.";
+  else if (!isValidEmail(form.username)) errors.username = "Enter a valid email address.";
+  return errors;
+};
 
 function User({ userRole }) {
   const canManageStaff = userRole === "SUPERADMIN";
+  // Supervisors/Managers may only tick which Personnel can register vehicles and drivers.
 
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,9 +59,11 @@ function User({ userRole }) {
   const [form, setForm] = useState(EMPTY_FORM);
 
   const [searchTerm, setSearchTerm] = useState("");
+  // Field errors appear only after a failed submit, then clear as each field is fixed.
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const fieldErrors = submitAttempted ? validateStaffForm(form) : {};
 
-  const showConfirm = useConfirm();
-  const showToast = useToast();
+  const { confirmAction } = useFeedback();
 
   useEffect(() => {
     fetchUsers();
@@ -73,36 +87,41 @@ function User({ userRole }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!isValidEmail(form.username)) {
-      setError("Username must be a valid email address.");
+    if (Object.keys(validateStaffForm(form)).length > 0) {
+      setSubmitAttempted(true);
       return;
     }
 
     // Several people may hold the same role (handover overlap, backups); the
     // server blocks the dangerous cases (own account, last active Admin).
-    const confirmed = await showConfirm(editing ? "Confirm update?" : "Confirm registry?");
-    if (!confirmed) return;
-
-    try {
-      const payload = {
-        username: form.username || "",
-        first_name: form.first_name || "",
-        middle_name: form.middle_name || "",
-        last_name: form.last_name || "",
-        role: form.role || "PERSONNEL",
-        is_active: !!form.is_active,
-      };
-      const userData = editing
-        ? await apiService.updateUser(editing.id, payload)
-        : await apiService.createUser(payload);
-      if (!userData) throw new Error("Failed to save user");
-      fetchUsers();
-      closeModal();
-      showToast(editing ? "Staff account updated successfully" : "Staff account registered successfully");
-    } catch (err) {
-      setError(err.message);
-      showToast(err.message || "Failed to save staff account", "info");
-    }
+    confirmAction({
+      title: editing ? "Update staff account?" : "Register staff account?",
+      confirmLabel: editing ? "Update" : "Register",
+      busyLabel: "Saving…",
+      tone: "primary",
+      run: async () => {
+        try {
+          const payload = {
+            username: form.username || "",
+            first_name: form.first_name || "",
+            middle_name: form.middle_name || "",
+            last_name: form.last_name || "",
+            role: form.role || "PERSONNEL",
+            is_active: !!form.is_active,
+          };
+          const userData = editing
+            ? await apiService.updateUser(editing.id, payload)
+            : await apiService.createUser(payload);
+          if (!userData) throw new Error("Failed to save user");
+          fetchUsers();
+          closeModal();
+          return { success: { title: editing ? "Staff account updated" : "Staff account registered", message: `${payload.first_name} ${payload.last_name} was saved.` } };
+        } catch (err) {
+          setError(err.message);
+          return { error: { title: "Couldn't save staff account", message: err.message || "Nothing was changed. Try again." } };
+        }
+      },
+    });
   };
 
   const handleEdit = (user) => {
@@ -115,33 +134,53 @@ function User({ userRole }) {
       role: user.role,
       is_active: user.is_active,
     });
+    setSubmitAttempted(false);
     setIsModalOpen(true);
   };
 
   const handleAdd = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
+    setSubmitAttempted(false);
     setIsModalOpen(true);
   };
   const closeModal = () => {
     setIsModalOpen(false);
+    setSubmitAttempted(false);
     setEditing(null);
     setForm(EMPTY_FORM);
   };
 
-  const handleToggleActive = async (user) => {
+  const handleToggleActive = (user) => {
     const verb = user.is_active ? "Deactivate" : "Reactivate";
-    const confirmed = await showConfirm(
-      `${verb} ${user.first_name} ${user.last_name}? ${user.is_active ? "They will no longer be able to sign in, but their history is kept." : "They will be able to sign in again."}`,
-    );
-    if (!confirmed) return;
+    const name = `${user.first_name} ${user.last_name}`;
+    return confirmAction({
+      title: `${verb} ${name}?`,
+      message: user.is_active ? "They will no longer be able to sign in, but their history is kept." : "They will be able to sign in again.",
+      confirmLabel: verb,
+      busyLabel: `${verb.replace(/e$/, "")}ing…`,
+      tone: user.is_active ? "danger" : "primary",
+      run: async () => {
+        try {
+          await apiService.updateUser(user.id, { ...user, is_active: !user.is_active });
+          fetchUsers();
+          return { success: { title: `Staff account ${user.is_active ? "deactivated" : "reactivated"}`, message: `${name} was updated.` } };
+        } catch (err) {
+          setError(err.message);
+          return { error: { title: `Couldn't ${verb.toLowerCase()} account`, message: err.message || "Nothing was changed. Try again." } };
+        }
+      },
+    });
+  };
+
+  const handleToggleFleet = async (user) => {
+    const allowed = !user.can_manage_fleet;
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, can_manage_fleet: allowed } : u)));
     try {
-      await apiService.updateUser(user.id, { ...user, is_active: !user.is_active });
-      fetchUsers();
-      showToast(`Staff account ${user.is_active ? "deactivated" : "reactivated"}`);
+      await apiService.setFleetAccess(user.id, allowed);
     } catch (err) {
       setError(err.message);
-      showToast(err.message || `Failed to ${verb.toLowerCase()} account`, "info");
+      fetchUsers();
     }
   };
 
@@ -160,7 +199,7 @@ function User({ userRole }) {
       <div className="usr-header">
         <div className="usr-header-left">
           <div>
-            <h1 className="usr-title">Staff Registry</h1>
+            <h1 className="usr-title">User Management</h1>
             
           </div>
         </div>
@@ -224,8 +263,9 @@ function User({ userRole }) {
                   "Full Name",
                   "Username (Email)",
                   "Role",
+                  "Fleet & Driver access",
                   "Status",
-                  "Actions",
+                  ...(canManageStaff ? ["Actions"] : []),
                 ].map((h) => (
                   <th key={h}>{h}</th>
                 ))}
@@ -234,7 +274,7 @@ function User({ userRole }) {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="usr-table-state">
+                  <td colSpan="7" className="usr-table-state">
                     <div className="usr-loading-dots">
                       <div />
                       <div />
@@ -244,7 +284,7 @@ function User({ userRole }) {
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="usr-table-state">
+                  <td colSpan="7" className="usr-table-state">
                     <svg
                       width="32"
                       height="32"
@@ -279,6 +319,21 @@ function User({ userRole }) {
                       <span className="usr-role">{user.role}</span>
                     </td>
                     <td>
+                      {user.role === "PERSONNEL" ? (
+                        <label className="usr-fleet-tick">
+                          <input
+                            type="checkbox"
+                            checked={!!user.can_manage_fleet}
+                            disabled={!user.is_active}
+                            onChange={() => handleToggleFleet(user)}
+                          />
+                          <span>Can register vehicles &amp; drivers</span>
+                        </label>
+                      ) : (
+                        <span className="usr-fleet-always">Always</span>
+                      )}
+                    </td>
+                    <td>
                       <span
                         className={`usr-status ${
                           user.must_reset_password
@@ -295,8 +350,9 @@ function User({ userRole }) {
                           : "Inactive"}
                       </span>
                     </td>
-                    <td>
+                    {canManageStaff && <td>
                       <div className="usr-actions">
+                        {canManageStaff && (
                         <button
                           className="usr-btn usr-btn--edit"
                           onClick={() => handleEdit(user)}
@@ -314,6 +370,7 @@ function User({ userRole }) {
                           </svg>
                           Edit
                         </button>
+                        )}
                         {canManageStaff && (
                           <button
                             className="usr-btn usr-btn--edit"
@@ -323,7 +380,7 @@ function User({ userRole }) {
                           </button>
                         )}
                       </div>
-                    </td>
+                    </td>}
                   </tr>
                 ))
               )}
@@ -361,7 +418,7 @@ function User({ userRole }) {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="usr-modal-body">
+            <form onSubmit={handleSubmit} noValidate className="usr-modal-body">
               {/* Staff hero section */}
               {editing && (
                 <div className="usr-profile-hero">
@@ -382,28 +439,26 @@ function User({ userRole }) {
                   Personal information
                 </h3>
                 <div className="usr-form-grid">
-                  <Field label="First name" required>
+                  <Field label="First name" required error={fieldErrors.first_name}>
                     <input
                       type="text"
-                      className={inputCls}
+                      className={inputClsFor(fieldErrors.first_name)}
                       placeholder="e.g. Juan"
                       value={form.first_name}
                       onChange={(e) =>
                         setForm({ ...form, first_name: capitalizeWords(e.target.value) })
                       }
-                      required
                     />
                   </Field>
-                  <Field label="Last name" required>
+                  <Field label="Last name" required error={fieldErrors.last_name}>
                     <input
                       type="text"
-                      className={inputCls}
+                      className={inputClsFor(fieldErrors.last_name)}
                       placeholder="e.g. Dela Cruz"
                       value={form.last_name}
                       onChange={(e) =>
                         setForm({ ...form, last_name: capitalizeWords(e.target.value) })
                       }
-                      required
                     />
                   </Field>
                   <Field label="Middle name" optional>
@@ -426,18 +481,16 @@ function User({ userRole }) {
                   <span className="usr-section-num">2</span>
                   Account information
                 </h3>
-                <Field label="Username (email address)" required>
+                <Field label="Username (email address)" required error={fieldErrors.username}>
                   <input
-                    type="email"
-                    className={inputCls}
+                    type="text"
+                    inputMode="email"
+                    className={inputClsFor(fieldErrors.username)}
                     placeholder="name@example.com"
                     value={form.username}
                     onChange={(e) =>
                       setForm({ ...form, username: e.target.value })
                     }
-                    pattern="[^\s@]+@[^\s@]+\.[^\s@]+"
-                    title="Enter a valid email address"
-                    required
                   />
                 </Field>
                 {!editing && (
