@@ -26,7 +26,13 @@ export const STATUS_LABEL = {
   QUEUED: "Queued",
 };
 
-const validateVehicleForm = (form, editing, routeMode, newOrigin) => {
+// Drives the sidebar checklist; `fields` are the required keys in each section.
+export const VEHICLE_SECTIONS = [
+  { title: "Vehicle information", fields: ["plate_number", "transportation_id", "franchise_number", "franchise_expiration_date"] },
+  { title: "Route & assignment", fields: ["route", "owner_driver"] },
+];
+
+const validateVehicleForm =(form, editing, routeMode, newOrigin) => {
   const errors = {};
   if (routeMode === "select" ? !form.route : !newOrigin.trim()) {
     errors.route = routeMode === "select" ? "Please select a route." : "Please enter a route origin.";
@@ -187,9 +193,9 @@ export function useVehicle() {
 
   // Validates on the fly only after a failed submit, so a field's error clears once it's filled in.
   const [submitAttempted, setSubmitAttempted] = useState(false);
-  const fieldErrors = submitAttempted
-    ? validateVehicleForm(form, editing, routeMode, newOrigin)
-    : {};
+  // Always-on validation drives the sidebar checklist and progress bar.
+  const liveErrors = validateVehicleForm(form, editing, routeMode, newOrigin);
+  const fieldErrors = submitAttempted ? liveErrors : {};
   const showConfirm = useConfirm();
   const showToast = useToast();
 
@@ -402,6 +408,7 @@ export function useVehicle() {
     setNewOrigin,
     routeError,
     fieldErrors,
+    liveErrors,
     selectedRoute,
     transportationTypes,
     handleSubmit,

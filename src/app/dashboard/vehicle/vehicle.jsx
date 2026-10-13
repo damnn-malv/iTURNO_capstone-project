@@ -2,6 +2,7 @@ import {
   RouteField,
   Field,
   useVehicle,
+  VEHICLE_SECTIONS,
   STATUS_COLOR,
   STATUS_LABEL,
   DESTINATION,
@@ -33,6 +34,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
     setNewOrigin,
     routeError,
     fieldErrors,
+    liveErrors,
     selectedRoute,
     activeDrivers,
     transportationTypes,
@@ -56,6 +58,14 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
   const filteredDrivers = activeDrivers.filter((d) =>
     (d.name || "").toLowerCase().includes(operatorSearch.toLowerCase().trim())
   );
+
+  // Plate number is fixed once registered, so it only counts while adding.
+  const requiredKeys = VEHICLE_SECTIONS.flatMap((s) => s.fields).filter(
+    (k) => editing || k !== "plate_number",
+  );
+  const doneCount = requiredKeys.filter((k) => !liveErrors[k]).length;
+  const previewType = transportationTypes.find((t) => t.id === form.transportation_id)?.name;
+  const previewRoute = routes.find((r) => r.id === form.route)?.full_name;
 
   const errCls = (base, name) => (fieldErrors[name] ? `${base} veh-input--error` : base);
   const FieldError = ({ name }) =>
@@ -412,7 +422,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
       {/* Modal */}
       {isModalOpen && (
         <div className="veh-overlay" onClick={closeModal}>
-          <div className="veh-modal veh-modal--profile" onClick={(e) => e.stopPropagation()}>
+          <div className="veh-modal veh-modal--registry" onClick={(e) => e.stopPropagation()}>
             <div className="veh-modal-header">
               <div className="veh-modal-header-left">
                 <h2 className="veh-modal-title">
@@ -438,7 +448,44 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} noValidate className="veh-modal-body">
+            <form onSubmit={handleSubmit} noValidate className="veh-modal-form">
+              <div className="veh-modal-split">
+                <aside className="veh-side">
+                  <div className="veh-preview">
+                    <span className="veh-preview-tag">Preview</span>
+                    <strong className="veh-preview-name">{form.plate_number || "New vehicle"}</strong>
+                    {previewType && <span className="veh-preview-line">{previewType}</span>}
+                    {previewRoute && <span className="veh-preview-line">{previewRoute}</span>}
+                    {form.franchise_number && (
+                      <span className="veh-preview-line veh-preview-mono">Franchise {form.franchise_number}</span>
+                    )}
+                  </div>
+
+                  <ul className="veh-checklist">
+                    {VEHICLE_SECTIONS.map((section) => {
+                      const missing = section.fields.filter(
+                        (k) => (editing || k !== "plate_number") && liveErrors[k],
+                      ).length;
+                      return (
+                        <li key={section.title} className="veh-check">
+                          <span className={`veh-check-icon${missing ? " veh-check-icon--todo" : ""}`}>
+                            {missing ? "!" : "✓"}
+                          </span>
+                          <span>
+                            <strong>{section.title}</strong>
+                            <small className={missing ? "veh-check-todo" : ""}>
+                              {missing
+                                ? `${missing} field${missing === 1 ? "" : "s"} need${missing === 1 ? "s" : ""} attention`
+                                : "Complete"}
+                            </small>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </aside>
+
+                <div className="veh-main">
 
               {/* Vehicle Information */}
               <div className="veh-profile-section">
@@ -660,7 +707,16 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                 </div>
               )}
 
-              <div className="veh-modal-footer">
+                </div>
+              </div>
+
+              <div className="veh-modal-footer veh-modal-footer--registry">
+                <div className="veh-progress">
+                  <div className="veh-progress-bar">
+                    <span style={{ transform: `scaleX(${doneCount / requiredKeys.length})` }} />
+                  </div>
+                  <small>{doneCount} of {requiredKeys.length} required fields done</small>
+                </div>
                 <button
                   type="button"
                   className="veh-modal-btn veh-modal-btn--cancel"

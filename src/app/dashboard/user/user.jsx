@@ -23,7 +23,32 @@ function isValidEmail(value) {
   return EMAIL_PATTERN.test(value);
 }
 
-const Field = ({ label, required, optional, children }) => (
+const ROLES = [
+  ["PERSONNEL", "Personnel"],
+  ["SUPERVISOR", "Supervisor"],
+  ["MANAGER", "Manager"],
+  ["SUPERADMIN", "Admin"],
+];
+
+// Drives the sidebar checklist; `fields` are the required keys in each section.
+const STAFF_SECTIONS = [
+  { title: "Personal information", fields: ["first_name", "last_name"] },
+  { title: "Account", fields: ["username"] },
+  { title: "Role & status", fields: [] },
+];
+const REQUIRED_FIELD_COUNT = STAFF_SECTIONS.reduce((n, s) => n + s.fields.length, 0);
+
+function validateStaffForm(form) {
+  const errors = {};
+  if (!form.first_name.trim()) errors.first_name = "First name is required.";
+  if (!form.last_name.trim()) errors.last_name = "Last name is required.";
+  if (!form.username.trim()) errors.username = "Email address is required.";
+  else if (!isValidEmail(form.username.trim())) errors.username = "Enter a valid email address.";
+  return errors;
+}
+
+// Defined outside the page so inputs keep focus across re-renders.
+const Field = ({ label, required, optional, error, hint, children }) => (
   <div className="usr-field">
     <label className="usr-label">
       {label}
@@ -31,7 +56,22 @@ const Field = ({ label, required, optional, children }) => (
       {optional && <span className="usr-optional"> (optional)</span>}
     </label>
     {children}
+    {error ? (
+      <p className="usr-field-error">{error}</p>
+    ) : (
+      hint && <p className="usr-hint">{hint}</p>
+    )}
   </div>
+);
+
+const Section = ({ number, title, children }) => (
+  <section className="usr-profile-section">
+    <h3 className="usr-section-title">
+      <span className="usr-section-num">{number}</span>
+      {title}
+    </h3>
+    <div className="usr-form-grid">{children}</div>
+  </section>
 );
 
 const inputCls = "usr-input";
@@ -45,6 +85,8 @@ function User({ userRole }) {
   const [editing, setEditing] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  // Only filled after a failed submit; live validation drives the checklist instead.
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -73,10 +115,9 @@ function User({ userRole }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!isValidEmail(form.username)) {
-      setError("Username must be a valid email address.");
-      return;
-    }
+    const errors = validateStaffForm(form);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) return;
 
     // Several people may hold the same role (handover overlap, backups); the
     // server blocks the dangerous cases (own account, last active Admin).
@@ -127,6 +168,7 @@ function User({ userRole }) {
     setIsModalOpen(false);
     setEditing(null);
     setForm(EMPTY_FORM);
+    setFieldErrors({});
   };
 
   const handleToggleActive = async (user) => {
@@ -153,6 +195,11 @@ function User({ userRole }) {
       (u.role || "").toLowerCase().includes(q)
     );
   });
+
+  const liveErrors = validateStaffForm(form);
+  const doneCount = REQUIRED_FIELD_COUNT - Object.keys(liveErrors).length;
+  const fullName = [form.first_name, form.middle_name, form.last_name].filter(Boolean).join(" ");
+  const roleLabel = ROLES.find(([value]) => value === form.role)?.[1];
 
   return (
     <div className="usr-page">
@@ -335,11 +382,11 @@ function User({ userRole }) {
       {/* Modal */}
       {isModalOpen && (
         <div className="usr-overlay" onClick={closeModal}>
-          <div className="usr-modal usr-modal--profile" onClick={(e) => e.stopPropagation()}>
+          <div className="usr-modal usr-modal--registry" onClick={(e) => e.stopPropagation()}>
             <div className="usr-modal-header">
               <div className="usr-modal-header-left">
                 <h2 className="usr-modal-title">
-                  {editing ? "Staff profile" : "Register staff account"}
+                  {editing ? "Staff profile" : "Register new staff"}
                 </h2>
               </div>
               <button
@@ -361,130 +408,140 @@ function User({ userRole }) {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="usr-modal-body">
-              {/* Staff hero section */}
-              {editing && (
-                <div className="usr-profile-hero">
-                  <div className="usr-profile-hero-info">
-                    <span className="usr-profile-hero-name">
-                      {[form.first_name, form.middle_name, form.last_name]
-                        .filter(Boolean)
-                        .join(" ")}
-                    </span>
+            <form onSubmit={handleSubmit} noValidate className="usr-modal-form">
+              <div className="usr-modal-split">
+                <aside className="usr-side">
+                  <div className="usr-preview">
+                    <span className="usr-preview-tag">Preview</span>
+                    <strong className="usr-preview-name">{fullName || "New staff"}</strong>
+                    <span className="usr-preview-role">{roleLabel}</span>
+                    {form.username && <span className="usr-preview-email">{form.username}</span>}
                   </div>
-                </div>
-              )}
 
-              {/* Personal Information */}
-              <div className="usr-profile-section">
-                <h3 className="usr-section-title">
-                  <span className="usr-section-num">1</span>
-                  Personal information
-                </h3>
-                <div className="usr-form-grid">
-                  <Field label="First name" required>
-                    <input
-                      type="text"
-                      className={inputCls}
-                      placeholder="e.g. Juan"
-                      value={form.first_name}
-                      onChange={(e) =>
-                        setForm({ ...form, first_name: capitalizeWords(e.target.value) })
-                      }
-                      required
-                    />
-                  </Field>
-                  <Field label="Last name" required>
-                    <input
-                      type="text"
-                      className={inputCls}
-                      placeholder="e.g. Dela Cruz"
-                      value={form.last_name}
-                      onChange={(e) =>
-                        setForm({ ...form, last_name: capitalizeWords(e.target.value) })
-                      }
-                      required
-                    />
-                  </Field>
-                  <Field label="Middle name" optional>
-                    <input
-                      type="text"
-                      className={inputCls}
-                      placeholder="e.g. Reyes"
-                      value={form.middle_name}
-                      onChange={(e) =>
-                        setForm({ ...form, middle_name: capitalizeWords(e.target.value) })
-                      }
-                    />
-                  </Field>
-                </div>
-              </div>
+                  <ul className="usr-checklist">
+                    {STAFF_SECTIONS.map((section) => {
+                      const missing = section.fields.filter((k) => liveErrors[k]).length;
+                      return (
+                        <li key={section.title} className="usr-check">
+                          <span className={`usr-check-icon${missing ? " usr-check-icon--todo" : ""}`}>
+                            {missing ? "!" : "✓"}
+                          </span>
+                          <span>
+                            <strong>{section.title}</strong>
+                            <small className={missing ? "usr-check-todo" : ""}>
+                              {missing
+                                ? `${missing} field${missing === 1 ? "" : "s"} need${missing === 1 ? "s" : ""} attention`
+                                : "Complete"}
+                            </small>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </aside>
 
-              {/* Account Information */}
-              <div className="usr-profile-section">
-                <h3 className="usr-section-title">
-                  <span className="usr-section-num">2</span>
-                  Account information
-                </h3>
-                <Field label="Username (email address)" required>
-                  <input
-                    type="email"
-                    className={inputCls}
-                    placeholder="name@example.com"
-                    value={form.username}
-                    onChange={(e) =>
-                      setForm({ ...form, username: e.target.value })
-                    }
-                    pattern="[^\s@]+@[^\s@]+\.[^\s@]+"
-                    title="Enter a valid email address"
-                    required
-                  />
-                </Field>
-                {!editing && (
-                  <p className="usr-field-hint">
-                    A temporary password will be generated and emailed to this address. The
-                    new account will be required to set their own password on first sign-in.
-                  </p>
-                )}
-              </div>
-
-              {/* Role & Status */}
-              <div className="usr-profile-section">
-                <h3 className="usr-section-title">
-                  <span className="usr-section-num">3</span>
-                  Role & status
-                </h3>
-                <div className="usr-form-grid">
-                  <Field label="Role">
-                    <select
-                      className={inputCls}
-                      value={form.role}
-                      onChange={(e) => setForm({ ...form, role: e.target.value })}
-                    >
-                      <option value="PERSONNEL">Personnel</option>
-                      <option value="SUPERVISOR">Supervisor</option>
-                      <option value="MANAGER">Manager</option>
-                      <option value="SUPERADMIN">Admin</option>
-                    </select>
-                  </Field>
-                  {editing && (
-                    <Field label="Status">
-                      <select
-                        className={inputCls}
-                        value={form.is_active ? "true" : "false"}
+                <div className="usr-main">
+                  <Section number={1} title="Personal information">
+                    <Field label="First name" required error={fieldErrors.first_name}>
+                      <input
+                        type="text"
+                        className={`${inputCls}${fieldErrors.first_name ? " usr-input--error" : ""}`}
+                        placeholder="e.g. Juan"
+                        value={form.first_name}
                         onChange={(e) =>
-                          setForm({ ...form, is_active: e.target.value === "true" })
+                          setForm({ ...form, first_name: capitalizeWords(e.target.value) })
+                        }
+                      />
+                    </Field>
+                    <Field label="Last name" required error={fieldErrors.last_name}>
+                      <input
+                        type="text"
+                        className={`${inputCls}${fieldErrors.last_name ? " usr-input--error" : ""}`}
+                        placeholder="e.g. Dela Cruz"
+                        value={form.last_name}
+                        onChange={(e) =>
+                          setForm({ ...form, last_name: capitalizeWords(e.target.value) })
+                        }
+                      />
+                    </Field>
+                    <Field label="Middle name" optional>
+                      <input
+                        type="text"
+                        className={inputCls}
+                        placeholder="e.g. Reyes"
+                        value={form.middle_name}
+                        onChange={(e) =>
+                          setForm({ ...form, middle_name: capitalizeWords(e.target.value) })
+                        }
+                      />
+                    </Field>
+                  </Section>
+
+                  <Section number={2} title="Account">
+                    <div className="usr-span-all">
+                      <Field
+                        label="Username (email address)"
+                        required
+                        error={fieldErrors.username}
+                        hint={
+                          editing
+                            ? null
+                            : "A temporary password will be generated and emailed to this address. The new account will be required to set their own password on first sign-in."
                         }
                       >
-                        <option value="true">Active</option>
-                        <option value="false">Inactive</option>
-                      </select>
-                    </Field>
-                  )}
+                        <input
+                          type="email"
+                          className={`${inputCls}${fieldErrors.username ? " usr-input--error" : ""}`}
+                          placeholder="name@example.com"
+                          value={form.username}
+                          onChange={(e) => setForm({ ...form, username: e.target.value })}
+                        />
+                      </Field>
+                    </div>
+                  </Section>
+
+                  <Section number={3} title="Role & status">
+                    <div className="usr-span-all">
+                      <Field label="Role">
+                        <div className="usr-segmented">
+                          {ROLES.map(([value, text]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              className={form.role === value ? "is-active" : ""}
+                              onClick={() => setForm({ ...form, role: value })}
+                            >
+                              {text}
+                            </button>
+                          ))}
+                        </div>
+                      </Field>
+                    </div>
+                    {editing && (
+                      <Field label="Status">
+                        <select
+                          className="usr-select"
+                          value={form.is_active ? "true" : "false"}
+                          onChange={(e) =>
+                            setForm({ ...form, is_active: e.target.value === "true" })
+                          }
+                        >
+                          <option value="true">Active</option>
+                          <option value="false">Inactive</option>
+                        </select>
+                      </Field>
+                    )}
+                  </Section>
                 </div>
               </div>
 
-              <div className="usr-modal-footer">
+              <div className="usr-modal-footer usr-modal-footer--registry">
+                <div className="usr-progress">
+                  <div className="usr-progress-bar">
+                    <span style={{ transform: `scaleX(${doneCount / REQUIRED_FIELD_COUNT})` }} />
+                  </div>
+                  <small>{doneCount} of {REQUIRED_FIELD_COUNT} required fields done</small>
+                </div>
                 <button
                   type="button"
                   className="usr-modal-btn usr-modal-btn--cancel"
@@ -496,7 +553,7 @@ function User({ userRole }) {
                   type="submit"
                   className="usr-modal-btn usr-modal-btn--submit"
                 >
-                  {editing ? "Update account" : "Create account"}
+                  {editing ? "Update account" : "Register staff"}
                 </button>
               </div>
             </form>

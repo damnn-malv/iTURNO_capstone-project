@@ -183,6 +183,31 @@ const todayStr = () => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+// Period chips for the header filter. "custom" keeps the current dates and
+// reveals the From/To inputs.
+const PERIODS = [
+  { key: "today", label: "Today" },
+  { key: "7d", label: "Last 7 days" },
+  { key: "month", label: "This month" },
+  { key: "year", label: "This year" },
+  { key: "custom", label: "Custom" },
+];
+
+const toDateStr = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+const getPeriodRange = (key) => {
+  const now = new Date();
+  const end = todayStr();
+  if (key === "today") return { from: end, to: end };
+  if (key === "7d")
+    return { from: toDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6)), to: end };
+  if (key === "month")
+    return { from: toDateStr(new Date(now.getFullYear(), now.getMonth(), 1)), to: end };
+  if (key === "year") return { from: `${now.getFullYear()}-01-01`, to: end };
+  return null;
+};
+
 // ─── Main Dashboard ──────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
@@ -198,6 +223,17 @@ export default function Dashboard() {
   const today = todayStr();
   const [fromDate, setFromDate] = useState(today);
   const [toDate, setToDate] = useState(today);
+
+  const [period, setPeriod] = useState("today");
+
+  const handlePeriodChange = (key) => {
+    setPeriod(key);
+    const range = getPeriodRange(key);
+    if (range) {
+      setFromDate(range.from);
+      setToDate(range.to);
+    }
+  };
 
   const handleFromChange = (value) => {
     if (!value || value > today) value = today;
@@ -295,24 +331,40 @@ export default function Dashboard() {
         </div>
         <div className="col-header-right">
           <div className="dashboard-date-filter">
-            <label>
-              From
-              <input
-                type="date"
-                value={fromDate}
-                max={today}
-                onChange={(e) => handleFromChange(e.target.value)}
-              />
-            </label>
-            <label>
-              To
-              <input
-                type="date"
-                value={toDate}
-                max={today}
-                onChange={(e) => handleToChange(e.target.value)}
-              />
-            </label>
+            <div className="dashboard-chips">
+              {PERIODS.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  className={`dashboard-chip${period === p.key ? " dashboard-chip--active" : ""}`}
+                  onClick={() => handlePeriodChange(p.key)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {period === "custom" && (
+              <>
+                <label>
+                  From
+                  <input
+                    type="date"
+                    value={fromDate}
+                    max={today}
+                    onChange={(e) => handleFromChange(e.target.value)}
+                  />
+                </label>
+                <label>
+                  To
+                  <input
+                    type="date"
+                    value={toDate}
+                    max={today}
+                    onChange={(e) => handleToChange(e.target.value)}
+                  />
+                </label>
+              </>
+            )}
           </div>
         </div>
       </div>
