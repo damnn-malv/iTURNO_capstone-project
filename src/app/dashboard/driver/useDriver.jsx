@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiService } from "../../../lib/api-service";
-import { useConfirm, useToast } from "../../../components/ui/ToastConfirmContext";
+import { useFeedback } from "../../../components/ui/kit";
 import { buildDriverPayload, normalizeDriverForm, validateDriverForm } from "./driver-utils";
 
 const EMPTY_FORM = {
@@ -51,8 +51,7 @@ export function useDriver() {
 
   const fieldErrors = submitAttempted ? validateDriverForm(form) : {};
 
-  const showConfirm = useConfirm();
-  const showToast = useToast();
+  const { notify, confirmAction } = useFeedback();
 
   useEffect(() => {
     fetchDrivers();
@@ -102,21 +101,28 @@ export function useDriver() {
       );
       return;
     }
-    const confirmMsg = editing ? "Confirm update?" : "Confirm registry?";
-    const confirmed = await showConfirm(confirmMsg);
-    if (!confirmed) return;
-    try {
-      const payload = buildDriverPayload({ ...form, qr_code: form.iwp_number.trim() });
-      if (editing) {
-        await apiService.updateDriver(editing.id, payload);
-      } else {
-        await apiService.createDriver(payload);
-      }
-      fetchDrivers();
-      closeModal();
-    } catch (err) {
-      setError(err.message);
-    }
+    confirmAction({
+      title: editing ? "Update driver?" : "Register driver?",
+      confirmLabel: editing ? "Update" : "Register",
+      busyLabel: "Saving…",
+      tone: "primary",
+      run: async () => {
+        try {
+          const payload = buildDriverPayload({ ...form, qr_code: form.iwp_number.trim() });
+          if (editing) {
+            await apiService.updateDriver(editing.id, payload);
+          } else {
+            await apiService.createDriver(payload);
+          }
+          fetchDrivers();
+          closeModal();
+          return { success: { title: editing ? "Driver updated" : "Driver registered", message: `${form.first_name} ${form.last_name} was saved.` } };
+        } catch (err) {
+          setError(err.message);
+          return { error: { title: "Couldn't save driver", message: err.message || "Nothing was changed. Try again." } };
+        }
+      },
+    });
   };
 
   const handleEdit = (driver) => {
@@ -141,24 +147,30 @@ export function useDriver() {
     setSubmitAttempted(false);
   };
 
-  const handleArchive = async (id) => {
+  const handleArchive = (id) => {
     if (isDriverOnActiveTicket(id)) {
-      showToast(
-        "Cannot archive this driver — they have an active ticket. Resolve the ticket first.",
-        "info",
-      );
+      notify.error({
+        title: "Can't archive this driver",
+        message: "They have an active ticket. Resolve the ticket first.",
+      });
       return;
     }
-    const confirmed = await showConfirm("Archive this driver? You can restore them from Settings → Archive.");
-    if (!confirmed) return;
-    try {
-      await apiService.patch(`/drivers/${id}/`, { is_archived: true });
-      fetchDrivers();
-      showToast("Driver archived");
-    } catch (err) {
-      setError(err.message);
-      showToast(err.message || "Failed to archive driver", "info");
-    }
+    confirmAction({
+      title: "Archive this driver?",
+      message: "You can restore them from Settings → Archive.",
+      confirmLabel: "Archive",
+      busyLabel: "Archiving…",
+      run: async () => {
+        try {
+          await apiService.patch(`/drivers/${id}/`, { is_archived: true });
+          fetchDrivers();
+          return { success: { title: "Driver archived", message: "They're now in Settings → Archive." } };
+        } catch (err) {
+          setError(err.message);
+          return { error: { title: "Couldn't archive driver", message: err.message || "Nothing was changed. Try again." } };
+        }
+      },
+    });
   };
 
   return {

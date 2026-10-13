@@ -480,6 +480,11 @@ export const apiService = {
     return this.put(`/users/${id}/`, data);
   },
 
+  // Supervisor/Manager-friendly: sends only the fleet tick, which is all they may change.
+  setFleetAccess(id, allowed) {
+    return this.patch(`/users/${id}/`, { can_manage_fleet: allowed });
+  },
+
   resendVerification(id) {
     return this.post(`/users/${id}/resend_verification/`);
   },
@@ -698,7 +703,7 @@ export const apiService = {
 const roleLabel = (role) => {
   switch ((role || "").toUpperCase()) {
     case "MANAGER":
-      return "Head Manager";
+      return "Manager";
     case "SUPERVISOR":
       return "Supervisor";
     case "PERSONNEL":

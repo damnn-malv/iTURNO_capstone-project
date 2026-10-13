@@ -31,7 +31,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'username', 'first_name', 'middle_name', 'last_name', 'contact',
-            'role', 'is_active', 'must_reset_password', 'email_verified',
+            'role', 'is_active', 'must_reset_password', 'email_verified', 'can_manage_fleet',
         ]
         extra_kwargs = {
             'must_reset_password': {'read_only': True},
@@ -50,6 +50,7 @@ class UserSerializer(serializers.ModelSerializer):
             last_name=validated_data.get('last_name', ''),
             role=validated_data.get('role', 'PERSONNEL'),
             is_active=validated_data.get('is_active', True),
+            can_manage_fleet=validated_data.get('can_manage_fleet', False),
             must_reset_password=True,
             email_verified=False,
         )

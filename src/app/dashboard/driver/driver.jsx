@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { useDriver } from "./useDriver";
 import DriverFormModal from "./DriverFormModal";
 import { getDriverCode, getDriverDisplayName, getIwpStatus } from "./driver-utils";
-import { useToast } from "../../../components/ui/ToastConfirmContext";
+import { useFeedback } from "../../../components/ui/kit";
 import { exportDriversPDF } from "../registry/registryExport";
 import "../../../styles/Driver.css";
 import "../../../styles/FormModal.css";
@@ -27,7 +27,7 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
     handleArchive,
   } = useDriver();
 
-  const showToast = useToast();
+  const { notify } = useFeedback();
   const [internalSearch, setInternalSearch] = useState("");
   const searchTerm = embedded ? externalSearch : internalSearch;
   const setSearchTerm = embedded ? onSearchChange : setInternalSearch;
@@ -71,10 +71,10 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
   const exportQR = () => {
     const toExport = filteredDrivers.filter((d) => d.qr_code);
     if (!toExport.length) {
-      showToast(
-        "No QR codes to export. Drivers registered before this feature don't have a QR code yet — edit and re-save them to generate one.",
-        "info",
-      );
+      notify.error({
+        title: "No QR codes to export",
+        message: "Drivers registered before this feature don't have a QR code yet — edit and re-save them to generate one.",
+      });
       return;
     }
 
@@ -119,10 +119,11 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
 
     const win = window.open("", "_blank");
     if (!win) {
-      showToast(
-        "Your browser blocked the QR export popup. Please allow popups for this site and try again.",
-        "info",
-      );
+      notify.error({
+        title: "Popup blocked",
+        message: "Allow popups for this site, then try the QR export again.",
+        onRetry: exportQR,
+      });
       return;
     }
     win.document.write(html);

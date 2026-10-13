@@ -1,6 +1,7 @@
 import logging
 
 from api.models import LOCAL_ADMIN_PK_BASE, User
+from api.sync.fleet_access import flush_fleet_access, pending_fleet_access
 from api.sync.registry import PULL_MODELS
 
 logger = logging.getLogger('sync')
@@ -30,6 +31,8 @@ def pull_all():
     table out.
     """
     pulled, deleted, failed = 0, 0, 0
+    flush_fleet_access()
+    pending_fleet = pending_fleet_access()  # ticks still parked: keep them over the pulled copy
     for model in PULL_MODELS:
         try:
             objects = list(model.objects.using('supabase').all())
@@ -41,6 +44,8 @@ def pull_all():
         remote_ids = set()
         for instance in objects:
             remote_ids.add(instance.pk)
+            if model is User and instance.pk in pending_fleet:
+                instance.can_manage_fleet = pending_fleet[instance.pk]
             try:
                 instance.save(using='default')
                 pulled += 1

@@ -161,8 +161,12 @@ export const CAN_EDIT_SETTINGS = [ROLES.ADMIN];
 
 // Matches IsSupervisorOrAdminForWrite (backend/api/views/viewsets.py) and the
 // frontend's canManageBackfill check — backfill submission is a step down
-// from full settings access, open to supervisors too.
-export const CAN_BACKFILL = [ROLES.ADMIN, ROLES.SUPERVISOR];
+// from full settings access, open to supervisors/managers too.
+export const CAN_BACKFILL = [ROLES.ADMIN, ROLES.SUPERVISOR, ROLES.MANAGER];
+
+// Supervisor and Manager are one position under two titles. Beyond backfill they
+// may see the staff list and tick a Personnel's fleet access (can_manage_fleet).
+export const LEAD_ROLES = [ROLES.SUPERVISOR, ROLES.MANAGER];
 
 // Pulls the Bearer token off the request and verifies it. Throws a plain
 // object with a `status` so handlers can just catch and respond.

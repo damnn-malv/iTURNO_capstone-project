@@ -4,7 +4,7 @@ import { useQueueSocket } from "../../../lib/useQueueSocket";
 import { getDriverPhotoUrl } from "../driver/driver-utils";
 import { ticketsNeeded } from "../queue/useQueue";
 import SeriesPicker from "../queue/SeriesPicker";
-import { useToast } from "../../../components/ui/ToastConfirmContext";
+import { useFeedback } from "../../../components/ui/kit";
 import "../../../styles/Dispatch.css";
 
 // Mirrors DEFAULT_ESTIMATED_LOADING_MINUTES in backend/api/views/records.py —
@@ -42,7 +42,7 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
   const [dispatchError, setDispatchError] = useState("");
   const [dispatchingVehicleId, setDispatchingVehicleId] = useState(null);
   const dispatchingRef = useRef(new Set());
-  const showToast = useToast();
+  const { notify } = useFeedback();
 
   const [plateSearch, setPlateSearch] = useState("");
   const [routeFilter, setRouteFilter] = useState(null);
@@ -221,7 +221,7 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
     setDispatchError("");
     try {
       await call(vehicle.id, { seriesId: selectedSeriesId, quantity: quantityFor(vehicle) });
-      showToast(`${vehicle.plate_number} ${doneLabel}`, "success");
+      notify.success({ title: `${vehicle.plate_number} ${doneLabel}` });
       setVehicles((prev) => prev.filter((v) => v.id !== vehicle.id));
       fetchData(true);
       onStockChange?.();

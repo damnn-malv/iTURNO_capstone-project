@@ -143,12 +143,10 @@ export function exportPDF(collections, filters) {
  * Opens the document in a new tab; the user clicks "Print / Save as PDF" when ready.
  * @param {Array<Object>} data - Rows to export; object keys become column headers
  * @param {string} title - Heading shown at the top of the document
+ * @returns {boolean} false when there were no rows to export
  */
 export function exportTablePDF(data, title = "Report") {
-  if (!data.length) {
-    alert("No records to export.");
-    return;
-  }
+  if (!data.length) return false;
   const headers = Object.keys(data[0]);
   const now = new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" });
 
@@ -200,4 +198,5 @@ export function exportTablePDF(data, title = "Report") {
   };
   frame.srcdoc = html;
   document.body.appendChild(frame);
+  return true;
 }

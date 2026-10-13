@@ -20,6 +20,11 @@ const CreateBatchForm = ({ targetDate, onSaved }) => {
   const { notify } = useFeedback();
   const [saving, setSaving] = useState(false);
 
+  const loadFailed = (what, err) => {
+    console.error(`Failed to load ${what}:`, err);
+    notify.error({ title: `Couldn't load ${what}`, message: "The batch form may be incomplete. Close it and try again." });
+  };
+
   // Duplicate-batch and batch-ID-collision checks need the complete batch
   // history (both tabs), not just a page of it.
   const [existingBatches, setExistingBatches] = useState([]);
@@ -99,7 +104,7 @@ const CreateBatchForm = ({ targetDate, onSaved }) => {
   useEffect(() => {
     apiService.getTicketForms()
       .then(setTicketFormOptions)
-      .catch(err => console.error("Failed to load ticket forms:", err));
+      .catch(err => loadFailed("ticket forms", err));
 
     apiService.getTickets({ start_date: dateIssued, end_date: dateIssued })
       .then(data => {
@@ -113,11 +118,11 @@ const CreateBatchForm = ({ targetDate, onSaved }) => {
           )
         );
       })
-      .catch(err => console.error("Failed to load tickets:", err));
+      .catch(err => loadFailed("tickets", err));
 
     apiService.request("/ticket-series/")
       .then(data => setTicketSeries(Array.isArray(data) ? data : []))
-      .catch(err => console.error("Failed to load ticket series:", err));
+      .catch(err => loadFailed("ticket series", err));
     // dateIssued is derived from the targetDate prop, which doesn't change across
     // this modal's lifetime — safe to omit from deps, matching the existing
     // fetch-once-on-mount pattern used for ticketForms/ticketSeries below.

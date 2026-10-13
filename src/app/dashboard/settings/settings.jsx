@@ -151,7 +151,7 @@ function SettingsPage() {
   }, []);
 
   const isAdmin = userRole === "SUPERADMIN";
-  const canManageBackfill = ["SUPERADMIN", "SUPERVISOR"].includes(userRole);
+  const canManageBackfill = ["SUPERADMIN", "SUPERVISOR", "MANAGER"].includes(userRole);
 
   const { notify, report, confirmAction } = useFeedback();
 

@@ -6,7 +6,7 @@ export const SETTINGS_SECTIONS = [
   { group: "Pricing", key: "ticket-forms", label: "Ticket forms" },
   { group: "Pricing", key: "puv-types", label: "PUV types" },
   { group: "Operations", key: "routes", label: "Routes" },
-  { group: "Records", key: "ticket-backfill", label: "Ticket backfill", allowedRoles: ["SUPERADMIN", "SUPERVISOR"] },
+  { group: "Records", key: "ticket-backfill", label: "Ticket backfill", allowedRoles: ["SUPERADMIN", "SUPERVISOR", "MANAGER"] },
   { group: "Records", key: "archive", label: "Archive" },
   { group: "System", key: "system", label: "Backups & restore", allowedRoles: ["SUPERADMIN"] },
 ];

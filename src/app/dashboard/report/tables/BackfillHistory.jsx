@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { DataTable } from "../../../../components/ui/dataTable";
 import { apiService, IS_REMOTE } from "../../../../lib/api-service";
+import { useFeedback } from "../../../../components/ui/kit";
 import Pager from "./Pager";
 
 const COLUMNS = ["When", "Backfilled by", "Source", "Tickets", "Reason", ""];
@@ -9,6 +10,7 @@ const peso = (n) => `₱${Number(n || 0).toFixed(2)}`;
 
 // LAN-only: the stored CSV lives on the LAN's local disk and isn't mirrored to Supabase.
 export default function BackfillHistory() {
+  const { notify } = useFeedback();
   const [history, setHistory] = useState([]);
   const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState(null);
@@ -18,13 +20,18 @@ export default function BackfillHistory() {
     apiService
       .getBackfillHistory()
       .then((r) => setHistory(Array.isArray(r) ? r : r.results || []))
-      .catch((err) => console.error("Failed to load backfill history:", err));
+      .catch((err) => notify.error({ title: "Couldn't load backfill history", message: err?.message || "Check your connection and try again." }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (IS_REMOTE) return null;
 
   const download = (r) =>
-    apiService.downloadBackfillCsv(r.id, r.csv_filename).catch((err) => console.error("Failed to download backfill CSV:", err));
+    apiService.downloadBackfillCsv(r.id, r.csv_filename).catch((err) => notify.error({
+      title: "Couldn't download the CSV",
+      message: err?.message || "Check your connection and try again.",
+      onRetry: () => download(r),
+    }));
 
   const renderRow = (r, _i, { rowClass, cellClass }) => {
     const canOpen = r.entries?.length > 0;

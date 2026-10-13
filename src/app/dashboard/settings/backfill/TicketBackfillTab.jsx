@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useToast, useConfirm } from "../../../../components/ui/ToastConfirmContext";
+import { useFeedback } from "../../../../components/ui/kit";
 import { IS_REMOTE } from "../../../../lib/api-service";
 import { useTicketBackfill } from "./useTicketBackfill";
 import BackfillBuilder from "./BackfillBuilder";
@@ -11,8 +11,7 @@ const MODES = [
 ];
 
 export default function TicketBackfillTab() {
-  const showToast = useToast();
-  const showConfirm = useConfirm();
+  const { report, confirmAction } = useFeedback();
   const {
     wipMode, wipLoading, togglingWip, toggleWipMode,
     vehicles, ticketSeries, submitBusy, submitRows,
@@ -22,24 +21,29 @@ export default function TicketBackfillTab() {
   const [mode, setMode] = useState("Queue");
   const isPaused = !!wipMode?.is_active;
 
-  const handleToggleWip = async () => {
-    const turningOn = !wipMode?.is_active;
-    if (turningOn) {
-      const ok = await showConfirm(
-        "Pause ticket issuance? No terminal will be able to check in or dispatch tickets until you resume."
-      );
-      if (!ok) return;
-    }
+  const applyWipMode = async (turningOn) => {
     try {
       await toggleWipMode(turningOn);
-      showToast(turningOn ? "Ticket issuance paused" : "Ticket issuance resumed", "success");
+      return { success: { title: turningOn ? "Ticket issuance paused" : "Ticket issuance resumed" } };
     } catch (err) {
       console.error("Failed to update WIP mode:", err);
       // err.message already carries the backend's actual reason (apiService.request()
       // extracts it from the response body) — show that instead of a generic line, since
       // whoever's using this screen won't have DevTools open to see the real cause.
-      showToast(err.message || "Failed to update WIP mode", "info");
+      return { error: { title: "Couldn't update issuance", message: err.message || "Nothing was changed. Try again." } };
     }
+  };
+
+  const handleToggleWip = () => {
+    const turningOn = !wipMode?.is_active;
+    if (!turningOn) return applyWipMode(false).then(report);
+    return confirmAction({
+      title: "Pause ticket issuance?",
+      message: "No terminal will be able to check in or dispatch tickets until you resume.",
+      confirmLabel: "Pause",
+      busyLabel: "Pausing…",
+      run: () => applyWipMode(true),
+    });
   };
 
   return (

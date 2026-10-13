@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiService } from "../../../lib/api-service";
-import { useConfirm, useToast } from "../../../components/ui/ToastConfirmContext";
+import { useFeedback } from "../../../components/ui/kit";
 
 export const DESTINATION = "San Fernando";
 
@@ -196,8 +196,7 @@ export function useVehicle() {
   // Always-on validation drives the sidebar checklist and progress bar.
   const liveErrors = validateVehicleForm(form, editing, routeMode, newOrigin);
   const fieldErrors = submitAttempted ? liveErrors : {};
-  const showConfirm = useConfirm();
-  const showToast = useToast();
+  const { confirmAction } = useFeedback();
 
   useEffect(() => {
     fetchDrivers();
@@ -291,7 +290,6 @@ export function useVehicle() {
     setRouteError("");
     if (Object.keys(validateVehicleForm(form, editing, routeMode, newOrigin)).length > 0) {
       setSubmitAttempted(true);
-      showToast("Please fill in the highlighted fields", "info");
       return;
     }
     const { routeId, err } = await resolveRouteId();
@@ -300,41 +298,45 @@ export function useVehicle() {
       return;
     }
 
-    const confirmMsg = editing ? "Confirm update?" : "Confirm registry?";
-    const confirmed = await showConfirm(confirmMsg);
-    if (!confirmed) return;
+    confirmAction({
+      title: editing ? "Update vehicle?" : "Register vehicle?",
+      confirmLabel: editing ? "Update" : "Register",
+      busyLabel: "Saving…",
+      tone: "primary",
+      run: async () => {
+        try {
+          const plate = form.plate_number.replace(/\s+/g, "").toUpperCase();
+          const qrCode = editing
+            ? form.qr_code
+            : `QR-${plate}-${Date.now().toString(36).toUpperCase()}`;
 
-    try {
-      const plate = form.plate_number.replace(/\s+/g, "").toUpperCase();
-      const qrCode = editing
-        ? form.qr_code
-        : `QR-${plate}-${Date.now().toString(36).toUpperCase()}`;
+          const payload = {
+            plate_number: form.plate_number,
+            route: routeId,
+            transportation_id: form.transportation_id || null,
+            franchise_number: form.franchise_number,
+            franchise_expiration_date: form.franchise_expiration_date || null,
+            operator_address: form.operator_address,
+            qr_code: qrCode,
+            status: form.status,
+            owner_driver: form.owner_driver || null,
+          };
 
-      const payload = {
-        plate_number: form.plate_number,
-        route: routeId,
-        transportation_id: form.transportation_id || null,
-        franchise_number: form.franchise_number,
-        franchise_expiration_date: form.franchise_expiration_date || null,
-        operator_address: form.operator_address,
-        qr_code: qrCode,
-        status: form.status,
-        owner_driver: form.owner_driver || null,
-      };
+          if (editing) {
+            await apiService.updateVehicle(editing.id, payload);
+          } else {
+            await apiService.createVehicle(payload);
+          }
 
-      if (editing) {
-        await apiService.updateVehicle(editing.id, payload);
-      } else {
-        await apiService.createVehicle(payload);
-      }
-
-      fetchVehicles();
-      closeModal();
-      showToast(editing ? "Vehicle updated" : "Vehicle registered", "success");
-    } catch (err) {
-      setError(err.message);
-      showToast(err.message || "Failed to save vehicle", "info");
-    }
+          fetchVehicles();
+          closeModal();
+          return { success: { title: editing ? "Vehicle updated" : "Vehicle registered", message: `${payload.plate_number} was saved.` } };
+        } catch (err) {
+          setError(err.message);
+          return { error: { title: "Couldn't save vehicle", message: err.message || "Nothing was changed. Try again." } };
+        }
+      },
+    });
   };
 
   const handleEdit = (vehicle) => {
@@ -376,18 +378,22 @@ export function useVehicle() {
     setRouteError("");
   };
 
-  const handleArchive = async (id) => {
-    const confirmed = await showConfirm("Archive this vehicle? You can restore it from Settings → Archive.");
-    if (!confirmed) return;
-    try {
-      await apiService.patch(`/vehicles/${id}/`, { is_archived: true });
-      fetchVehicles();
-      showToast("Vehicle archived");
-    } catch (err) {
-      setError(err.message);
-      showToast(err.message || "Failed to archive vehicle", "info");
-    }
-  };
+  const handleArchive = (id) => confirmAction({
+    title: "Archive this vehicle?",
+    message: "You can restore it from Settings → Archive.",
+    confirmLabel: "Archive",
+    busyLabel: "Archiving…",
+    run: async () => {
+      try {
+        await apiService.patch(`/vehicles/${id}/`, { is_archived: true });
+        fetchVehicles();
+        return { success: { title: "Vehicle archived", message: "It's now in Settings → Archive." } };
+      } catch (err) {
+        setError(err.message);
+        return { error: { title: "Couldn't archive vehicle", message: err.message || "Nothing was changed. Try again." } };
+      }
+    },
+  });
 
   const activeDrivers = drivers.filter((d) => d.status === "ACTIVE");
 
