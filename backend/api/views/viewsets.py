@@ -19,6 +19,7 @@ from rest_framework.views import APIView
 from ..models import LOCAL_ADMIN_PK_BASE, PendingFleetAccess, User, Driver, Vehicle, Route, Ticket, TicketPrice, PUVType, RemittanceBatch, TicketForm, Requisition, TicketSeries, PaperIssuance, RoamingLog, WipMode
 from ..serializers import UserSerializer, SelfProfileSerializer, DriverSerializer, VehicleSerializer, RouteSerializer, TicketSerializer, TicketPriceSerializer, PUVTypeSerializer, RemittanceBatchSerializer, TicketFormSerializer, RequisitionSerializer, TicketSeriesSerializer, PaperIssuanceSerializer, RoamingLogSerializer
 from ..sync.fleet_access import flush_fleet_access
+from ..sync.settings_outbox import flush_settings, next_offline_pk, park
 from ..sms import send_sms_async, queue_next_message
 from ..tokens import sign_email_verification_token
 from .helpers import record_audit_log, expire_stale_queue_tickets, expire_stale_unverified_accounts, supabase_reachable, paper_numbers_by_series, parse_date_start, parse_date_end, paginate_request, promote_queue_front
@@ -92,7 +93,8 @@ class IsAdminOrFleetAccessGrant(BasePermission):
 
 
 class CanManageFleet(BasePermission):
-    """Vehicle/driver registration: Admins and leads always; Personnel only once ticked."""
+    """Vehicle/driver writes: Admins and leads always; Personnel may only register (POST)
+    once ticked — never edit or archive."""
 
     def has_permission(self, request, view):
         user = request.user
@@ -100,7 +102,9 @@ class CanManageFleet(BasePermission):
             return False
         if request.method in SAFE_METHODS:
             return True
-        return user.role == 'SUPERADMIN' or user.role in LEAD_ROLES or user.can_manage_fleet
+        if user.role == 'SUPERADMIN' or user.role in LEAD_ROLES:
+            return True
+        return user.can_manage_fleet and request.method == 'POST'
 
 
 class IsSupervisorOrAdminForWrite(BasePermission):
@@ -329,41 +333,43 @@ class ArchivableSettingMixin:
         super().perform_destroy(instance)
 
 
-class SupabaseWriteThroughMixin:
+class OfflineSettingWriteMixin:
     """Route / ticket price / ticket form / PUV type are Supabase-authoritative
-    (PULL_MODELS), so a LAN-only save would be overwritten by the next pull. Reads
-    stay on the local cache (accurate usage counts, works offline); writes land on
-    Supabase too, and are refused while it's unreachable. Local is written first
-    inside a transaction so a failed Supabase write rolls it back; creates go
-    Supabase-first so the id comes from Postgres's sequence, not SQLite's."""
-
-    def initial(self, request, *args, **kwargs):
-        super().initial(request, *args, **kwargs)
-        if request.method not in SAFE_METHODS and not supabase_reachable():
-            raise ServiceUnavailable('Settings can only be changed while online. Reconnect to the internet and try again.')
+    (PULL_MODELS), so a LAN-only save would be overwritten by the next pull. Creates
+    and edits therefore work offline: saved locally, parked in PendingSetting and pushed
+    once Supabase is reachable (flushed at once when it already is). Online creates go
+    Supabase-first so the id comes from Postgres's sequence; offline ones take an id above
+    LOCAL_ADMIN_PK_BASE. Deleting stays online-only (archive instead)."""
 
     def perform_create(self, serializer):
         instance = serializer.Meta.model(**serializer.validated_data)
-        instance.save(using='supabase')
+        if supabase_reachable():
+            instance.save(using='supabase')
+        else:
+            instance.pk = next_offline_pk(type(instance))
         instance.save(using='default')
+        park(instance)
+        flush_settings()
         serializer.instance = instance
         self._audit('CREATE', instance, self._safe_changes())
         return instance
 
     def perform_update(self, serializer):
-        with transaction.atomic(using='default'):
-            instance = super().perform_update(serializer)
-            instance.save(using='supabase')
+        instance = super().perform_update(serializer)
+        park(instance)
+        flush_settings()
         return instance
 
     def perform_destroy(self, instance):
+        if not supabase_reachable():
+            raise ServiceUnavailable('This can only be deleted while online. Reconnect to the internet, or archive it instead.')
         model, pk = type(instance), instance.pk
         with transaction.atomic(using='default'):
             super().perform_destroy(instance)
             model.objects.using('supabase').filter(pk=pk).delete()
 
 
-class RouteViewSet(SupabaseWriteThroughMixin, ArchivableSettingMixin, AuditLogMixin, viewsets.ModelViewSet):
+class RouteViewSet(OfflineSettingWriteMixin, ArchivableSettingMixin, AuditLogMixin, viewsets.ModelViewSet):
     queryset = Route.objects.all()
     serializer_class = RouteSerializer
     usage = {'vehicle_count': ('vehicles', 'vehicle(s)'), 'ticket_count': ('tickets', 'ticket(s)')}
@@ -903,18 +909,18 @@ class TicketViewSet(viewsets.ModelViewSet):
         return Response(TicketSerializer(ticket, context={'request': request}).data)
 
 
-class TicketPriceViewSet(SupabaseWriteThroughMixin, AuditLogMixin, viewsets.ModelViewSet):
+class TicketPriceViewSet(OfflineSettingWriteMixin, AuditLogMixin, viewsets.ModelViewSet):
     queryset = TicketPrice.objects.all()
     serializer_class = TicketPriceSerializer
 
 
-class PUVTypeViewSet(SupabaseWriteThroughMixin, ArchivableSettingMixin, AuditLogMixin, viewsets.ModelViewSet):
+class PUVTypeViewSet(OfflineSettingWriteMixin, ArchivableSettingMixin, AuditLogMixin, viewsets.ModelViewSet):
     queryset = PUVType.objects.all()
     serializer_class = PUVTypeSerializer
     usage = {'vehicle_count': ('vehicles', 'vehicle(s)')}
 
 
-class TicketFormViewSet(SupabaseWriteThroughMixin, AuditLogMixin, viewsets.ModelViewSet):
+class TicketFormViewSet(OfflineSettingWriteMixin, AuditLogMixin, viewsets.ModelViewSet):
     queryset = TicketForm.objects.all()
     serializer_class = TicketFormSerializer
 

@@ -18,6 +18,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { renderToStaticMarkup } from "react-dom/server";
 import "../../../styles/Vehicle.css";
 import "../../../styles/FormModal.css";
+import { useCanModifyFleet } from "../../../lib/useCanModifyFleet";
 
 function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeAdd, exposeExportQR, exposeExportPDF }) {
   const {
@@ -45,6 +46,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
     closeModal,
     handleArchive,
   } = useVehicle();
+  const canModify = useCanModifyFleet();
 
   const [internalSearch, setInternalSearch] = useState("");
   const searchTerm = embedded ? externalSearch : internalSearch;
@@ -363,7 +365,8 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                     </td>
                     <td>
                       <div className="veh-actions">
-                        <button
+                        {canModify && (
+<button
                           className="veh-btn veh-btn--edit"
                           onClick={() => handleEdit(vehicle)}
                         >
@@ -380,6 +383,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                           </svg>
                           Edit
                         </button>
+)}
                         <button
                           className={`veh-btn veh-btn--more${menu?.vehicle.id === vehicle.id ? " is-open" : ""}`}
                           aria-label="More actions"
@@ -429,21 +433,23 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
               </svg>
               History
             </button>
-            <button
-              role="menuitem"
-              className="veh-menu-item veh-menu-item--danger"
-              onClick={() => {
-                handleArchive(menu.vehicle.id);
-                setMenu(null);
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <rect x="3" y="4" width="18" height="4" rx="1" />
-                <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
-                <path d="M10 12h4" />
-              </svg>
-              Archive
-            </button>
+            {canModify && (
+              <button
+                role="menuitem"
+                className="veh-menu-item veh-menu-item--danger"
+                onClick={() => {
+                  handleArchive(menu.vehicle.id);
+                  setMenu(null);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <rect x="3" y="4" width="18" height="4" rx="1" />
+                  <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+                  <path d="M10 12h4" />
+                </svg>
+                Archive
+              </button>
+            )}
           </div>
         )}
         {!loading && filteredVehicles.length > 0 && totalPages > 1 && (

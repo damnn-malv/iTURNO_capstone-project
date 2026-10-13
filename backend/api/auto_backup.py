@@ -6,18 +6,16 @@ import time
 from datetime import timedelta
 
 from django.conf import settings
-from django.core.files.storage import default_storage
 from django.utils import timezone
 
 logger = logging.getLogger("sync")
 
-SCHEDULED_LABEL = "Scheduled daily backup"
 CHECK_EVERY_SECONDS = 3600
 
 
 def _run_once():
     from .models import BackupRecord
-    from .views.system import _backup_path, _create_backup_file
+    from .views.system import SCHEDULED_LABEL, _create_backup_file, backup_storage
 
     interval = timedelta(hours=settings.AUTO_BACKUP_INTERVAL_HOURS)
     scheduled = BackupRecord.objects.filter(source="AUTO", label=SCHEDULED_LABEL).order_by("-created_at")
@@ -27,7 +25,7 @@ def _run_once():
 
     _create_backup_file(None, label=SCHEDULED_LABEL, source="AUTO")
     for old in scheduled[settings.AUTO_BACKUP_KEEP:]:
-        default_storage.delete(_backup_path(old.filename))
+        backup_storage.delete(old.filename)
         old.delete()
 
 

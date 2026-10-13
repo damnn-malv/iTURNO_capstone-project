@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { apiService } from "../../lib/api-service";
 import { useFeedback } from "../ui/kit";
 import { focusFirstError } from "../../lib/focusFirstError";
@@ -30,6 +30,10 @@ function ProfileModal({ user, onSaved, onClose }) {
   });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+  const [pw, setPw] = useState({ next: "", confirm: "" });
+  const [changingPw, setChangingPw] = useState(false);
+  const [online, setOnline] = useState(navigator.onLine);
 
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -59,6 +63,40 @@ function ProfileModal({ user, onSaved, onClose }) {
     } catch (err) {
       setErrors({ form: err.message || "Could not update your profile." });
       setSaving(false);
+    }
+  };
+
+  // The password lives in Supabase, so changing it needs a connection.
+  useEffect(() => {
+    const sync = () => setOnline(navigator.onLine);
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
+  }, []);
+
+  const changePassword = async () => {
+    const next = {};
+    if (!pw.next) next.pw_next = "Enter a new password.";
+    else if (pw.next !== pw.confirm) next.pw_confirm = "Passwords do not match.";
+    setErrors(next);
+    if (Object.keys(next).length) return;
+    if (!navigator.onLine) {
+      notify.error({ title: "Password not changed", message: "You're offline. Connect to the internet and try again." });
+      return;
+    }
+    setChangingPw(true);
+    try {
+      await apiService.changePassword(pw.next);
+      notify.success({ title: "Password changed", message: "Your new password is saved." });
+      setPw({ next: "", confirm: "" });
+      setShowPw(false);
+    } catch (err) {
+      notify.error({ title: "Password not changed", message: err.message || "Could not change your password." });
+    } finally {
+      setChangingPw(false);
     }
   };
 
@@ -93,9 +131,33 @@ function ProfileModal({ user, onSaved, onClose }) {
             </Field>
           </div>
 
-          <Field label="Email address" hint="Your email and password can't be changed here. Ask an Admin if your email needs to change.">
+          <Field label="Email address" hint="Your email can't be changed here. Ask an Admin if it needs to change.">
             <input type="text" className="usr-input" value={user.username || ""} disabled />
           </Field>
+
+          {showPw ? (
+            <>
+              <div className="usr-form-grid">
+                <Field label="New password" error={errors.pw_next}>
+                  <input type="password" autoComplete="new-password" className={cls("pw_next")} value={pw.next} onChange={(e) => setPw((p) => ({ ...p, next: e.target.value }))} />
+                </Field>
+                <Field label="Confirm new password" error={errors.pw_confirm}>
+                  <input type="password" autoComplete="new-password" className={cls("pw_confirm")} value={pw.confirm} onChange={(e) => setPw((p) => ({ ...p, confirm: e.target.value }))} />
+                </Field>
+              </div>
+              {!online && <p className="usr-field-error">You're offline. Passwords can only be changed while online.</p>}
+              <div className="usr-modal-footer">
+                <button type="button" className="usr-modal-btn usr-modal-btn--cancel" onClick={() => { setShowPw(false); setPw({ next: "", confirm: "" }); }}>Cancel</button>
+                <button type="button" className="usr-modal-btn usr-modal-btn--submit" onClick={changePassword} disabled={changingPw || !online}>
+                  {changingPw ? "Changing…" : "Change password"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <button type="button" className="usr-modal-btn usr-modal-btn--cancel" style={{ alignSelf: "flex-start" }} onClick={() => setShowPw(true)}>
+              Change password
+            </button>
+          )}
 
           {errors.form && <p className="usr-field-error">{errors.form}</p>}
 

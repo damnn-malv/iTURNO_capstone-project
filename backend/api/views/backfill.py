@@ -316,7 +316,7 @@ def record_batch_history(source, rows, results, user, name=''):
         for row, res in zip(rows, results) for tid in res['ticket_ids']
     ]
     authed = user and getattr(user, 'is_authenticated', False)
-    BackfillRecord.objects.create(
+    return BackfillRecord.objects.create(
         source=source,
         created_by=user if authed else None,
         created_by_name=str(user) if authed else name,
@@ -339,13 +339,13 @@ def backfill_batch(request):
     results, ok = run_batch(rows, commit)
     if ok and commit:
         count = sum(len(r['ticket_ids']) for r in results)
+        record = record_batch_history('MANUAL', rows, results, request.user)
         record_audit_log(
             user=request.user, action='CREATE', model_name='Ticket',
             object_id=','.join(i for r in results for i in r['ticket_ids']),
             object_repr=f"Manual backfill: {count} ticket(s) in {len(rows)} entries",
-            changes={'source': 'manual_backfill'},
+            changes={'source': 'manual_backfill', 'backfill_id': record.id},
         )
-        record_batch_history('MANUAL', rows, results, request.user)
     return Response({'outcome': 'ok' if ok else 'error', 'committed': commit and ok, 'results': results})
 
 
@@ -440,8 +440,9 @@ def backfill_import(request):
 
     result = _process_csv(rows, commit=True, import_reason=import_reason)
 
+    record = None
     if result['imported_count']:
-        BackfillRecord.objects.create(
+        record = BackfillRecord.objects.create(
             source='CSV',
             created_by=request.user if request.user and request.user.is_authenticated else None,
             created_by_name=str(request.user) if request.user and request.user.is_authenticated else '',
@@ -458,6 +459,7 @@ def backfill_import(request):
         changes={
             'imported_count': result['imported_count'],
             'error_count': result['error_count'],
+            **({'backfill_id': record.id} if record else {}),
         },
     )
     return Response({**result, 'dry_run': False})
@@ -476,6 +478,15 @@ def backfill_history(request):
             'total_pages': max((total + page_size - 1) // page_size, 1),
         })
     return Response(BackfillRecordSerializer(qs[:100], many=True).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsSupervisorOrAdminForWrite])
+def backfill_history_detail(request, record_id):
+    record = BackfillRecord.objects.filter(id=record_id).first()
+    if not record:
+        return Response({"error": "Backfill record not found"}, status=404)
+    return Response(BackfillRecordSerializer(record).data)
 
 
 @api_view(['GET'])

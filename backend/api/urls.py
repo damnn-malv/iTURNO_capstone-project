@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from django.conf import settings
 from django.conf.urls.static import static
 from .views import UserViewSet, DriverViewSet, VehicleViewSet, RouteViewSet, TicketViewSet, CurrentUserView, TicketPriceViewSet, PUVTypeViewSet, RemittanceBatchViewSet, TicketFormViewSet, RequisitionViewSet, TicketSeriesViewSet, PaperIssuanceViewSet, RoamingLogViewSet
-from .views import report_summary, report_collections, report_daily_chart, eod_reconciliation, audit_logs, dashboard_stats, public_queue, server_time, export_collections_csv, remittance_batches, system_backups, system_backup_detail, system_backup_download, system_backup_restore, system_backup_restore_upload, forgot_password, reset_password, verify_email, change_password, wip_mode_config, backfill_batch, backfill_preview, backfill_import, backfill_history, backfill_history_download
+from .views import report_summary, report_collections, report_daily_chart, eod_reconciliation, audit_logs, dashboard_stats, public_queue, server_time, export_collections_csv, remittance_batches, system_backups, system_backup_detail, system_backup_download, system_backup_restore, system_backup_restore_upload, forgot_password, reset_password, verify_email, change_password, wip_mode_config, backfill_batch, backfill_preview, backfill_import, backfill_history, backfill_history_detail, backfill_history_download
 
 router = DefaultRouter()
 router.register(r'users', UserViewSet)
@@ -38,6 +38,7 @@ urlpatterns = [
     path("backfill/preview/", backfill_preview, name="backfill_preview"),
     path("backfill/import/", backfill_import, name="backfill_import"),
     path("backfill/history/", backfill_history, name="backfill_history"),
+    path("backfill/history/<int:record_id>/", backfill_history_detail, name="backfill_history_detail"),
     path("backfill/history/<int:record_id>/download/", backfill_history_download, name="backfill_history_download"),
     path("system/backups/", system_backups, name="system_backups"),
     path("system/backups/<int:backup_id>/", system_backup_detail, name="system_backup_detail"),

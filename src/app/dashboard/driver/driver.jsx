@@ -8,6 +8,7 @@ import { useFeedback } from "../../../components/ui/kit";
 import { exportDriversPDF } from "../registry/registryExport";
 import "../../../styles/Driver.css";
 import "../../../styles/FormModal.css";
+import { useCanModifyFleet } from "../../../lib/useCanModifyFleet";
 
 function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAdd, exposeExportQR, exposeExportPDF }) {
   const {
@@ -26,6 +27,7 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
     closeModal,
     handleArchive,
   } = useDriver();
+  const canModify = useCanModifyFleet();
 
   const { notify } = useFeedback();
   const [internalSearch, setInternalSearch] = useState("");
@@ -290,7 +292,8 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                     </td>
                     <td>
                       <div className="drv-actions">
-                        <button
+                        {canModify && (
+<button
                           className="drv-btn drv-btn--edit"
                           onClick={() => handleEdit(driver)}
                         >
@@ -307,7 +310,9 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                           </svg>
                           Edit
                         </button>
-                        <button
+)}
+                        {canModify && (
+<button
                           className="drv-btn drv-btn--delete"
                           onClick={() => handleArchive(driver.id)}
                         >
@@ -325,6 +330,7 @@ function Driver({ embedded, searchTerm: externalSearch, onSearchChange, exposeAd
                           </svg>
                           Archive
                         </button>
+)}
                       </div>
                     </td>
                   </tr>
