@@ -387,6 +387,29 @@
   font-weight: 500;
 }
 
+/* Skeleton loading: placeholder shapes shimmer in the real layout */
+.dash-skel {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--text-primary) 8%, transparent) 25%, color-mix(in srgb, var(--text-primary) 15%, transparent) 50%, color-mix(in srgb, var(--text-primary) 8%, transparent) 75%);
+  background-size: 200% 100%;
+  animation: dash-shimmer 1.3s ease-in-out infinite;
+}
+.dash-skel--gap { margin-top: 10px; }
+.dash-skel--bar { border-radius: 4px 4px 0 0; }
+.dash-skel-stack { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
+.dash-skel-stack--pad { margin-top: 0; padding: 18px 20px; }
+.dash-skel-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  height: 300px;
+  padding: 24px 20px 20px;
+}
+@keyframes dash-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .dash-skel { animation: none; } }
+
 .dashboard-loading {
   display: flex;
   align-items: center;

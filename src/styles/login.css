@@ -256,7 +256,7 @@ body {
   width: 100%;
   max-width: 420px;
   box-shadow: 0 24px 80px rgba(0,0,0,0.35);
-  animation: lp-slide-up 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  animation: lp-slide-up 0.3s cubic-bezier(0.25,1,0.5,1);
 }
 
 @keyframes lp-slide-up {

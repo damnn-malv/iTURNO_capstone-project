@@ -509,6 +509,12 @@
   transform: translateY(0);
 }
 
+.dark .set-add-btn--danger,
+.set-add-btn--danger {
+  background: #b42318;
+  color: #fff;
+}
+
 .set-delete-btn {
   display: inline-flex;
   align-items: center;
@@ -846,12 +852,13 @@
 }
 
 .tbf-pill--wip {
-  background: rgba(201, 168, 76, 0.18);
-  color: #92702a;
+  background: rgba(180, 35, 24, 0.12);
+  color: #b42318;
 }
 
 .dark .tbf-pill--wip {
-  color: var(--gold);
+  background: rgba(248, 113, 113, 0.16);
+  color: #f87171;
 }
 
 .tbf-meta {

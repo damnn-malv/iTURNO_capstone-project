@@ -366,7 +366,7 @@ export default function Report() {
       <div className="rpt-header">
         <div className="rpt-header-left">
           <div>
-            <h1 className="rpt-title">Report Logs</h1>
+            <h1 className="rpt-title">Report Generation</h1>
             
           </div>
         </div>

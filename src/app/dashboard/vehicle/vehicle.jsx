@@ -19,6 +19,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import "../../../styles/Vehicle.css";
 import "../../../styles/FormModal.css";
 import { useCanModifyFleet } from "../../../lib/useCanModifyFleet";
+import { SkeletonRows } from "../../../components/ui/kit";
 
 function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeAdd, exposeExportQR, exposeExportPDF }) {
   const {
@@ -290,15 +291,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan="6" className="veh-table-state">
-                    <div className="veh-loading-dots">
-                      <div />
-                      <div />
-                      <div />
-                    </div>
-                  </td>
-                </tr>
+                <SkeletonRows cols={6} />
               ) : filteredVehicles.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="veh-table-state">

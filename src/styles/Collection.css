@@ -376,7 +376,7 @@
 .col-plate {
   display: inline-block;
   background: linear-gradient(135deg, #1a2744 0%, #2d3e5f 100%);
-  color: var(--gold);
+  color: #fff;
   padding: 3px 10px;
   border-radius: 20px;
   font-size: 11px;

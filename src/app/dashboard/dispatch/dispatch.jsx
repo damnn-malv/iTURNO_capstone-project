@@ -4,7 +4,7 @@ import { useQueueSocket } from "../../../lib/useQueueSocket";
 import { getDriverPhotoUrl } from "../driver/driver-utils";
 import { ticketsNeeded } from "../queue/useQueue";
 import SeriesPicker from "../queue/SeriesPicker";
-import { useFeedback } from "../../../components/ui/kit";
+import { useFeedback, SkeletonList } from "../../../components/ui/kit";
 import "../../../styles/Dispatch.css";
 
 // Mirrors DEFAULT_ESTIMATED_LOADING_MINUTES in backend/api/views/records.py —
@@ -491,13 +491,7 @@ function Dispatch({ availableSeries, allSeries = [], setSeriesOverrideId = () =>
 
         <div className="dispatch-panel-body">
           {loading ? (
-            <div className="dispatch-state-wrap">
-              <div className="dispatch-loading-dots">
-                <div />
-                <div />
-                <div />
-              </div>
-            </div>
+            <SkeletonList rows={4} h={72} />
           ) : queue.length === 0 ? (
             <div className="dispatch-state-wrap dispatch-state-wrap--empty">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.3">

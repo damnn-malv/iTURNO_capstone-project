@@ -119,7 +119,7 @@ function FeedbackProvider({ children }) {
         footer={opts && (
           <>
             <ActionButton variant="secondary" onClick={cancelConfirm} disabled={confirm.working}>Cancel</ActionButton>
-            <ActionButton variant={opts.tone === "primary" ? "primary" : "danger"} busy={confirm.working} busyLabel={opts.busyLabel} onClick={runConfirm}>
+            <ActionButton variant={opts.tone === "primary" ? "primary" : opts.tone === "success" ? "success" : "danger"} busy={confirm.working} busyLabel={opts.busyLabel} onClick={runConfirm}>
               {opts.confirmLabel || "Confirm"}
             </ActionButton>
           </>

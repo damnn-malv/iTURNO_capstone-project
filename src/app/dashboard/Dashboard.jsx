@@ -88,6 +88,77 @@ function OverviewCard({ label, badge, children }) {
   );
 }
 
+// ─── Loading skeleton ────────────────────────────────────────────────────────
+// Mirrors the real layout (same wrapper classes) so nothing jumps when data lands.
+const Skel = ({ w = "100%", h = 12, className = "" }) => (
+  <span className={`dash-skel ${className}`} style={{ width: w, height: h }} />
+);
+
+function DashboardSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading dashboard">
+      <div className="overview-panel">
+        {[0, 1, 2].map((i) => (
+          <div className="ov-card" key={i}>
+            <div className="ov-card-head">
+              <Skel w="40%" h={12} />
+            </div>
+            <Skel w="60%" h={34} />
+            <Skel w="45%" h={12} className="dash-skel--gap" />
+            <div className="dash-skel-stack">
+              <Skel h={10} />
+              <Skel h={10} w="85%" />
+              <Skel h={10} w="70%" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="dashboard-chart-layout">
+        <div className="dashboard-chart-panel">
+          <div className="chart-card">
+            <div className="chart-card-header">
+              <Skel w={150} h={14} />
+              <Skel w={120} h={26} />
+            </div>
+            <div className="dash-skel-chart">
+              {[55, 80, 40, 65, 90, 50, 70, 35, 60, 75].map((h, i) => (
+                <Skel key={i} w="100%" h={`${h}%`} className="dash-skel--bar" />
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="dashboard-routes-sidebar">
+          <div className="dashboard-routes-sidebar-header">
+            <Skel w="50%" h={14} />
+          </div>
+          <div className="dash-skel-stack dash-skel-stack--pad">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <Skel key={i} h={34} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="dashboard-insights-row">
+        {[0, 1].map((i) => (
+          <div className="chart-card" key={i}>
+            <div className="chart-card-header">
+              <Skel w={160} h={14} />
+            </div>
+            <div className="dash-skel-stack dash-skel-stack--pad">
+              <Skel h={14} />
+              <Skel h={14} w="90%" />
+              <Skel h={14} w="75%" />
+              <Skel h={14} w="85%" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Status Breakdown (stacked bar + legend) ────────────────────────────────
 function BreakdownCard({ title, badge, data, order, meta }) {
   const entries = order.map((key) => ({ key, count: data?.[key] ?? 0, ...meta[key] }));
@@ -359,11 +430,7 @@ export default function Dashboard() {
       {error && <div className="dashboard-error">{error}</div>}
 
       {loading ? (
-        <div className="dashboard-loading">
-          <div className="loading-dot" />
-          <div className="loading-dot" />
-          <div className="loading-dot" />
-        </div>
+        <DashboardSkeleton />
       ) : (
         <>
           {/* ─── Overview: three cards — Collections · Queue · Ticket Stock ─── */}

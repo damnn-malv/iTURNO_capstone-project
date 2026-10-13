@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { apiService } from "../../../lib/api-service";
 import { focusFirstError } from "../../../lib/focusFirstError";
-import { useFeedback } from "../../../components/ui/kit";
+import { useFeedback, SkeletonRows } from "../../../components/ui/kit";
 import "../../../styles/User.css";
 import "../../../styles/FormModal.css";
 
@@ -327,15 +327,7 @@ function User({ userRole }) {
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan="7" className="usr-table-state">
-                    <div className="usr-loading-dots">
-                      <div />
-                      <div />
-                      <div />
-                    </div>
-                  </td>
-                </tr>
+                <SkeletonRows cols={7} />
               ) : filteredUsers.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="usr-table-state">
