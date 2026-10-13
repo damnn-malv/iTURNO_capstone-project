@@ -4,7 +4,7 @@ import Dialog from "./Dialog";
 import ActionButton from "./ActionButton";
 import { CheckIcon, CloseIcon } from "./icons";
 
-const SUCCESS_MS = 3000;
+const SUCCESS_MS = 2000;
 const UNDO_MS = 5000;
 
 function Notification({ note, onClose }) {
@@ -16,6 +16,12 @@ function Notification({ note, onClose }) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [isError, onClose]);
+
+  useEffect(() => {
+    if (isError) return undefined;
+    const t = setTimeout(onClose, note.duration);
+    return () => clearTimeout(t);
+  }, [isError, note.duration, note.id, onClose]);
 
   return (
     <div className="ui-note-layer">
@@ -47,13 +53,6 @@ function Notification({ note, onClose }) {
           </div>
         )}
 
-        {!isError && (
-          <span
-            className="ui-note-bar"
-            style={{ animationDuration: `${note.duration}ms` }}
-            onAnimationEnd={onClose}
-          />
-        )}
       </div>
     </div>
   );

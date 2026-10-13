@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiService } from "../../../lib/api-service";
+import { focusFirstError } from "../../../lib/focusFirstError";
 import { useFeedback } from "../../../components/ui/kit";
 
 export const DESTINATION = "San Fernando";
@@ -22,14 +23,14 @@ export const STATUS_COLOR = {
 };
 
 export const STATUS_LABEL = {
-  AVAILABLE: "Available",
+  AVAILABLE: "Active",
   QUEUED: "Queued",
 };
 
 // Drives the sidebar checklist; `fields` are the required keys in each section.
 export const VEHICLE_SECTIONS = [
-  { title: "Vehicle information", fields: ["plate_number", "transportation_id", "franchise_number", "franchise_expiration_date"] },
-  { title: "Route & assignment", fields: ["route", "owner_driver"] },
+  { title: "Vehicle information", fields: ["transportation_id", "plate_number", "franchise_number", "franchise_expiration_date"] },
+  { title: "Route", fields: ["route", "owner_driver"] },
 ];
 
 const validateVehicleForm =(form, editing, routeMode, newOrigin) => {
@@ -46,7 +47,7 @@ const validateVehicleForm =(form, editing, routeMode, newOrigin) => {
   if (!form.franchise_expiration_date) {
     errors.franchise_expiration_date = "Franchise expiration date is required.";
   }
-  if (!form.owner_driver) errors.owner_driver = "Owner driver is required.";
+  if (!form.owner_driver) errors.owner_driver = "Operator name is required.";
   return errors;
 };
 
@@ -150,7 +151,8 @@ export const RouteField = ({
             className={`veh-input${routeError ? " veh-input--error" : ""}`}
             placeholder="e.g. Lingsat"
             value={newOrigin}
-            onChange={(e) => setNewOrigin(e.target.value)}
+            style={{ textTransform: "uppercase" }}
+            onChange={(e) => setNewOrigin(e.target.value.toUpperCase())}
             autoFocus
           />
           <span className="veh-route-dest">— {destination}</span>
@@ -187,6 +189,7 @@ export function useVehicle() {
   const [editing, setEditing] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const initialFormRef = useRef(EMPTY_FORM);
   const [routeMode, setRouteMode] = useState("select");
   const [newOrigin, setNewOrigin] = useState("");
   const [routeError, setRouteError] = useState("");
@@ -255,7 +258,7 @@ export function useVehicle() {
       return { routeId: form.route, err: null };
     }
 
-    const origin = newOrigin.trim();
+    const origin = newOrigin.trim().toUpperCase();
     if (!origin) return { routeId: null, err: "Please enter a route origin." };
 
     if (routeMode === "new") {
@@ -290,21 +293,23 @@ export function useVehicle() {
     setRouteError("");
     if (Object.keys(validateVehicleForm(form, editing, routeMode, newOrigin)).length > 0) {
       setSubmitAttempted(true);
+      focusFirstError(".veh-modal");
       return;
     }
-    const { routeId, err } = await resolveRouteId();
-    if (err) {
-      setRouteError(err);
-      return;
-    }
-
     confirmAction({
       title: editing ? "Update vehicle?" : "Register vehicle?",
-      confirmLabel: editing ? "Update" : "Register",
+      confirmLabel: editing ? "Save changes" : "Register",
       busyLabel: "Saving…",
       tone: "primary",
       run: async () => {
         try {
+          // Resolved here (not before the confirm dialog) so a cancelled confirm doesn't leave a stray new route,
+          // and so a failed route create is reported instead of silently blocking the save.
+          const { routeId, err } = await resolveRouteId();
+          if (err) {
+            setRouteError(err);
+            return { error: { title: "Route problem", message: err } };
+          }
           const plate = form.plate_number.replace(/\s+/g, "").toUpperCase();
           const qrCode = editing
             ? form.qr_code
@@ -329,7 +334,7 @@ export function useVehicle() {
           }
 
           fetchVehicles();
-          closeModal();
+          resetModal();
           return { success: { title: editing ? "Vehicle updated" : "Vehicle registered", message: `${payload.plate_number} was saved.` } };
         } catch (err) {
           setError(err.message);
@@ -341,7 +346,7 @@ export function useVehicle() {
 
   const handleEdit = (vehicle) => {
     setEditing(vehicle);
-    setForm({
+    const editForm = {
       plate_number: vehicle.plate_number,
       route: vehicle.route || "",
       transportation_id: vehicle.transportation_id || "",
@@ -351,7 +356,9 @@ export function useVehicle() {
       qr_code: vehicle.qr_code || "",
       status: vehicle.status,
       owner_driver: vehicle.owner_driver,
-    });
+    };
+    initialFormRef.current = editForm;
+    setForm(editForm);
     setRouteMode("select");
     setNewOrigin("");
     setRouteError("");
@@ -361,6 +368,7 @@ export function useVehicle() {
 
   const handleAdd = () => {
     setEditing(null);
+    initialFormRef.current = EMPTY_FORM;
     setForm(EMPTY_FORM);
     setRouteMode("select");
     setNewOrigin("");
@@ -369,13 +377,28 @@ export function useVehicle() {
     setIsModalOpen(true);
   };
 
-  const closeModal = () => {
+  const resetModal = () => {
     setIsModalOpen(false);
     setEditing(null);
     setForm(EMPTY_FORM);
     setRouteMode("select");
     setNewOrigin("");
     setRouteError("");
+  };
+
+  const isDirty = () =>
+    JSON.stringify(form) !== JSON.stringify(initialFormRef.current) || newOrigin.trim() !== "";
+
+  // Closing with unsaved input asks first; resetModal closes without asking (used after a save).
+  const closeModal = () => {
+    if (!isDirty()) return resetModal();
+    return confirmAction({
+      title: editing ? "Discard changes?" : "Discard registration?",
+      message: editing ? "Your edits haven't been saved and will be lost." : "What you've entered won't be saved.",
+      confirmLabel: "Discard",
+      busyLabel: "Discarding…",
+      run: async () => { resetModal(); return null; },
+    });
   };
 
   const handleArchive = (id) => confirmAction({

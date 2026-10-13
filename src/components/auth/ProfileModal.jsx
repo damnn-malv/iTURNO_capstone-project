@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { apiService } from "../../lib/api-service";
 import { useFeedback } from "../ui/kit";
+import { focusFirstError } from "../../lib/focusFirstError";
 import "../../styles/FormModal.css";
 
 const capitalizeWords = (value) => value.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
@@ -44,7 +45,10 @@ function ProfileModal({ user, onSaved, onClose }) {
     e.preventDefault();
     const next = validate();
     setErrors(next);
-    if (Object.keys(next).length) return;
+    if (Object.keys(next).length) {
+      focusFirstError(".usr-modal");
+      return;
+    }
     setSaving(true);
     try {
       const updated = await apiService.updateCurrentUser(form);

@@ -393,7 +393,6 @@ export default function Report() {
 
       {/* Filter Bar */}
       <div className="rpt-filter-bar">
-        <span className="rpt-label">Period</span>
         <div className="rpt-chips">
           {PERIODS.map((p) => (
             <button

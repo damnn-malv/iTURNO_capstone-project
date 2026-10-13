@@ -50,13 +50,35 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
   const searchTerm = embedded ? externalSearch : internalSearch;
   const setSearchTerm = embedded ? onSearchChange : setInternalSearch;
   const [ledgerVehicle, setLedgerVehicle] = useState(null);
+  const [menu, setMenu] = useState(null);
+
+  React.useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e) => e.key === "Escape" && close();
+    document.addEventListener("click", close);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [menu]);
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
   const [operatorSearch, setOperatorSearch] = useState("");
   const [showOperatorList, setShowOperatorList] = useState(false);
 
+  const selectedOperator = activeDrivers.find((d) => d.id === form.owner_driver);
+  // While the box still shows the chosen name, list everyone so another operator can be picked;
+  // once the text is edited, filter by what was typed.
+  const operatorQuery = operatorSearch.toLowerCase().trim();
+  const showAllOperators = !operatorQuery || (selectedOperator && operatorSearch === selectedOperator.name);
   const filteredDrivers = activeDrivers.filter((d) =>
-    (d.name || "").toLowerCase().includes(operatorSearch.toLowerCase().trim())
+    showAllOperators || (d.name || "").toLowerCase().includes(operatorQuery)
   );
 
   // Plate number is fixed once registered, so it only counts while adding.
@@ -256,7 +278,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                   "Transportation",
                   "Franchise #",
                   
-                  "Owner Driver",
+                  "Operator Name",
                   "Franchise Status",
                   "Actions",
                 ].map((h) => (
@@ -359,34 +381,22 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                           Edit
                         </button>
                         <button
-                          className="veh-btn veh-btn--history"
-                          onClick={() => setLedgerVehicle(vehicle)}
+                          className={`veh-btn veh-btn--more${menu?.vehicle.id === vehicle.id ? " is-open" : ""}`}
+                          aria-label="More actions"
+                          aria-haspopup="menu"
+                          aria-expanded={menu?.vehicle.id === vehicle.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (menu?.vehicle.id === vehicle.id) return setMenu(null);
+                            const r = e.currentTarget.getBoundingClientRect();
+                            setMenu({ vehicle, top: r.bottom + 4, right: window.innerWidth - r.right });
+                          }}
                         >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14 2 14 8 20 8" />
-                            <line x1="16" y1="13" x2="8" y2="13" />
-                            <line x1="16" y1="17" x2="8" y2="17" />
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="12" cy="5" r="2" />
+                            <circle cx="12" cy="12" r="2" />
+                            <circle cx="12" cy="19" r="2" />
                           </svg>
-                          History
-                        </button>
-                        <button
-                          className="veh-btn veh-btn--delete"
-                          onClick={() => handleArchive(vehicle.id)}
-                        >
-                          <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.2"
-                          >
-                            <rect x="3" y="4" width="18" height="4" rx="1" />
-                            <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
-                            <path d="M10 12h4" />
-                          </svg>
-                          Archive
                         </button>
                       </div>
                     </td>
@@ -396,6 +406,46 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
             </tbody>
           </table>
         </div>
+        {menu && (
+          <div
+            className="veh-menu"
+            role="menu"
+            style={{ top: menu.top, right: menu.right }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              role="menuitem"
+              className="veh-menu-item"
+              onClick={() => {
+                setLedgerVehicle(menu.vehicle);
+                setMenu(null);
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
+              History
+            </button>
+            <button
+              role="menuitem"
+              className="veh-menu-item veh-menu-item--danger"
+              onClick={() => {
+                handleArchive(menu.vehicle.id);
+                setMenu(null);
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <rect x="3" y="4" width="18" height="4" rx="1" />
+                <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+                <path d="M10 12h4" />
+              </svg>
+              Archive
+            </button>
+          </div>
+        )}
         {!loading && filteredVehicles.length > 0 && totalPages > 1 && (
           <div className="veh-pagination">
             <button
@@ -494,24 +544,6 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                   Vehicle information
                 </h3>
                 <div className="veh-profile-grid">
-                  {!editing && (
-                    <Field label="Plate number" required>
-                      <input
-                        type="text"
-                        className={errCls("veh-input", "plate_number")}
-                        placeholder="e.g. ABC-1234"
-                        value={form.plate_number}
-                        maxLength={8}
-                        onChange={(e) =>
-                          setForm({
-                            ...form,
-                            plate_number: formatPlateNumber(e.target.value),
-                          })
-                        }
-                      />
-                      <FieldError name="plate_number" />
-                    </Field>
-                  )}
                   <Field label="Transportation type" required>
                     <select
                       className={errCls("veh-select", "transportation_id")}
@@ -532,6 +564,24 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                     </select>
                     <FieldError name="transportation_id" />
                   </Field>
+                  {!editing && (
+                    <Field label="Plate number" required>
+                      <input
+                        type="text"
+                        className={errCls("veh-input", "plate_number")}
+                        placeholder="e.g. ABC-1234"
+                        value={form.plate_number}
+                        maxLength={8}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            plate_number: formatPlateNumber(e.target.value),
+                          })
+                        }
+                      />
+                      <FieldError name="plate_number" />
+                    </Field>
+                  )}
                   <Field label="Franchise number" required>
                     {(() => {
                       const [yy = "", nnnnn = ""] = (form.franchise_number || "").split("-");
@@ -603,7 +653,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
               <div className="veh-profile-section">
                 <h3 className="veh-section-title">
                   <span className="veh-section-num">2</span>
-                  Route & assignment
+                  Route
                 </h3>
                 <RouteField
                   routes={routes}
@@ -619,7 +669,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                   destination={DESTINATION}
                 />
                 <div className="veh-profile-grid">
-                  <Field label="Owner driver" required>
+                  <Field label="Operator name" required>
                     <div className="veh-operator-search-wrap">
                       <input
                         type="text"
@@ -630,8 +680,17 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                           setOperatorSearch(e.target.value);
                           setShowOperatorList(true);
                         }}
-                        onFocus={() => setShowOperatorList(true)}
-                        onBlur={() => setTimeout(() => setShowOperatorList(false), 150)}
+                        onFocus={(e) => {
+                          e.target.select();
+                          setShowOperatorList(true);
+                        }}
+                        onBlur={() =>
+                          setTimeout(() => {
+                            setShowOperatorList(false);
+                            // Unpicked text isn't a selection: snap back to the chosen operator (or empty).
+                            setOperatorSearch(selectedOperator ? selectedOperator.name : "");
+                          }, 150)
+                        }
                       />
                       {showOperatorList && (
                         <ul className="veh-operator-list">
@@ -728,7 +787,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                   type="submit"
                   className="veh-modal-btn veh-modal-btn--submit"
                 >
-                  {editing ? "Update vehicle" : "Register vehicle"}
+                  {editing ? "Save changes" : "Register vehicle"}
                 </button>
               </div>
             </form>

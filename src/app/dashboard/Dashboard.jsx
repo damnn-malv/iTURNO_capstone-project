@@ -71,30 +71,19 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-// ─── Stat (one metric card inside the shared overview panel) ────────────────
-// `unit` is a lighter word after the value ("27 vehicles"); `hero` enlarges the Collections figure; `alert` is reserved for low stock.
-function Stat({ label, value, unit, sub, alert, hero, children }) {
-  return (
-    <div className={`stat${alert ? " stat--alert" : ""}${hero ? " stat--hero" : ""}`}>
-      {label && <div className="stat-label">{label}</div>}
-      <div className="stat-value">
-        {value}
-        {unit && <span className="stat-unit"> {unit}</span>}
-      </div>
-      {sub && <div className="stat-sub">{sub}</div>}
-      {children}
-    </div>
-  );
-}
+// ─── Overview cards ──────────────────────────────────────────────────────────
+// Series colours for per-denomination rows; reused by the collections dots and
+// the stock bars so one denomination looks the same in both cards.
+const FORM_COLORS = ["#1a2744", "#e8b94a", "#3b82f6", "#22c55e", "#ef4444"];
 
-// Tiny bar trend of ticket counts; heights are relative to the busiest day.
-function Sparkline({ points }) {
-  const max = Math.max(...points, 1);
+function OverviewCard({ label, badge, children }) {
   return (
-    <div className="sparkline" aria-hidden="true">
-      {points.map((v, i) => (
-        <span key={i} style={{ height: `${Math.max((v / max) * 100, 6)}%` }} />
-      ))}
+    <div className="ov-card">
+      <div className="ov-card-head">
+        <span className="ov-card-label">{label}</span>
+        {badge}
+      </div>
+      {children}
     </div>
   );
 }
@@ -298,26 +287,24 @@ export default function Dashboard() {
   const chartRangeLabel = isTodayOnly ? "Last 7 days" : rangeLabel;
 
   const fleetStatus = stats?.fleet_status || {};
-  // Same window as the chart: the 7-day trend on today-only, else the filtered
-  // range. Averaged over calendar days (chartData skips days with no tickets).
-  const windowDays = isTodayOnly
-    ? 7
-    : Math.round((new Date(toDate) - new Date(fromDate)) / 86400000) + 1;
-  const avgTicketsPerDay = (
-    chartData.reduce((sum, d) => sum + (d.count ?? 0), 0) / windowDays
-  ).toFixed(1);
   const collections = stats?.today_total?.count ?? 0;
   const collectionsTotal = parseFloat(stats?.today_total?.total) || 0;
+  const collectionsByForm = stats?.collections_by_form || [];
   const queuedCount = fleetStatus.QUEUED ?? 0;
+  const queueByRoute = (stats?.queue_by_route || []).slice(0, 3);
+  const queueMax = Math.max(...queueByRoute.map((r) => r.count), 1);
   const ticketStock = stats?.ticket_stock_remaining ?? 0;
+  const stockByForm = stats?.stock_by_form || [];
+  const stockMax = Math.max(...stockByForm.map((f) => f.remaining), 1);
   const stockIsLow = ticketStock < STOCK_LOW_THRESHOLD;
-  const stockSub = stockIsLow
-    ? ticketStock === 0
-      ? "Out of stock"
-      : "Low stock — reorder soon"
-    : ticketStock >= STOCK_HIGH_THRESHOLD
-      ? "Stock healthy"
-      : "Stock normal";
+  const stockStatus =
+    ticketStock === 0
+      ? { label: "Out of stock", tone: "bad" }
+      : stockIsLow
+        ? { label: "Low stock", tone: "warn" }
+        : ticketStock >= STOCK_HIGH_THRESHOLD
+          ? { label: "Healthy", tone: "good" }
+          : { label: "Normal", tone: "good" };
 
   return (
     <div className="dashboard-page">
@@ -379,50 +366,89 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
-          {/* ─── Overview: Collections (left) + Check-Ins/Live Status quad (right) ─── */}
+          {/* ─── Overview: three cards — Collections · Queue · Ticket Stock ─── */}
           <div className="overview-panel">
-            <Stat
-              hero
+            <OverviewCard
               label="Total Collections"
-              value={collections}
-              sub={peso(collectionsTotal)}
+              badge={<span className="ov-pill ov-pill--muted">{rangeLabel}</span>}
             >
-              <div className="stat-hero-foot">
-                <div>
-                  <span className="stat-hero-foot-label">Avg tickets / day</span>
-                  <span className="stat-hero-foot-value">{avgTicketsPerDay}</span>
-                  <span className="stat-hero-foot-range">{chartRangeLabel}</span>
-                </div>
-                <Sparkline points={chartData.map((d) => d.count ?? 0)} />
+              <div className="ov-value ov-value--hero">{peso(collectionsTotal)}</div>
+              <div className="ov-sub">
+                <strong>{collections}</strong> {collections === 1 ? "ticket" : "tickets"} issued
               </div>
-            </Stat>
-            <div className="overview-right">
-              <div className="overview-group">
-                <div className="overview-group-label">Checked In</div>
-                <div className="overview-group-stats">
-                  <Stat
-                    value={stats?.active_vehicles ?? 0}
-                    unit={stats?.active_vehicles === 1 ? "vehicle" : "vehicles"}
-                  />
-                  <Stat
-                    value={stats?.active_drivers ?? 0}
-                    unit={stats?.active_drivers === 1 ? "driver" : "drivers"}
-                  />
-                </div>
+              {collectionsByForm.length > 0 && (
+                <ul className="ov-rows">
+                  {collectionsByForm.map((f, i) => (
+                    <li className="ov-row" key={f.name}>
+                      <span className="ov-dot" style={{ background: FORM_COLORS[i % FORM_COLORS.length] }} />
+                      <span className="ov-row-name">{f.name}</span>
+                      <span className="ov-row-qty">× {f.count}</span>
+                      <span className="ov-row-amt">{peso(f.total)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </OverviewCard>
+
+            <OverviewCard label="Currently Queued">
+              <div className="ov-value">
+                {queuedCount}
+                <span className="ov-unit">{queuedCount === 1 ? "vehicle" : "vehicles"} in line</span>
               </div>
-              <div className="overview-group">
-                <div className="overview-group-label">Live Status</div>
-                <div className="overview-group-stats">
-                  <Stat label="Currently Queued" value={queuedCount} />
-                  <Stat
-                    label="Ticket Stock"
-                    value={`${ticketStock.toLocaleString()} pcs`}
-                    sub={stockSub}
-                    alert={stockIsLow}
-                  />
+              {queuedCount === 0 ? (
+                <div className="ov-empty">
+                  No vehicles waiting right now. New check-ins appear here on their own.
                 </div>
+              ) : (
+                <>
+                  <ul className="ov-stock">
+                    {queueByRoute.map((r) => (
+                      <li className="ov-queue-row" key={r.name}>
+                        <span className="ov-queue-name">{r.name}</span>
+                        <div className="ov-bar ov-bar--navy">
+                          <span style={{ width: `${(r.count / queueMax) * 100}%` }} />
+                        </div>
+                        <strong className="ov-queue-count">{r.count}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </OverviewCard>
+
+            <OverviewCard
+              label="Ticket Stock"
+              badge={
+                <span className={`ov-pill ov-pill--${stockStatus.tone}`}>
+                  <span className="ov-pill-dot" />
+                  {stockStatus.label}
+                </span>
+              }
+            >
+              <div className="ov-value ov-value--hero">
+                {ticketStock.toLocaleString()}
+                <span className="ov-unit">pcs on hand</span>
               </div>
-            </div>
+              {stockByForm.length > 0 && (
+                <ul className="ov-stock">
+                  {stockByForm.map((f) => (
+                    <li key={f.name}>
+                      <div className="ov-stock-row">
+                        <span>{f.name}</span>
+                        <strong>{f.remaining.toLocaleString()}</strong>
+                      </div>
+                      <div className="ov-bar">
+                        <span
+                          style={{
+                            width: `${Math.max((f.remaining / stockMax) * 100, f.remaining > 0 ? 1.5 : 0)}%`,
+                          }}
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </OverviewCard>
           </div>
           {/* ─── Bar Chart + Routes Sidebar ─────────────────────────────────── */}
           <div className="dashboard-chart-layout">

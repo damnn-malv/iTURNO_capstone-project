@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { apiService } from "../../../lib/api-service";
+import { focusFirstError } from "../../../lib/focusFirstError";
 import { useFeedback } from "../../../components/ui/kit";
 import "../../../styles/User.css";
 import "../../../styles/FormModal.css";
@@ -86,6 +87,7 @@ function User({ userRole }) {
   const [editing, setEditing] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const initialFormRef = useRef(EMPTY_FORM);
 
   const [searchTerm, setSearchTerm] = useState("");
   // Field errors appear only after a failed submit, then clear as each field is fixed.
@@ -118,6 +120,7 @@ function User({ userRole }) {
 
     if (Object.keys(validateStaffForm(form)).length > 0) {
       setSubmitAttempted(true);
+      focusFirstError(".usr-modal");
       return;
     }
 
@@ -125,7 +128,7 @@ function User({ userRole }) {
     // server blocks the dangerous cases (own account, last active Admin).
     confirmAction({
       title: editing ? "Update staff account?" : "Register staff account?",
-      confirmLabel: editing ? "Update" : "Register",
+      confirmLabel: editing ? "Save changes" : "Register",
       busyLabel: "Saving…",
       tone: "primary",
       run: async () => {
@@ -143,7 +146,7 @@ function User({ userRole }) {
             : await apiService.createUser(payload);
           if (!userData) throw new Error("Failed to save user");
           fetchUsers();
-          closeModal();
+          resetModal();
           return { success: { title: editing ? "Staff account updated" : "Staff account registered", message: `${payload.first_name} ${payload.last_name} was saved.` } };
         } catch (err) {
           setError(err.message);
@@ -155,29 +158,46 @@ function User({ userRole }) {
 
   const handleEdit = (user) => {
     setEditing(user);
-    setForm({
+    const editForm = {
       username: user.username,
       first_name: user.first_name,
       middle_name: user.middle_name || "",
       last_name: user.last_name,
       role: user.role,
       is_active: user.is_active,
-    });
+    };
+    initialFormRef.current = editForm;
+    setForm(editForm);
     setSubmitAttempted(false);
     setIsModalOpen(true);
   };
 
   const handleAdd = () => {
     setEditing(null);
+    initialFormRef.current = EMPTY_FORM;
     setForm(EMPTY_FORM);
     setSubmitAttempted(false);
     setIsModalOpen(true);
   };
-  const closeModal = () => {
+  const resetModal = () => {
     setIsModalOpen(false);
     setSubmitAttempted(false);
     setEditing(null);
     setForm(EMPTY_FORM);
+  };
+
+  const isDirty = () => JSON.stringify(form) !== JSON.stringify(initialFormRef.current);
+
+  // Closing with unsaved input asks first; resetModal closes without asking (used after a save).
+  const closeModal = () => {
+    if (!isDirty()) return resetModal();
+    return confirmAction({
+      title: editing ? "Discard changes?" : "Discard registration?",
+      message: editing ? "Your edits haven't been saved and will be lost." : "What you've entered won't be saved.",
+      confirmLabel: "Discard",
+      busyLabel: "Discarding…",
+      run: async () => { resetModal(); return null; },
+    });
   };
 
   const handleToggleActive = (user) => {
@@ -597,7 +617,7 @@ function User({ userRole }) {
                   type="submit"
                   className="usr-modal-btn usr-modal-btn--submit"
                 >
-                  {editing ? "Update account" : "Register staff"}
+                  {editing ? "Save changes" : "Register staff"}
                 </button>
               </div>
             </form>
