@@ -19,7 +19,6 @@ import { useFeedback } from "../../../components/ui/kit";
 
 import QueueLog from "./tables/QueueLog";
 import AuditTrail from "./tables/AuditTrail";
-import BackfillHistory from "./tables/BackfillHistory";
 import RequisitionRemittance from "./tables/RequisitionRemittance";
 import { IS_REMOTE, authFetch } from "../../../lib/api-service";
 import "../../../styles/Report.css";
@@ -473,8 +472,6 @@ export default function Report() {
         onExportPDF={handleExportAuditPDF}
         pageSize={PAGE_SIZE}
       />
-
-      <BackfillHistory />
     </div>
   );
 }

@@ -5,7 +5,7 @@ from datetime import datetime
 from django.apps import apps
 from django.conf import settings
 from django.core import management
-from django.core.files.storage import default_storage
+from django.core.files.storage import FileSystemStorage
 from django.db import connection, transaction
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import BasePermission
@@ -15,7 +15,8 @@ from ..models import BackupRecord
 from ..serializers import BackupRecordSerializer
 from .helpers import record_audit_log
 
-BACKUPS_DIR = "backups"
+SCHEDULED_LABEL = "Scheduled daily backup"
+backup_storage = FileSystemStorage(location=settings.BASE_DIR / "backup")
 
 
 class IsSuperAdmin(BasePermission):
@@ -34,10 +35,6 @@ def _backup_app_labels():
     ]
 
 
-def _backup_path(filename):
-    return os.path.join(BACKUPS_DIR, filename)
-
-
 def _create_backup_file(user, label="", source="MANUAL"):
     buffer = io.StringIO()
     management.call_command(
@@ -47,7 +44,7 @@ def _create_backup_file(user, label="", source="MANUAL"):
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"backup_{timestamp}.json"
-    saved_name = default_storage.save(_backup_path(filename), io.BytesIO(content))
+    saved_name = backup_storage.save(filename, io.BytesIO(content))
 
     record = BackupRecord.objects.create(
         filename=os.path.basename(saved_name),
@@ -87,9 +84,9 @@ def system_backup_detail(request, backup_id):
     except BackupRecord.DoesNotExist:
         return Response({"error": "Backup not found"}, status=404)
 
-    path = _backup_path(record.filename)
-    if default_storage.exists(path):
-        default_storage.delete(path)
+    path = record.filename
+    if backup_storage.exists(path):
+        backup_storage.delete(path)
 
     record_audit_log(
         user=request.user,
@@ -110,11 +107,11 @@ def system_backup_download(request, backup_id):
     except BackupRecord.DoesNotExist:
         return Response({"error": "Backup not found"}, status=404)
 
-    path = _backup_path(record.filename)
-    if not default_storage.exists(path):
+    path = record.filename
+    if not backup_storage.exists(path):
         return Response({"error": "Backup file missing on server"}, status=404)
 
-    with default_storage.open(path, "rb") as f:
+    with backup_storage.open(path, "rb") as f:
         content = f.read()
 
     from django.http import HttpResponse
@@ -125,9 +122,9 @@ def system_backup_download(request, backup_id):
 
 def _restore_from_content(content_bytes):
     """Wipe all api-app data (except BackupRecord) and reload it from a dumpdata JSON payload."""
-    tmp_path = _backup_path(f"_restore_tmp_{datetime.now().strftime('%Y%m%d_%H%M%S%f')}.json")
-    saved_name = default_storage.save(tmp_path, io.BytesIO(content_bytes))
-    full_path = default_storage.path(saved_name) if hasattr(default_storage, "path") else saved_name
+    tmp_path = f"_restore_tmp_{datetime.now().strftime('%Y%m%d_%H%M%S%f')}.json"
+    saved_name = backup_storage.save(tmp_path, io.BytesIO(content_bytes))
+    full_path = backup_storage.path(saved_name)
 
     api_models = [m for m in apps.get_app_config("api").get_models() if m is not BackupRecord]
 
@@ -141,8 +138,8 @@ def _restore_from_content(content_bytes):
     finally:
         with connection.cursor() as cursor:
             cursor.execute("PRAGMA foreign_keys = ON;")
-        if default_storage.exists(saved_name):
-            default_storage.delete(saved_name)
+        if backup_storage.exists(saved_name):
+            backup_storage.delete(saved_name)
 
 
 @api_view(["POST"])
@@ -153,11 +150,11 @@ def system_backup_restore(request, backup_id):
     except BackupRecord.DoesNotExist:
         return Response({"error": "Backup not found"}, status=404)
 
-    path = _backup_path(record.filename)
-    if not default_storage.exists(path):
+    path = record.filename
+    if not backup_storage.exists(path):
         return Response({"error": "Backup file missing on server"}, status=404)
 
-    with default_storage.open(path, "rb") as f:
+    with backup_storage.open(path, "rb") as f:
         content = f.read()
 
     # Safety snapshot of current state before overwriting it, so this restore can itself be undone.

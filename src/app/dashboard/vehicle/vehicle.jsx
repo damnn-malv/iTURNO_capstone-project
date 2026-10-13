@@ -17,6 +17,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { renderToStaticMarkup } from "react-dom/server";
 import "../../../styles/Vehicle.css";
 import "../../../styles/FormModal.css";
+import { useCanModifyFleet } from "../../../lib/useCanModifyFleet";
 
 function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeAdd, exposeExportQR, exposeExportPDF }) {
   const {
@@ -43,6 +44,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
     closeModal,
     handleArchive,
   } = useVehicle();
+  const canModify = useCanModifyFleet();
 
   const [internalSearch, setInternalSearch] = useState("");
   const searchTerm = embedded ? externalSearch : internalSearch;
@@ -331,7 +333,8 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                     </td>
                     <td>
                       <div className="veh-actions">
-                        <button
+                        {canModify && (
+<button
                           className="veh-btn veh-btn--edit"
                           onClick={() => handleEdit(vehicle)}
                         >
@@ -348,6 +351,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                           </svg>
                           Edit
                         </button>
+)}
                         <button
                           className="veh-btn veh-btn--history"
                           onClick={() => setLedgerVehicle(vehicle)}
@@ -360,7 +364,8 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                           </svg>
                           History
                         </button>
-                        <button
+                        {canModify && (
+<button
                           className="veh-btn veh-btn--delete"
                           onClick={() => handleArchive(vehicle.id)}
                         >
@@ -378,6 +383,7 @@ function Vehicle({ embedded, searchTerm: externalSearch, onSearchChange, exposeA
                           </svg>
                           Archive
                         </button>
+)}
                       </div>
                     </td>
                   </tr>

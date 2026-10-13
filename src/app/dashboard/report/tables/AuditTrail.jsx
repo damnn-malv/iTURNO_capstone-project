@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { DataTable } from "../../../../components/ui/dataTable";
+import { IS_REMOTE } from "../../../../lib/api-service";
+import BackfillDetail from "./BackfillDetail";
 import Pager from "./Pager";
 import ReportTableModal from "./ReportTableModal";
 import { formatAuditItem, formatAuditDetails, matchesAuditRow, useDebouncedSearchAll } from "../reportHook";
@@ -18,6 +20,7 @@ const ACTION_COLORS = {
 export default function AuditTrail({ auditData, auditMeta, onAuditFetchPage, onAuditFetchAll, onExportPDF, pageSize }) {
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [openId, setOpenId] = useState(null);
   const [modalSearch, setModalSearch] = useState("");
   const [modalPage, setModalPage] = useState(1);
   const [modalData, setModalData] = useState([]);
@@ -79,9 +82,33 @@ export default function AuditTrail({ auditData, auditMeta, onAuditFetchPage, onA
     setModalMeta({ count: result.count, totalPages: result.totalPages });
   };
 
-  const renderRow = (l, idx, { rowClass, cellClass }) => (
-    <tr key={`${l.id}-${idx}`} className={rowClass}>
+  // Backfill audit rows carry the BackfillRecord id; clicking one expands the
+  // tickets that batch added (same behavior the old Backfill History table had).
+  const renderRow = (l, idx, { rowClass, cellClass }) => {
+    const backfillId = !IS_REMOTE ? l.backfill_id : null;
+    const isOpen = backfillId && openId === l.id;
+    return (
+      <Fragment key={`${l.id}-${idx}`}>
+        {renderAuditRow(l, rowClass, cellClass, backfillId, isOpen)}
+        {isOpen && (
+          <tr>
+            <td colSpan={AUDIT_COLUMNS.length} className={cellClass}>
+              <BackfillDetail id={backfillId} />
+            </td>
+          </tr>
+        )}
+      </Fragment>
+    );
+  };
+
+  const renderAuditRow = (l, rowClass, cellClass, backfillId, isOpen) => (
+    <tr
+      className={rowClass}
+      style={backfillId ? { cursor: "pointer" } : undefined}
+      onClick={backfillId ? () => setOpenId(isOpen ? null : l.id) : undefined}
+    >
       <td className={`${cellClass} rpt-mono rpt-muted`}>
+        {backfillId ? (isOpen ? "▾ " : "▸ ") : ""}
         {l.created_at ? new Date(l.created_at).toLocaleString() : "—"}
       </td>
       <td className={cellClass}>

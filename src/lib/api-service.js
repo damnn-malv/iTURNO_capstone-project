@@ -281,8 +281,8 @@ export const apiService = {
   },
 
   async refreshToken() {
-    // Several requests can 401 at once (e.g. Mobile Scan's fetchData fires 5 in
-    // parallel) — without sharing one in-flight refresh, each would fire its own
+    // Several requests can 401 at once (e.g. a page that fires several fetches
+    // in parallel) — without sharing one in-flight refresh, each would fire its own
     // /token/refresh/ call using the same refresh token.
     if (this._refreshPromise) return this._refreshPromise;
     this._refreshPromise = this._doRefreshToken().finally(() => {
@@ -592,8 +592,8 @@ export const apiService = {
     return this.get("/settings/backfill");
   },
 
-  getBackfillHistory() {
-    return this.get("/backfill/history/");
+  getBackfillRecord(id) {
+    return this.get(`/backfill/history/${id}/`);
   },
 
   async downloadBackfillCsv(id, filename) {

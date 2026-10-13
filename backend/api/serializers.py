@@ -575,13 +575,28 @@ class RoamingLogSerializer(serializers.ModelSerializer):
 class AuditLogSerializer(serializers.ModelSerializer):
     user_name = serializers.SerializerMethodField()
     action_display = serializers.CharField(source='get_action_display', read_only=True)
+    backfill_id = serializers.SerializerMethodField()
 
     class Meta:
         model = AuditLog
         fields = [
             'id', 'user', 'user_name', 'action', 'action_display',
-            'model_name', 'object_id', 'object_repr', 'changes', 'created_at',
+            'model_name', 'object_id', 'object_repr', 'changes', 'created_at', 'backfill_id',
         ]
+
+    def get_backfill_id(self, obj):
+        """The BackfillRecord this entry created, so the audit row can expand into its tickets.
+        Newer entries store the id in `changes`; older ones are matched by author + timing
+        (the record is written within moments of the audit entry)."""
+        changes = obj.changes if isinstance(obj.changes, dict) else {}
+        if changes.get('backfill_id'):
+            return changes['backfill_id']
+        if changes.get('source') != 'manual_backfill' and not obj.object_repr.startswith('CSV backfill'):
+            return None
+        near = timedelta(seconds=10)
+        return BackfillRecord.objects.filter(
+            created_by=obj.user, created_at__range=(obj.created_at - near, obj.created_at + near),
+        ).order_by('created_at').values_list('id', flat=True).first()
 
     def get_user_name(self, obj):
         user = obj.user

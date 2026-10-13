@@ -129,20 +129,22 @@ export const matchesAuditRow = (l, query) =>
 // CSV/PDF export buttons already use) and matches against all of it instead.
 // Debounced so fast typing doesn't fire a fetch per keystroke.
 export function useDebouncedSearchAll(fetchAll, query, delayMs = 300) {
-  const [allResults, setAllResults] = useState(null);
+  // Results are tagged with the fetcher that produced them so a stale result set
+  // (e.g. from the other tab's table) is never handed back for a different source.
+  const [state, setState] = useState(null);
 
   useEffect(() => {
     if (!query.trim()) {
-      setAllResults(null);
+      setState(null);
       return;
     }
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
         const rows = await fetchAll(query.trim());
-        if (!cancelled) setAllResults(rows);
+        if (!cancelled) setState({ fetchAll, rows });
       } catch {
-        if (!cancelled) setAllResults([]);
+        if (!cancelled) setState({ fetchAll, rows: [] });
       }
     }, delayMs);
     return () => {
@@ -151,5 +153,5 @@ export function useDebouncedSearchAll(fetchAll, query, delayMs = 300) {
     };
   }, [query, fetchAll, delayMs]);
 
-  return allResults;
+  return state && state.fetchAll === fetchAll && query.trim() ? state.rows : null;
 }

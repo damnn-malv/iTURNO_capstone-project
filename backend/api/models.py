@@ -590,6 +590,23 @@ class PendingFleetAccess(models.Model):
     queued_at = models.DateTimeField(auto_now=True)
 
 
+class PendingSetting(models.Model):
+    """A Route / PUV type / ticket form / ticket price saved on the LAN that Supabase
+    hasn't received yet.
+
+    These are Supabase-authoritative (pulled), so an offline create/edit would be wiped
+    by the next pull. It is saved locally at once and parked here; api/sync/settings_outbox.py
+    pushes the whole row when Supabase is back, and pull_all() leaves parked rows alone
+    until then. Rows created offline get an id above LOCAL_ADMIN_PK_BASE so they can be
+    pushed under the same id with no FK remapping."""
+    model_label = models.CharField(max_length=60)
+    obj_id = models.IntegerField()
+    queued_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('model_label', 'obj_id')
+
+
 class SyncQueue(models.Model):
     """Outbox of LAN-owned rows pending push to the Supabase mirror.
 
